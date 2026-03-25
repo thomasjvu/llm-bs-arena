@@ -43,7 +43,14 @@ export interface Turn {
 }
 
 // Game state types
-export type ExperimentId = 1 | 2 | 3;
+export type ExperimentId = 0 | 1 | 2 | 3;
+
+export const EXPERIMENT_NAMES: Record<ExperimentId, string> = {
+  0: 'Control (Random Play)',
+  1: 'Baseline (Deception Allowed)',
+  2: 'Asymmetric Fairness',
+  3: 'Honesty Mandate',
+} as const;
 
 export interface GameState {
   gameId: string;
@@ -134,21 +141,12 @@ export const RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10',
 export const SUITS: Suit[] = ['H', 'D', 'C', 'S'];
 
 export const MODELS = [
-  'openai/gpt-oss-120b',
-  'google/gemma-3-27b-it',
-  'moonshotai/Kimi-K2-Instruct',
-  // Llama models disabled — waiting for ACE approval
-  // 'meta-llama/Llama-3.1-70B-Instruct',
-  // 'meta-llama/Meta-Llama-3-70B-Instruct',
-  // 'meta-llama/Llama-3.3-70B-Instruct',
-  'Qwen/Qwen3-Coder-480B-A35B-Instruct',
+  'unsloth/gemma-3-27b-it',
   'Qwen/Qwen2.5-72B-Instruct',
-  'Qwen/Qwen2.5-32B-Instruct',
-  'Qwen/Qwen2-72B-Instruct',
-  'mistralai/Mistral-Small-3.2-24B-Instruct-2506',
-  'dphn/Dolphin-Mistral-24B-Venice-Edition',
-  'featherless-ai/QRWKV-72B',
-  'NousResearch/Hermes-4-70B',
+  'Qwen/Qwen3-32B',
+  'Qwen/Qwen3-Next-80B-A3B-Instruct',
+  'chutesai/Mistral-Small-3.2-24B-Instruct-2506',
+  'NousResearch/Hermes-4.3-36B',
 ] as const;
 
 export type ModelId = typeof MODELS[number];

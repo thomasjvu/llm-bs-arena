@@ -5,8 +5,9 @@ import * as url from 'url';
 import { GameState, ExperimentId, MODELS, Card, Turn } from './types/game.js';
 import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame, getNextRank } from './engine/game-state.js';
 import { TurnManager, LLMAdapter } from './engine/turn-manager.js';
-import { FeatherlessLLMAdapter, MockLLMAdapter } from './llm/llm-adapter.js';
-import { createFeatherlessClient } from './llm/featherless-api.js';
+import { FeatherlessLLMAdapter, ChutesLLMAdapter, MockLLMAdapter } from './llm/llm-adapter.js';
+import { createFeatherlessClient, APIConnectionError } from './llm/featherless-api.js';
+import { createChutesClient } from './llm/chutes-api.js';
 import { GameLogger } from './logging/game-logger.js';
 import { calculateAllStats } from './metrics/player-stats.js';
 import { parseCard } from './engine/deck.js';
@@ -24,6 +25,8 @@ interface ActiveGame {
   phase: 'waiting' | 'playing' | 'challenging' | 'finished';
   lastUpdate: number;
   stepInProgress: boolean; // Lock to prevent concurrent step calls
+  errorCount: number; // Track consecutive errors for this game
+  lastErrorTime: number; // Time of last error
 }
 
 const activeGames = new Map<string, ActiveGame>();
@@ -36,12 +39,38 @@ const mimeTypes: Record<string, string> = {
   '.json': 'application/json',
 };
 
+// Determine provider from environment
+function getProvider(): 'chutes' | 'featherless' | 'mock' {
+  if (process.env.LLM_PROVIDER === 'mock') return 'mock';
+  if (process.env.LLM_PROVIDER === 'featherless' && process.env.FEATHERLESS_API_KEY) return 'featherless';
+  if (process.env.LLM_PROVIDER === 'chutes' && process.env.CHUTES_API_TOKEN) return 'chutes';
+  if (process.env.CHUTES_API_TOKEN && process.env.FEATHERLESS_API_KEY) {
+    console.warn('[server] Both CHUTES_API_TOKEN and FEATHERLESS_API_KEY are set. Ignoring LLM_PROVIDER, using CHUTES_API_TOKEN. Set LLM_PROVIDER=featherless to override.');
+    return 'chutes';
+  }
+  if (process.env.CHUTES_API_TOKEN) return 'chutes';
+  if (process.env.FEATHERLESS_API_KEY) return 'featherless';
+  return 'mock';
+}
+
 // Create LLM adapter
 function createAdapter(): LLMAdapter {
-  if (process.env.MOCK || !process.env.FEATHERLESS_API_KEY) {
-    return new MockLLMAdapter(0.4, 0.25);
+  const provider = getProvider();
+  
+  switch (provider) {
+    case 'mock':
+      console.log('[server] Using mock LLM adapter');
+      return new MockLLMAdapter(0.4, 0.25);
+    case 'chutes':
+      console.log('[server] Using Chutes API provider');
+      return new ChutesLLMAdapter(createChutesClient());
+    case 'featherless':
+      console.log('[server] Using Featherless API provider');
+      return new FeatherlessLLMAdapter(createFeatherlessClient());
+    default:
+      console.log('[server] Using mock LLM adapter (no API key configured)');
+      return new MockLLMAdapter(0.4, 0.25);
   }
-  return new FeatherlessLLMAdapter(createFeatherlessClient());
 }
 
 const logger = new GameLogger(LOGS_DIR);
@@ -105,6 +134,42 @@ function formatCard(card: Card): string {
   return `${card.rank}${card.suit}`;
 }
 
+// Validate game state before processing steps
+function validateGameState(game: ActiveGame): { valid: boolean; error?: string } {
+  // Check for required state properties
+  if (!game.state) {
+    return { valid: false, error: 'Game state is missing' };
+  }
+  
+  if (!game.state.players || game.state.players.length === 0) {
+    return { valid: false, error: 'No players in game state' };
+  }
+  
+  // Validate current player index
+  if (game.state.currentPlayerIndex < 0 || game.state.currentPlayerIndex >= game.state.players.length) {
+    return { valid: false, error: `Invalid currentPlayerIndex: ${game.state.currentPlayerIndex}` };
+  }
+  
+  // Validate phase consistency
+  if (game.phase === 'challenging' && !game.pendingTurn) {
+    return { valid: false, error: 'Challenge phase without pending turn' };
+  }
+  
+  // Check for stale step lock (if step has been in progress for >5 minutes, something went wrong)
+  if (game.stepInProgress) {
+    const stepDuration = Date.now() - game.lastUpdate;
+    if (stepDuration > 5 * 60 * 1000) {
+      console.log(`[validate] Step lock stale (${Math.round(stepDuration / 1000)}s), clearing...`);
+      game.stepInProgress = false;
+    }
+  }
+  
+  return { valid: true };
+}
+
+// Maximum turns to send to client to prevent performance issues in long games
+const MAX_CLIENT_TURNS = 100;
+
 // Get visible state for UI (shows all hands for spectator view)
 function getFullGameState(game: ActiveGame) {
   const state = game.state;
@@ -116,6 +181,13 @@ function getFullGameState(game: ActiveGame) {
   } else if (game.phase === 'challenging' && game.challengeQueue.length > 0) {
     thinkingPlayerId = game.challengeQueue[0];
   }
+
+  // Limit turns sent to client for performance in long-running games
+  // Always keep all turns internally for game logic, but only send recent ones to UI
+  const totalTurns = state.turns.length;
+  const recentTurns = totalTurns > MAX_CLIENT_TURNS 
+    ? state.turns.slice(totalTurns - MAX_CLIENT_TURNS)
+    : state.turns;
 
   return {
     gameId: state.gameId,
@@ -133,7 +205,8 @@ function getFullGameState(game: ActiveGame) {
     currentRank: state.currentRank,
     pile: state.pile.map(formatCard),
     pileSize: state.pile.length,
-    turns: state.turns,
+    turns: recentTurns,
+    totalTurns: totalTurns, // Send actual count for display purposes
     pendingTurn: game.pendingTurn,
     winner: state.winner,
     winnerModel: state.winner ? state.players.find(p => p.id === state.winner)?.modelId : null,
@@ -154,8 +227,8 @@ async function handleStartGame(req: http.IncomingMessage, res: http.ServerRespon
   const state = createGameState(gameId, experimentId, players);
   const adapter = createAdapter();
 
-  const isMock = process.env.MOCK || !process.env.FEATHERLESS_API_KEY;
-  console.log(`\n[game] New game ${gameId} (experiment ${experimentId}, adapter: ${isMock ? 'MOCK' : 'Featherless API'})`);
+  const provider = getProvider();
+  console.log(`\n[game] New game ${gameId} (experiment ${experimentId}, adapter: ${provider.toUpperCase()})`);
   console.log(`[game] Players: ${players.join(', ')}`);
 
   const game: ActiveGame = {
@@ -166,6 +239,8 @@ async function handleStartGame(req: http.IncomingMessage, res: http.ServerRespon
     phase: 'waiting',
     lastUpdate: Date.now(),
     stepInProgress: false,
+    errorCount: 0,
+    lastErrorTime: 0,
   };
 
   activeGames.set(gameId, game);
@@ -179,6 +254,19 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
   if (!game) {
     if (stream) { startSSE(res); sendSSE(res, 'error', { error: 'Game not found' }); res.end(); }
     else sendJSON(res, { error: 'Game not found' }, 404);
+    return;
+  }
+
+  // Validate game state
+  const stateValidation = validateGameState(game);
+  if (!stateValidation.valid) {
+    console.error(`[step] Invalid game state for ${gameId}: ${stateValidation.error}`);
+    if (stream) { 
+      startSSE(res); 
+      sendSSE(res, 'error', { error: 'Invalid game state', details: stateValidation.error }); 
+      res.end(); 
+    }
+    else sendJSON(res, { error: 'Invalid game state', details: stateValidation.error }, 500);
     return;
   }
 
@@ -353,15 +441,49 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     }
 
     game.stepInProgress = false;
+    game.errorCount = 0; // Reset error count on success
     if (stream) { sendSSE(res, 'complete', getFullGameState(game)); res.end(); }
     else sendJSON(res, getFullGameState(game));
   } catch (error) {
     game.stepInProgress = false;
+    game.errorCount++;
+    game.lastErrorTime = Date.now();
+    
     console.error('[step] ERROR:', error);
-    if (stream && !res.writableEnded) {
-      try { sendSSE(res, 'error', { error: 'Step failed', details: String(error) }); res.end(); } catch {}
-    } else if (!stream) {
-      sendJSON(res, { error: 'Step failed', details: String(error) }, 500);
+    
+    // Check if this is a connection error that requires adapter reset
+    const errorStr = String(error);
+    const isConnectionError = error instanceof APIConnectionError ||
+                              errorStr.includes('API connection unstable') ||
+                              errorStr.includes('TimeoutError') ||
+                              errorStr.includes('terminated');
+    
+    if (isConnectionError) {
+      console.log('[step] Connection issue detected, resetting adapter...');
+      // Create a new adapter with fresh connection
+      game.adapter = createAdapter();
+      game.errorCount = 0; // Reset error count after adapter reset
+      console.log('[step] Adapter reset complete. Client can retry the step.');
+    }
+    
+    // If we've had too many errors in succession, pause the game
+    if (game.errorCount >= 5) {
+      console.error(`[step] Too many consecutive errors (${game.errorCount}), game may be in unstable state`);
+      const errorMsg = isConnectionError 
+        ? 'API connection unstable. Adapter has been reset. Please retry.'
+        : 'Multiple consecutive errors. Please check game state before continuing.';
+      
+      if (stream && !res.writableEnded) {
+        try { sendSSE(res, 'error', { error: errorMsg, details: String(error), resetAdapter: isConnectionError }); res.end(); } catch {}
+      } else if (!stream) {
+        sendJSON(res, { error: errorMsg, details: String(error), resetAdapter: isConnectionError }, 503);
+      }
+    } else {
+      if (stream && !res.writableEnded) {
+        try { sendSSE(res, 'error', { error: 'Step failed', details: String(error) }); res.end(); } catch {}
+      } else if (!stream) {
+        sendJSON(res, { error: 'Step failed', details: String(error) }, 500);
+      }
     }
   }
 }
@@ -632,6 +754,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  const provider = getProvider();
+  const modeDisplay = provider === 'mock' ? 'Mock LLM' : provider === 'chutes' ? 'Chutes API' : 'Featherless API';
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║         🃏 LLM Bullshit - Game Visualizer 🃏          ║
@@ -642,7 +766,7 @@ server.listen(PORT, () => {
 ║  • See each player's cards                            ║
 ║  • Read the LLMs' thoughts as they decide             ║
 ║                                                       ║
-║  Mode: ${process.env.FEATHERLESS_API_KEY ? 'Featherless API' : 'Mock LLM'}
+║  Mode: ${modeDisplay}
 ╚═══════════════════════════════════════════════════════╝
   `);
 });

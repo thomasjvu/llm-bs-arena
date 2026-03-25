@@ -9,7 +9,7 @@
     "start": "node --env-file=.env dist/index.js",
     "dev": "tsx --env-file=.env src/index.ts",
     "server": "tsx --env-file=.env src/server.ts",
-    "server:mock": "MOCK=1 tsx src/server.ts",
+    "server:mock": "LLM_PROVIDER=mock tsx src/server.ts",
     "test": "vitest run",
     "lint": "eslint src/"
   },

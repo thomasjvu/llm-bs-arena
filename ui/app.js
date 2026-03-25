@@ -475,31 +475,15 @@ const turnQueueDisplay = document.getElementById('turn-queue');
 
 // ─── Theme Application ──────────────────────────────────────────────
 
-function applyModelThemes(players) {
+function applyModelThemes(players, currentPlayerIndex = 0) {
   const cacheBust = Date.now();
   
-  // Apply to other-players columns (0, 1, 2)
-  for (let i = 0; i < 3; i++) {
-    if (!players[i]) continue;
-    const player = players[i];
-    const charEl = document.getElementById(`char-${i}`);
-    if (charEl) {
-      const imageHtml = window.ModelThemes.getCharacterImage(player.modelId, 'default', cacheBust);
-      if (imageHtml) {
-        charEl.innerHTML = imageHtml;
-      }
-    }
-    const titleEl = document.getElementById(`title-${i}`);
-    if (titleEl) {
-      const theme = window.ModelThemes.getTheme(player.modelId);
-      titleEl.textContent = theme.title;
-      titleEl.style.color = '#000000';
-    }
-  }
+  // Determine which player is in the active column
+  const activePlayerIdx = currentPlayerIndex !== undefined ? currentPlayerIndex : 0;
   
-  // Apply to active column
-  if (players[3]) {
-    const player = players[3];
+  // Apply to active column (current player)
+  if (players[activePlayerIdx]) {
+    const player = players[activePlayerIdx];
     const charEl = document.getElementById('char-active');
     if (charEl) {
       const imageHtml = window.ModelThemes.getCharacterImage(player.modelId, 'default', cacheBust);
@@ -513,6 +497,29 @@ function applyModelThemes(players) {
       titleEl.textContent = theme.title;
       titleEl.style.color = '#000000';
     }
+  }
+  
+  // Apply to other-players columns (0, 1, 2) - all players except current
+  let otherIndex = 0;
+  for (let i = 0; i < players.length; i++) {
+    if (i === activePlayerIdx) continue;
+    if (otherIndex >= 3) break;
+    
+    const player = players[i];
+    const charEl = document.getElementById(`char-${otherIndex}`);
+    if (charEl) {
+      const imageHtml = window.ModelThemes.getCharacterImage(player.modelId, 'default', cacheBust);
+      if (imageHtml) {
+        charEl.innerHTML = imageHtml;
+      }
+    }
+    const titleEl = document.getElementById(`title-${otherIndex}`);
+    if (titleEl) {
+      const theme = window.ModelThemes.getTheme(player.modelId);
+      titleEl.textContent = theme.title;
+      titleEl.style.color = '#000000';
+    }
+    otherIndex++;
   }
 }
 
@@ -623,16 +630,17 @@ function updateCharacterImage(playerIndex, player, state) {
     } else if (player.isEliminated) {
       imageState = 'lose';
     } else if (state.phase === 'challenging' && state.pendingTurn) {
-      const accusedPlayerIndex = state.players.findIndex(p => p.id === state.pendingTurn.playerId);
-      const currentPlayerIndex = state.players.findIndex(p => p.id === state.currentPlayerId);
+      // During challenge phase, the active player (who just played) is being judged
+      // The thinking player (challenger) is deciding whether to call BS
+      const isChallenger = player.id === state.thinkingPlayerId;
       
-      if (currentPlayerIndex === accusedPlayerIndex) {
-        imageState = 'judged';
-      } else if (isThinking) {
-        imageState = 'thinking';
+      if (isChallenger) {
+        imageState = 'thinking'; // challenger deciding to call BS
+      } else {
+        imageState = 'judged'; // the player whose play is being judged
       }
     } else if (isThinking) {
-      imageState = 'judging';
+      imageState = 'judging'; // thinking about what to play
     }
     
     const imageHtml = window.ModelThemes.getCharacterImage(modelId, imageState, cacheBust);
@@ -658,13 +666,13 @@ function updateCharacterImage(playerIndex, player, state) {
   } else if (player.isEliminated) {
     imageState = 'lose';
   } else if (state.phase === 'challenging' && state.pendingTurn) {
-    const accusedPlayerIndex = state.players.findIndex(p => p.id === state.pendingTurn.playerId);
+    const accusedPlayerId = state.pendingTurn.playerId;
     const thinkingPlayerId = state.thinkingPlayerId;
     
-    if (playerIndex === accusedPlayerIndex) {
+    if (player.id === accusedPlayerId) {
       imageState = 'judged';
-    } else if (thinkingPlayerId === player.id) {
-      imageState = 'thinking';
+    } else if (player.id === thinkingPlayerId) {
+      imageState = 'thinking'; // this player is the challenger
     } else {
       imageState = 'default';
     }
@@ -860,7 +868,7 @@ async function startNewGame() {
 
     // Apply visual themes to columns based on which models are playing
     if (data.players) {
-      applyModelThemes(data.players);
+      applyModelThemes(data.players, data.currentPlayerIndex);
     }
 
     // Initialize round counter and turn queue
@@ -1038,14 +1046,20 @@ function handleSSEEvent(eventType, data) {
   switch (eventType) {
     case 'thinking': {
       const playerIndex = previousState?.players?.findIndex(p => p.id === data.playerId);
+      const currentPlayerIndex = previousState?.currentPlayerIndex;
+      
       if (playerIndex != null && playerIndex >= 0) {
         clearStreamText();
         _activeVoiceIndex = playerIndex;
+        
         // Clear this player's action display for fresh thinking
-        const actionEl = document.getElementById(`action-${playerIndex}`);
+        const actionId = (playerIndex === currentPlayerIndex) ? 'action-active' : `action-${playerIndex}`;
+        const actionEl = document.getElementById(actionId);
         if (actionEl) actionEl.innerHTML = '';
 
-        const streamEl = document.getElementById(`stream-${playerIndex}`);
+        // Use stream-active for current player, otherwise use indexed stream
+        const streamId = (playerIndex === currentPlayerIndex) ? 'stream-active' : `stream-${playerIndex}`;
+        const streamEl = document.getElementById(streamId);
         if (streamEl) {
           streamEl.textContent = '';
           streamEl.classList.add('active');
@@ -1171,6 +1185,19 @@ function renderGameState(state) {
   // Swap active player to large column
   if (activePlayerIndex !== null && activePlayerIndex >= 0) {
     swapActivePlayer(state);
+    
+    // Render cards for active player
+    const activeHandEl = document.querySelector('.player-hand[data-hand="active"]');
+    const currentPlayer = state.players[activePlayerIndex];
+    if (activeHandEl && currentPlayer && currentPlayer.hand) {
+      activeHandEl.innerHTML = '';
+      currentPlayer.hand.forEach(cardStr => {
+        activeHandEl.appendChild(createCardElement(cardStr, true));
+      });
+    }
+    
+    // Update character image for active player
+    updateCharacterImage('active', currentPlayer, state);
   }
 
   // Update round counter - use totalTurns if available (server sends limited turns for performance)

@@ -19,7 +19,13 @@
       "Bash(xargs kill:*)",
       "Bash(__NEW_LINE_249539f764200d7f__ echo -e \"\\\\n=== Done ===\")",
       "Bash(MOCK=1 timeout 3 node:*)",
-      "Bash(MOCK=1 node:*)"
+      "Bash(MOCK=1 node:*)",
+      "WebFetch(domain:featherless.ai)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git status:*)"
     ]
   }
 }

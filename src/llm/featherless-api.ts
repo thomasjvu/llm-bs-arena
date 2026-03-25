@@ -39,11 +39,25 @@ const DEFAULT_CONFIG: FeatherlessConfig = {
 };
 
 /**
+ * Custom error class for API failures that require connection reset
+ */
+export class APIConnectionError extends Error {
+  constructor(message: string, public readonly cause?: Error) {
+    super(message);
+    this.name = 'APIConnectionError';
+  }
+}
+
+/**
  * Client for the Featherless AI API
  */
 export class FeatherlessClient {
   private config: FeatherlessConfig;
   private lastRequestTime: number = 0;
+  private consecutiveFailures: number = 0;
+  private lastFailureTime: number = 0;
+  private readonly MAX_CONSECUTIVE_FAILURES = 3;
+  private readonly FAILURE_RESET_MS = 60000; // Reset failure count after 1 minute
 
   constructor(config: Partial<FeatherlessConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -51,6 +65,23 @@ export class FeatherlessClient {
     if (!this.config.apiKey) {
       throw new Error('FEATHERLESS_API_KEY environment variable is required');
     }
+  }
+
+  /**
+   * Resets the client state - call this when experiencing connection issues
+   */
+  resetConnection(): void {
+    console.log('[api] Resetting API connection state...');
+    this.consecutiveFailures = 0;
+    this.lastRequestTime = 0;
+    this.lastFailureTime = 0;
+  }
+
+  /**
+   * Check if the client needs a connection reset
+   */
+  needsReset(): boolean {
+    return this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES;
   }
 
   /**
@@ -87,7 +118,7 @@ export class FeatherlessClient {
             seed: this.config.seed,
             max_tokens: maxTokens,
           }),
-          signal: AbortSignal.timeout(90_000),
+          signal: AbortSignal.timeout(45_000),
         });
 
         if (!response.ok) {
@@ -127,6 +158,10 @@ export class FeatherlessClient {
         const tokens = data.usage ? `${data.usage.prompt_tokens}+${data.usage.completion_tokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
         console.log(`[api] OK ${modelId} (${Date.now() - t0}ms, ${tokens}${truncated}) — ${content.substring(0, 80).replace(/\n/g, ' ')}…`);
+        
+        // Success - reset failure counter
+        this.consecutiveFailures = 0;
+        
         return { content, tokenUsage: usage, responseTimeMs: Date.now() - overallStart, finishReason };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -142,6 +177,10 @@ export class FeatherlessClient {
           console.error(`[api] Error for ${modelId}: ${msg}`);
         }
 
+        // Track consecutive failures
+        this.consecutiveFailures++;
+        this.lastFailureTime = Date.now();
+
         if (attempt < this.config.maxRetries - 1) {
           const baseBackoff = (isTerminated || isTimeout)
             ? 10_000 + Math.random() * 5000
@@ -153,6 +192,15 @@ export class FeatherlessClient {
     }
 
     console.error(`[api] FAILED after ${this.config.maxRetries} attempts for ${modelId}`);
+    
+    // If we've had too many consecutive failures, throw a connection error
+    if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+      throw new APIConnectionError(
+        `API connection unstable after ${this.consecutiveFailures} consecutive failures`,
+        lastError || undefined
+      );
+    }
+    
     throw lastError || new Error('Request failed after retries');
   }
 
@@ -195,7 +243,7 @@ export class FeatherlessClient {
             stream: true,
             stream_options: { include_usage: true },
           }),
-          signal: AbortSignal.timeout(90_000),
+          signal: AbortSignal.timeout(45_000),
         });
 
         if (!response.ok) {
@@ -279,11 +327,18 @@ export class FeatherlessClient {
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
         console.log(`[api-stream] OK ${modelId} (${elapsed}ms, ttft=${ttft}ms, ${tokens}${truncated})`);
 
+        // Success - reset failure counter
+        this.consecutiveFailures = 0;
+        
         return { content: fullContent, tokenUsage: usage, responseTimeMs: Date.now() - overallStart, finishReason };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         const msg = lastError.message.substring(0, 150);
         console.error(`[api-stream] Error for ${modelId}: ${msg}`);
+
+        // Track consecutive failures
+        this.consecutiveFailures++;
+        this.lastFailureTime = Date.now();
 
         if (attempt < this.config.maxRetries - 1) {
           const backoff = this.config.retryDelayMs * Math.pow(2, attempt) + Math.random() * 1000;
@@ -294,6 +349,15 @@ export class FeatherlessClient {
     }
 
     console.error(`[api-stream] FAILED after ${this.config.maxRetries} attempts for ${modelId}`);
+    
+    // If we've had too many consecutive failures, throw a connection error
+    if (this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+      throw new APIConnectionError(
+        `API connection unstable after ${this.consecutiveFailures} consecutive failures`,
+        lastError || undefined
+      );
+    }
+    
     throw lastError || new Error('Stream request failed after retries');
   }
 

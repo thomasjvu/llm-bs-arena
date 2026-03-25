@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Statistical tests for LLM Bullshit research.
+Includes power analysis, significance testing, and effect size calculations.
 """
 
 import pandas as pd
@@ -8,9 +9,51 @@ import numpy as np
 from scipy import stats
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
 import warnings
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+
+@dataclass
+class StatisticalResult:
+    test_name: str
+    statistic: float
+    p_value: float
+    effect_size: Optional[float] = None
+    confidence_interval: Optional[Tuple[float, float]] = None
+    interpretation: str = ""
+
+
+def power_analysis(effect_size: float, alpha: float = 0.05, power: float = 0.8) -> int:
+    """
+    Calculate required sample size for a given effect size.
+    Uses normal approximation for two-sample t-test.
+    
+    Args:
+        effect_size: Cohen's d (0.2=small, 0.5=medium, 0.8=large)
+        alpha: Significance level (default 0.05)
+        power: Statistical power (default 0.8)
+    
+    Returns:
+        Required sample size per group
+    """
+    z_alpha = stats.norm.ppf(1 - alpha / 2)
+    z_beta = stats.norm.ppf(power)
+    
+    n = 2 * ((z_alpha + z_beta) / effect_size) ** 2
+    return int(np.ceil(n))
+
+
+def sample_size_recommendations() -> Dict[str, int]:
+    """Calculate recommended sample sizes for different effect sizes."""
+    return {
+        "small (d=0.2)": power_analysis(0.2),
+        "small-medium (d=0.35)": power_analysis(0.35),
+        "medium (d=0.5)": power_analysis(0.5),
+        "medium-large (d=0.65)": power_analysis(0.65),
+        "large (d=0.8)": power_analysis(0.8),
+    }
 
 
 def load_stats(csv_path: str) -> pd.DataFrame:

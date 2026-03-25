@@ -70,30 +70,32 @@
             <span class="judge-text">judging</span>
           </div>
         </div>
-        <div class="column-content">
-          <div class="speech-bubble" id="speech-active">
-            <div class="speech-content"></div>
-            <div class="speech-tail"></div>
+        <div class="player-row">
+          <div class="character-frame-active">
+            <div class="character-image" id="char-active"></div>
+            <div class="character-title" id="title-active"></div>
           </div>
-          <div class="player-info" data-player="active">
-            <div class="player-name">waiting...</div>
-            <div class="card-count"><span>0</span> cards</div>
-            <div class="player-status"></div>
+          <div class="player-info-active">
+            <div class="speech-bubble" id="speech-active">
+              <div class="speech-content"></div>
+              <div class="speech-tail"></div>
+            </div>
+            <div class="player-info" data-player="active">
+              <div class="player-name">waiting...</div>
+              <div class="card-count"><span>0</span> cards</div>
+              <div class="player-status"></div>
+            </div>
+            <div class="player-action" id="action-active"></div>
+            <div class="stream-text" id="stream-active"></div>
+            <div class="player-hand" data-hand="active"></div>
           </div>
-          <div class="player-action" id="action-active"></div>
-          <div class="stream-text" id="stream-active"></div>
-          <div class="player-hand" data-hand="active"></div>
-        </div>
-        <div class="character-frame">
-          <div class="character-image" id="char-active"></div>
-          <div class="character-title" id="title-active"></div>
         </div>
       </div>
 
       <!-- Other Players Column (25%) - stacked -->
       <div class="other-players-column">
         
-        <div class="player-column" data-column="0">
+        <div class="player-column compact" data-column="0">
           <div class="column-bg"></div>
           <div class="judging-indicator" id="judging-0">
             <div class="judge-badge judge-accused">
@@ -107,27 +109,29 @@
               <span class="judge-text">judging</span>
             </div>
           </div>
-          <div class="column-content">
-            <div class="speech-bubble" id="speech-0">
-              <div class="speech-content"></div>
-              <div class="speech-tail"></div>
+          <div class="player-row">
+            <div class="character-frame-compact">
+              <div class="character-image" id="char-0"></div>
+              <div class="character-title" id="title-0"></div>
             </div>
-            <div class="player-info" data-player="0">
-              <div class="player-name">waiting...</div>
-              <div class="card-count"><span>0</span> cards</div>
-              <div class="player-status"></div>
+            <div class="player-info-compact">
+              <div class="speech-bubble" id="speech-0">
+                <div class="speech-content"></div>
+                <div class="speech-tail"></div>
+              </div>
+              <div class="player-info" data-player="0">
+                <div class="player-name">waiting...</div>
+                <div class="card-count"><span>0</span> cards</div>
+                <div class="player-status"></div>
+              </div>
+              <div class="player-action" id="action-0"></div>
+              <div class="stream-text" id="stream-0"></div>
+              <div class="player-hand" data-hand="0"></div>
             </div>
-            <div class="player-action" id="action-0"></div>
-            <div class="stream-text" id="stream-0"></div>
-            <div class="player-hand" data-hand="0"></div>
-          </div>
-          <div class="character-frame">
-            <div class="character-image" id="char-0"></div>
-            <div class="character-title" id="title-0"></div>
           </div>
         </div>
 
-        <div class="player-column" data-column="1">
+        <div class="player-column compact" data-column="1">
           <div class="column-bg"></div>
           <div class="judging-indicator" id="judging-1">
             <div class="judge-badge judge-accused">
@@ -141,27 +145,29 @@
               <span class="judge-text">judging</span>
             </div>
           </div>
-          <div class="column-content">
-            <div class="speech-bubble" id="speech-1">
-              <div class="speech-content"></div>
-              <div class="speech-tail"></div>
+          <div class="player-row">
+            <div class="character-frame-compact">
+              <div class="character-image" id="char-1"></div>
+              <div class="character-title" id="title-1"></div>
             </div>
-            <div class="player-info" data-player="1">
-              <div class="player-name">waiting...</div>
-              <div class="card-count"><span>0</span> cards</div>
-              <div class="player-status"></div>
+            <div class="player-info-compact">
+              <div class="speech-bubble" id="speech-1">
+                <div class="speech-content"></div>
+                <div class="speech-tail"></div>
+              </div>
+              <div class="player-info" data-player="1">
+                <div class="player-name">waiting...</div>
+                <div class="card-count"><span>0</span> cards</div>
+                <div class="player-status"></div>
+              </div>
+              <div class="player-action" id="action-1"></div>
+              <div class="stream-text" id="stream-1"></div>
+              <div class="player-hand" data-hand="1"></div>
             </div>
-            <div class="player-action" id="action-1"></div>
-            <div class="stream-text" id="stream-1"></div>
-            <div class="player-hand" data-hand="1"></div>
-          </div>
-          <div class="character-frame">
-            <div class="character-image" id="char-1"></div>
-            <div class="character-title" id="title-1"></div>
           </div>
         </div>
 
-        <div class="player-column" data-column="2">
+        <div class="player-column compact" data-column="2">
           <div class="column-bg"></div>
           <div class="judging-indicator" id="judging-2">
             <div class="judge-badge judge-accused">
@@ -175,23 +181,25 @@
               <span class="judge-text">judging</span>
             </div>
           </div>
-          <div class="column-content">
-            <div class="speech-bubble" id="speech-2">
-              <div class="speech-content"></div>
-              <div class="speech-tail"></div>
+          <div class="player-row">
+            <div class="character-frame-compact">
+              <div class="character-image" id="char-2"></div>
+              <div class="character-title" id="title-2"></div>
             </div>
-            <div class="player-info" data-player="2">
-              <div class="player-name">waiting...</div>
-              <div class="card-count"><span>0</span> cards</div>
-              <div class="player-status"></div>
+            <div class="player-info-compact">
+              <div class="speech-bubble" id="speech-2">
+                <div class="speech-content"></div>
+                <div class="speech-tail"></div>
+              </div>
+              <div class="player-info" data-player="2">
+                <div class="player-name">waiting...</div>
+                <div class="card-count"><span>0</span> cards</div>
+                <div class="player-status"></div>
+              </div>
+              <div class="player-action" id="action-2"></div>
+              <div class="stream-text" id="stream-2"></div>
+              <div class="player-hand" data-hand="2"></div>
             </div>
-            <div class="player-action" id="action-2"></div>
-            <div class="stream-text" id="stream-2"></div>
-            <div class="player-hand" data-hand="2"></div>
-          </div>
-          <div class="character-frame">
-            <div class="character-image" id="char-2"></div>
-            <div class="character-title" id="title-2"></div>
           </div>
         </div>
 

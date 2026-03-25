@@ -1,4 +1,4 @@
-import { Matchup, TournamentConfig, MODELS } from '../types/game.js';
+import { Matchup, TournamentConfig, MODELS, ExperimentId } from '../types/game.js';
 
 /**
  * Generates all C(n, k) combinations of items
@@ -59,7 +59,7 @@ export function shuffleSeating(players: string[]): string[] {
  * Creates a tournament configuration
  */
 export function createTournamentConfig(
-  experimentId: 1 | 2 | 3,
+  experimentId: ExperimentId,
   gamesPerMatchup: number = 10,
   outputDir: string = 'logs'
 ): TournamentConfig {
