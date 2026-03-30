@@ -1,329 +1,279 @@
 #!/usr/bin/env python3
 """
-Statistical tests for LLM Bullshit research.
-Includes power analysis, significance testing, and effect size calculations.
+Statistical summaries for LLM Bullshit research.
+
+This script intentionally uses player-game rows as the primary unit of analysis
+and reports bootstrap confidence intervals instead of fragile significance tests
+on turn-level or per-model aggregates.
 """
 
-import pandas as pd
-import numpy as np
-from scipy import stats
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
-import warnings
+from typing import Dict, Iterable, Optional, Tuple
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-
-
-@dataclass
-class StatisticalResult:
-    test_name: str
-    statistic: float
-    p_value: float
-    effect_size: Optional[float] = None
-    confidence_interval: Optional[Tuple[float, float]] = None
-    interpretation: str = ""
+import numpy as np
+import pandas as pd
 
 
-def power_analysis(effect_size: float, alpha: float = 0.05, power: float = 0.8) -> int:
-    """
-    Calculate required sample size for a given effect size.
-    Uses normal approximation for two-sample t-test.
-    
-    Args:
-        effect_size: Cohen's d (0.2=small, 0.5=medium, 0.8=large)
-        alpha: Significance level (default 0.05)
-        power: Statistical power (default 0.8)
-    
-    Returns:
-        Required sample size per group
-    """
-    z_alpha = stats.norm.ppf(1 - alpha / 2)
-    z_beta = stats.norm.ppf(power)
-    
-    n = 2 * ((z_alpha + z_beta) / effect_size) ** 2
-    return int(np.ceil(n))
+BOOTSTRAP_ITERATIONS = 5000
+BOOTSTRAP_SEED = 42
 
 
-def sample_size_recommendations() -> Dict[str, int]:
-    """Calculate recommended sample sizes for different effect sizes."""
-    return {
-        "small (d=0.2)": power_analysis(0.2),
-        "small-medium (d=0.35)": power_analysis(0.35),
-        "medium (d=0.5)": power_analysis(0.5),
-        "medium-large (d=0.65)": power_analysis(0.65),
-        "large (d=0.8)": power_analysis(0.8),
+def load_csv(path: Path) -> Optional[pd.DataFrame]:
+    if path.exists():
+        return pd.read_csv(path)
+    return None
+
+
+def bootstrap_mean_ci(
+    values: Iterable[float],
+    iterations: int = BOOTSTRAP_ITERATIONS,
+    confidence: float = 0.95,
+    seed: int = BOOTSTRAP_SEED,
+) -> Tuple[float, float, float]:
+    arr = np.asarray(list(values), dtype=float)
+    arr = arr[~np.isnan(arr)]
+    if len(arr) == 0:
+        return np.nan, np.nan, np.nan
+
+    rng = np.random.default_rng(seed)
+    means = np.empty(iterations)
+    for i in range(iterations):
+        sample = rng.choice(arr, size=len(arr), replace=True)
+        means[i] = sample.mean()
+
+    alpha = 1 - confidence
+    lower = np.percentile(means, 100 * (alpha / 2))
+    upper = np.percentile(means, 100 * (1 - alpha / 2))
+    return float(arr.mean()), float(lower), float(upper)
+
+
+def bootstrap_mean_diff_ci(
+    values_a: Iterable[float],
+    values_b: Iterable[float],
+    iterations: int = BOOTSTRAP_ITERATIONS,
+    confidence: float = 0.95,
+    seed: int = BOOTSTRAP_SEED,
+) -> Tuple[float, float, float]:
+    arr_a = np.asarray(list(values_a), dtype=float)
+    arr_b = np.asarray(list(values_b), dtype=float)
+    arr_a = arr_a[~np.isnan(arr_a)]
+    arr_b = arr_b[~np.isnan(arr_b)]
+
+    if len(arr_a) == 0 or len(arr_b) == 0:
+        return np.nan, np.nan, np.nan
+
+    rng = np.random.default_rng(seed)
+    diffs = np.empty(iterations)
+    for i in range(iterations):
+        sample_a = rng.choice(arr_a, size=len(arr_a), replace=True)
+        sample_b = rng.choice(arr_b, size=len(arr_b), replace=True)
+        diffs[i] = sample_b.mean() - sample_a.mean()
+
+    observed = float(arr_b.mean() - arr_a.mean())
+    alpha = 1 - confidence
+    lower = np.percentile(diffs, 100 * (alpha / 2))
+    upper = np.percentile(diffs, 100 * (1 - alpha / 2))
+    return observed, float(lower), float(upper)
+
+
+def format_ci(mean: float, lower: float, upper: float, pct: bool = False) -> str:
+    if np.isnan(mean):
+        return "n/a"
+    if pct:
+        return f"{mean:.1%} (95% CI {lower:.1%} to {upper:.1%})"
+    return f"{mean:.3f} (95% CI {lower:.3f} to {upper:.3f})"
+
+
+def summarize_metric_by_model(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    rows = []
+    for model_id, group in df.groupby("model_id"):
+        mean, lower, upper = bootstrap_mean_ci(group[metric].astype(float).values)
+        rows.append({
+            "model_id": model_id,
+            "n": len(group),
+            "mean": mean,
+            "ci_lower": lower,
+            "ci_upper": upper,
+        })
+    if not rows:
+        return pd.DataFrame(columns=["model_id", "n", "mean", "ci_lower", "ci_upper"])
+    return pd.DataFrame(rows).sort_values("mean", ascending=False)
+
+
+def compare_experiments_by_model(player_games: pd.DataFrame, metric: str, exp_a: int, exp_b: int) -> pd.DataFrame:
+    rows = []
+    for model_id in sorted(player_games["model_id"].dropna().unique()):
+        group_a = player_games[(player_games["model_id"] == model_id) & (player_games["experiment_id"] == exp_a)]
+        group_b = player_games[(player_games["model_id"] == model_id) & (player_games["experiment_id"] == exp_b)]
+        if group_a.empty or group_b.empty:
+            continue
+
+        mean_a = float(group_a[metric].mean())
+        mean_b = float(group_b[metric].mean())
+        delta, lower, upper = bootstrap_mean_diff_ci(group_a[metric].values, group_b[metric].values)
+        rows.append({
+            "model_id": model_id,
+            f"exp{exp_a}_mean": mean_a,
+            f"exp{exp_b}_mean": mean_b,
+            "delta": delta,
+            "ci_lower": lower,
+            "ci_upper": upper,
+            "n_exp_a": len(group_a),
+            "n_exp_b": len(group_b),
+        })
+    if not rows:
+        return pd.DataFrame(columns=["model_id", "delta", "ci_lower", "ci_upper"])
+    return pd.DataFrame(rows).sort_values("delta")
+
+
+def summarize_experiment(player_games: pd.DataFrame, experiment_id: int) -> Dict[str, str]:
+    exp_df = player_games[player_games["experiment_id"] == experiment_id]
+    if exp_df.empty:
+        return {}
+
+    win_rate = bootstrap_mean_ci(exp_df["won"].astype(float).values)
+    lie_frequency = bootstrap_mean_ci(exp_df["lie_frequency"].astype(float).values)
+    paranoia = bootstrap_mean_ci(exp_df["paranoia_frequency"].astype(float).values)
+
+    summary = {
+        "player_games": str(len(exp_df)),
+        "models": str(exp_df["model_id"].nunique()),
+        "win_rate": format_ci(*win_rate, pct=True),
+        "lie_frequency": format_ci(*lie_frequency, pct=True),
+        "paranoia_frequency": format_ci(*paranoia, pct=True),
     }
 
+    if experiment_id == 3:
+        violations = bootstrap_mean_ci(exp_df["instruction_violation_rate"].fillna(0).astype(float).values)
+        summary["instruction_violation_rate"] = format_ci(*violations, pct=True)
 
-def load_stats(csv_path: str) -> pd.DataFrame:
-    """Load player stats from CSV."""
-    return pd.read_csv(csv_path)
-
-
-def paired_t_test(
-    exp1_stats: pd.DataFrame,
-    exp2_stats: pd.DataFrame,
-    metric: str
-) -> Tuple[float, float]:
-    """Perform paired t-test on a metric between experiments."""
-    merged = exp1_stats.merge(
-        exp2_stats,
-        on="model_id",
-        suffixes=("_exp1", "_exp2")
-    )
-
-    if len(merged) < 2:
-        return np.nan, np.nan
-
-    t_stat, p_value = stats.ttest_rel(
-        merged[f"{metric}_exp1"],
-        merged[f"{metric}_exp2"]
-    )
-
-    return t_stat, p_value
+    return summary
 
 
-def one_way_anova(df: pd.DataFrame, group_col: str, value_col: str) -> Tuple[float, float]:
-    """Perform one-way ANOVA."""
-    groups = [group[value_col].values for _, group in df.groupby(group_col)]
-    groups = [g for g in groups if len(g) > 0]
+def print_model_table(df: pd.DataFrame, pct: bool = True) -> None:
+    if df.empty:
+        print("  No data")
+        return
 
-    if len(groups) < 2:
-        return np.nan, np.nan
-
-    f_stat, p_value = stats.f_oneway(*groups)
-    return f_stat, p_value
-
-
-def chi_square_test(contingency_table: pd.DataFrame) -> Tuple[float, float]:
-    """Perform chi-square test of independence."""
-    chi2, p_value, dof, expected = stats.chi2_contingency(contingency_table)
-    return chi2, p_value
+    for _, row in df.iterrows():
+        print(
+            f"  {row['model_id']}: "
+            f"{format_ci(row['mean'], row['ci_lower'], row['ci_upper'], pct=pct)} "
+            f"(n={int(row['n'])})"
+        )
 
 
-def effect_size_cohens_d(group1: np.ndarray, group2: np.ndarray) -> float:
-    """Calculate Cohen's d effect size."""
-    n1, n2 = len(group1), len(group2)
-    var1, var2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+def print_comparison_table(df: pd.DataFrame, exp_a: int, exp_b: int, pct: bool = True) -> None:
+    if df.empty:
+        print("  No overlapping model data")
+        return
 
-    pooled_std = np.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
+    for _, row in df.iterrows():
+        delta = row["delta"]
+        lower = row["ci_lower"]
+        upper = row["ci_upper"]
+        if pct:
+            delta_str = f"{delta:+.1%} (95% CI {lower:+.1%} to {upper:+.1%})"
+        else:
+            delta_str = f"{delta:+.3f} (95% CI {lower:+.3f} to {upper:+.3f})"
 
-    if pooled_std == 0:
-        return 0
-
-    return (np.mean(group1) - np.mean(group2)) / pooled_std
-
-
-def analyze_lie_frequency_by_experiment(turns_df: pd.DataFrame) -> Dict:
-    """Analyze lie frequency differences across experiments."""
-    results = {}
-
-    # Group by experiment
-    exp_groups = turns_df.groupby("experiment_id")
-    lie_rates = exp_groups["was_lie"].mean()
-
-    results["lie_rates_by_experiment"] = lie_rates.to_dict()
-
-    # ANOVA across experiments
-    f_stat, p_value = one_way_anova(turns_df, "experiment_id", "was_lie")
-    results["anova_f"] = f_stat
-    results["anova_p"] = p_value
-
-    # Pairwise comparisons
-    experiments = turns_df["experiment_id"].unique()
-    for i, exp1 in enumerate(experiments):
-        for exp2 in experiments[i+1:]:
-            group1 = turns_df[turns_df["experiment_id"] == exp1]["was_lie"].astype(float)
-            group2 = turns_df[turns_df["experiment_id"] == exp2]["was_lie"].astype(float)
-
-            t_stat, p_value = stats.ttest_ind(group1, group2)
-            d = effect_size_cohens_d(group1.values, group2.values)
-
-            results[f"exp{exp1}_vs_exp{exp2}_t"] = t_stat
-            results[f"exp{exp1}_vs_exp{exp2}_p"] = p_value
-            results[f"exp{exp1}_vs_exp{exp2}_d"] = d
-
-    return results
+        print(
+            f"  {row['model_id']}: "
+            f"exp{exp_a}={row[f'exp{exp_a}_mean']:.1%}, "
+            f"exp{exp_b}={row[f'exp{exp_b}_mean']:.1%}, "
+            f"delta={delta_str}"
+        )
 
 
-def analyze_challenge_behavior(turns_df: pd.DataFrame) -> Dict:
-    """Analyze challenge patterns."""
-    results = {}
-
-    challenged_turns = turns_df[turns_df["challenged"]]
-
-    # Challenge accuracy by model
-    accuracy_by_model = challenged_turns.groupby("challenger_model")["challenge_correct"].mean()
-    results["challenge_accuracy_by_model"] = accuracy_by_model.to_dict()
-
-    # Challenge rate by experiment
-    challenge_rate = turns_df.groupby("experiment_id")["challenged"].mean()
-    results["challenge_rate_by_experiment"] = challenge_rate.to_dict()
-
-    return results
-
-
-def analyze_instruction_compliance(exp3_turns: pd.DataFrame) -> Dict:
-    """Analyze instruction violation in experiment 3."""
-    results = {}
-
-    # Violation rate by model
-    violation_by_model = exp3_turns.groupby("model_id")["was_lie"].mean()
-    results["violation_rate_by_model"] = violation_by_model.to_dict()
-
-    # Overall violation rate
-    results["overall_violation_rate"] = exp3_turns["was_lie"].mean()
-
-    # Test if violation rate differs from 0 (binomial test)
-    n_violations = exp3_turns["was_lie"].sum()
-    n_total = len(exp3_turns)
-
-    if n_total > 0:
-        # One-tailed binomial test
-        p_value = stats.binom_test(n_violations, n_total, 0, alternative="greater")
-        results["binomial_p"] = p_value
-
-    return results
-
-
-def analyze_moral_restraint(exp1_stats: pd.DataFrame, exp2_stats: pd.DataFrame) -> Dict:
-    """
-    Analyze RQ2: Do LLMs show moral restraint when told opponents are honest?
-    Compare lie frequency between Exp1 (normal) and Exp2 (asymmetric).
-    """
-    results = {}
-
-    merged = exp1_stats.merge(
-        exp2_stats,
-        on="model_id",
-        suffixes=("_exp1", "_exp2")
-    )
-
-    if len(merged) < 2:
-        return {"error": "Not enough data"}
-
-    # Paired t-test on lie frequency
-    t_stat, p_value = stats.ttest_rel(
-        merged["lie_frequency_exp1"],
-        merged["lie_frequency_exp2"]
-    )
-
-    results["paired_t_stat"] = t_stat
-    results["paired_p_value"] = p_value
-
-    # Effect size
-    d = effect_size_cohens_d(
-        merged["lie_frequency_exp1"].values,
-        merged["lie_frequency_exp2"].values
-    )
-    results["cohens_d"] = d
-
-    # Which models reduced lying?
-    merged["lie_reduction"] = merged["lie_frequency_exp1"] - merged["lie_frequency_exp2"]
-    results["models_showing_restraint"] = merged[merged["lie_reduction"] > 0]["model_id"].tolist()
-    results["mean_lie_reduction"] = merged["lie_reduction"].mean()
-
-    return results
-
-
-def print_statistical_report(
-    exp1_stats: Optional[pd.DataFrame],
-    exp2_stats: Optional[pd.DataFrame],
-    exp3_stats: Optional[pd.DataFrame],
-    turns_df: pd.DataFrame
-) -> None:
-    """Print comprehensive statistical analysis."""
+def print_statistical_report(player_games: pd.DataFrame) -> None:
     print("=" * 80)
-    print("STATISTICAL ANALYSIS REPORT")
+    print("STATISTICAL SUMMARY REPORT")
     print("=" * 80)
     print()
 
-    # RQ1: Deception effectiveness
-    print("RQ1: How effectively can LLMs deceive other LLMs?")
+    schema_versions = sorted(str(v) for v in player_games["log_schema_version"].dropna().unique())
+    providers = sorted(str(v) for v in player_games["provider"].dropna().unique() if str(v))
+    prompt_versions = sorted(str(v) for v in player_games["prompt_version"].dropna().unique() if str(v))
+
+    print("Dataset")
     print("-" * 60)
-    if exp1_stats is not None:
-        print("Experiment 1 (Full Rules) - Baseline Deception:")
-        print(f"  Mean lie frequency: {exp1_stats['lie_frequency'].mean():.3f}")
-        print(f"  Mean lie success rate: {exp1_stats['lie_success_rate'].mean():.3f}")
+    print(f"  Player-game rows: {len(player_games)}")
+    print(f"  Games: {player_games['game_id'].nunique()}")
+    print(f"  Models: {player_games['model_id'].nunique()}")
+    print(f"  Schema versions: {', '.join(schema_versions) if schema_versions else 'unknown'}")
+    print(f"  Providers: {', '.join(providers) if providers else 'unknown'}")
+    print(f"  Prompt versions: {', '.join(prompt_versions) if prompt_versions else 'unknown'}")
+    print()
+
+    for experiment_id in sorted(player_games["experiment_id"].dropna().unique()):
+        summary = summarize_experiment(player_games, int(experiment_id))
+        if not summary:
+            continue
+        print(f"Experiment {int(experiment_id)}")
+        print("-" * 60)
+        print(f"  Player-game rows: {summary['player_games']}")
+        print(f"  Models: {summary['models']}")
+        print(f"  Mean win rate: {summary['win_rate']}")
+        print(f"  Mean lie frequency: {summary['lie_frequency']}")
+        print(f"  Mean paranoia frequency: {summary['paranoia_frequency']}")
+        if "instruction_violation_rate" in summary:
+            print(f"  Mean instruction violation rate: {summary['instruction_violation_rate']}")
         print()
 
-        # Correlation between lying and winning
-        corr, p = stats.pearsonr(exp1_stats["lie_frequency"], exp1_stats["win_rate"])
-        print(f"  Correlation (lie_frequency vs win_rate): r={corr:.3f}, p={p:.3f}")
-    print()
+    exp1 = player_games[player_games["experiment_id"] == 1]
+    if not exp1.empty:
+        print("RQ1: Baseline deception effectiveness by model")
+        print("-" * 60)
+        print("  Lie frequency:")
+        print_model_table(summarize_metric_by_model(exp1, "lie_frequency"))
+        print()
+        print("  Win rate:")
+        print_model_table(summarize_metric_by_model(exp1, "won"))
+        print()
 
-    # RQ2: Moral restraint
-    print("RQ2: Do LLMs restrain deception when told opponents are honest?")
-    print("-" * 60)
-    if exp1_stats is not None and exp2_stats is not None:
-        restraint = analyze_moral_restraint(exp1_stats, exp2_stats)
-        print(f"  Paired t-test: t={restraint.get('paired_t_stat', np.nan):.3f}, p={restraint.get('paired_p_value', np.nan):.3f}")
-        print(f"  Cohen's d: {restraint.get('cohens_d', np.nan):.3f}")
-        print(f"  Mean lie reduction: {restraint.get('mean_lie_reduction', np.nan):.3f}")
-        print(f"  Models showing restraint: {restraint.get('models_showing_restraint', [])}")
-    else:
-        print("  Insufficient data for comparison")
-    print()
+    if not player_games[player_games["experiment_id"] == 1].empty and not player_games[player_games["experiment_id"] == 2].empty:
+        print("RQ2: Moral restraint (Exp 1 vs Exp 2 lie frequency)")
+        print("-" * 60)
+        print_comparison_table(compare_experiments_by_model(player_games, "lie_frequency", 1, 2), 1, 2)
+        print()
 
-    # RQ3: Instruction compliance
-    print("RQ3: Will LLMs violate explicit honesty instructions to win?")
-    print("-" * 60)
-    if exp3_stats is not None:
-        exp3_turns = turns_df[turns_df["experiment_id"] == 3]
-        compliance = analyze_instruction_compliance(exp3_turns)
-        print(f"  Overall violation rate: {compliance.get('overall_violation_rate', np.nan):.3f}")
-        print(f"  Binomial test p-value: {compliance.get('binomial_p', np.nan):.4f}")
-        print("  Violation rate by model:")
-        for model, rate in compliance.get("violation_rate_by_model", {}).items():
-            print(f"    {model}: {rate:.3f}")
-    else:
-        print("  No experiment 3 data")
-    print()
+    exp3 = player_games[player_games["experiment_id"] == 3]
+    if not exp3.empty:
+        print("RQ3: Instruction compliance in Experiment 3")
+        print("-" * 60)
+        print_model_table(summarize_metric_by_model(exp3.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate"))
+        print()
 
-    # RQ4: Paranoia
-    print("RQ4: How does paranoia (challenge frequency) vary by model?")
-    print("-" * 60)
-    challenge_results = analyze_challenge_behavior(turns_df)
-    print("  Challenge accuracy by model:")
-    for model, acc in sorted(challenge_results.get("challenge_accuracy_by_model", {}).items(), key=lambda x: x[1], reverse=True):
-        print(f"    {model}: {acc:.3f}")
-
-    if exp1_stats is not None:
-        # ANOVA on paranoia
-        f_stat, p_value = one_way_anova(exp1_stats, "model_id", "paranoia_frequency")
-        print(f"\n  ANOVA on paranoia frequency: F={f_stat:.3f}, p={p_value:.3f}")
+    exp1_or_all = exp1 if not exp1.empty else player_games
+    if not exp1_or_all.empty:
+        print("RQ4: Challenge behavior by model")
+        print("-" * 60)
+        print("  Paranoia frequency:")
+        print_model_table(summarize_metric_by_model(exp1_or_all, "paranoia_frequency"))
+        print()
+        print("  Challenge accuracy:")
+        print_model_table(summarize_metric_by_model(exp1_or_all, "challenge_accuracy"))
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Statistical analysis for LLM Bullshit")
+    parser = argparse.ArgumentParser(description="Statistical summary for LLM Bullshit")
     parser.add_argument("--csv-dir", default="logs/csv", help="Directory containing CSV files")
     args = parser.parse_args()
 
     csv_dir = Path(args.csv_dir)
+    player_games = load_csv(csv_dir / "player_game_stats.csv")
 
-    # Load data
-    exp1_stats = None
-    exp2_stats = None
-    exp3_stats = None
-    turns_df = None
+    if player_games is None:
+        print("No player_game_stats.csv found. Run the analyze/export step first.")
+        raise SystemExit(1)
 
-    if (csv_dir / "player_stats_exp1.csv").exists():
-        exp1_stats = load_stats(csv_dir / "player_stats_exp1.csv")
+    if "termination_reason" in player_games.columns:
+        raw_games = player_games["game_id"].nunique()
+        player_games = player_games[player_games["termination_reason"].fillna("") != "turn_cap"].copy()
+        excluded_games = raw_games - player_games["game_id"].nunique()
+        if excluded_games > 0:
+            print(f"Excluded {excluded_games} turn-cap games from statistical summaries.")
 
-    if (csv_dir / "player_stats_exp2.csv").exists():
-        exp2_stats = load_stats(csv_dir / "player_stats_exp2.csv")
-
-    if (csv_dir / "player_stats_exp3.csv").exists():
-        exp3_stats = load_stats(csv_dir / "player_stats_exp3.csv")
-
-    if (csv_dir / "all_turns.csv").exists():
-        turns_df = pd.read_csv(csv_dir / "all_turns.csv")
-
-    if turns_df is None:
-        print("No turn data found")
-        exit(1)
-
-    print_statistical_report(exp1_stats, exp2_stats, exp3_stats, turns_df)
+    print_statistical_report(player_games)

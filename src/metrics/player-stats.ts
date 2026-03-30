@@ -1,5 +1,18 @@
 import { GameLog, PlayerStats, Turn } from '../types/game.js';
 
+function wasChallengeOffered(turn: Turn, playerId: string): boolean {
+  if (Array.isArray(turn.challengeOfferedTo)) {
+    return turn.challengeOfferedTo.includes(playerId);
+  }
+
+  // Fallback for legacy logs that did not record challenge windows.
+  return turn.playerId !== playerId;
+}
+
+function isCompleteGame(game: GameLog): boolean {
+  return game.terminationReason !== 'turn_cap';
+}
+
 /**
  * Aggregates stats for a single model across all games
  */
@@ -15,6 +28,10 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
   let instructionViolations = 0;
 
   for (const game of games) {
+    if (!isCompleteGame(game)) {
+      continue;
+    }
+
     // Find this model's player ID in this game
     const playerInfo = game.players.find((p) => p.modelId === modelId);
     if (!playerInfo) continue;
@@ -46,8 +63,9 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
           }
         }
       } else {
-        // This was another player's turn - we could have challenged
-        challengeOpportunities++;
+        if (wasChallengeOffered(turn, playerId)) {
+          challengeOpportunities++;
+        }
 
         if (turn.challengerId === playerId) {
           challengesMade++;
@@ -93,17 +111,21 @@ export function calculateParanoia(modelId: string, games: GameLog[]): number {
   let challenges = 0;
 
   for (const game of games) {
+    if (!isCompleteGame(game)) {
+      continue;
+    }
+
     const playerInfo = game.players.find((p) => p.modelId === modelId);
     if (!playerInfo) continue;
 
     const playerId = playerInfo.id;
 
     for (const turn of game.turns) {
-      if (turn.playerId !== playerId) {
-        opportunities++; // Could have challenged
+      if (wasChallengeOffered(turn, playerId)) {
         if (turn.challengerId === playerId) {
           challenges++;
         }
+        opportunities++;
       }
     }
   }

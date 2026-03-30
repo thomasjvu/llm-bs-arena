@@ -435,8 +435,28 @@ window.ModelThemes = (() => {
     'minimax/MiniMax-M2.1-8B-Instruct': 'minimax'
   };
 
+  const modelAliases = {
+    'qwen/qwen3.5-397b-a17b': 'Qwen/Qwen3-Next-80B-A3B-Instruct',
+    'minimaxai/minimax-m2.5': 'Qwen/Qwen3-32B',
+    'nvidia/nemotron-3-super-120b-a12b': 'Qwen/Qwen2.5-72B-Instruct',
+    'mistralai/mistral-small-4-119b-2603': 'chutesai/Mistral-Small-3.2-24B-Instruct-2506',
+    'z-ai/glm5': 'THUDM/GLM-4-32B',
+    'moonshotai/kimi-k2.5': 'moonshotai/Kimi-K2-Instruct',
+    'google/gemma-2-27b-it': 'unsloth/gemma-3-27b-it',
+    'moonshotai/kimi-k2-instruct': 'moonshotai/Kimi-K2-Instruct',
+    'qwen/qwen3-next-80b-a3b-instruct': 'Qwen/Qwen3-Next-80B-A3B-Instruct',
+    'mistralai/mistral-small-24b-instruct': 'chutesai/Mistral-Small-3.2-24B-Instruct-2506',
+    'deepseek-ai/deepseek-v3.2': 'deepseek/DeepSeek-V3-base',
+    'z-ai/glm4.7': 'THUDM/GLM-4-32B',
+    'NousResearch/Hermes-4.3-36B': 'nousresearch/Hermes-4.3-36B',
+  };
+
+  function resolveModelId(modelId) {
+    return modelAliases[modelId] || modelId;
+  }
+
   function getCharacterImageForState(modelId, state, cacheBust = null) {
-    const folder = imageFolders[modelId] || 'mistral';
+    const folder = imageFolders[resolveModelId(modelId)] || 'mistral';
     
     const isMinimax = folder === 'minimax';
     
@@ -489,7 +509,7 @@ window.ModelThemes = (() => {
 
   return {
     getTheme(modelId) {
-      return themes[modelId] || defaultTheme;
+      return themes[resolveModelId(modelId)] || defaultTheme;
     },
     getDefault() {
       return defaultTheme;
@@ -499,11 +519,11 @@ window.ModelThemes = (() => {
       return getCharacterImageForState(modelId, state, cacheBust);
     },
     getThumbnail(modelId) {
-      const folder = imageFolders[modelId] || 'mistral';
+      const folder = imageFolders[resolveModelId(modelId)] || 'mistral';
       return `/images/${folder}/llms_${folder}_default.png`;
     },
     getFolder(modelId) {
-      return imageFolders[modelId] || 'mistral';
+      return imageFolders[resolveModelId(modelId)] || 'mistral';
     }
   };
 })();

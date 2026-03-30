@@ -5,12 +5,14 @@ import * as url from 'url';
 import { GameState, ExperimentId, MODELS, Card, Turn } from './types/game.js';
 import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame, getNextRank } from './engine/game-state.js';
 import { TurnManager, LLMAdapter } from './engine/turn-manager.js';
-import { FeatherlessLLMAdapter, ChutesLLMAdapter, MockLLMAdapter } from './llm/llm-adapter.js';
-import { createFeatherlessClient, APIConnectionError } from './llm/featherless-api.js';
-import { createChutesClient } from './llm/chutes-api.js';
-import { GameLogger } from './logging/game-logger.js';
+import { MockLLMAdapter } from './llm/llm-adapter.js';
+import { APIConnectionError as FeatherlessAPIConnectionError } from './llm/featherless-api.js';
+import { APIConnectionError as ChutesAPIConnectionError } from './llm/chutes-api.js';
+import { APIConnectionError as NimAPIConnectionError } from './llm/nim-api.js';
+import { buildRunMetadata, detectProvider, createAdapter as createProviderAdapter, getProviderDisplayName, Provider } from './llm/provider.js';
+import { GameLogger, selectComparableGameCohort } from './logging/game-logger.js';
 import { calculateAllStats } from './metrics/player-stats.js';
-import { parseCard } from './engine/deck.js';
+import { normalizePlaySelection } from './engine/play-rules.js';
 
 const PORT = 3001;
 const UI_DIR = path.join(process.cwd(), 'ui');
@@ -39,41 +41,27 @@ const mimeTypes: Record<string, string> = {
   '.json': 'application/json',
 };
 
-// Determine provider from environment
-function getProvider(): 'chutes' | 'featherless' | 'mock' {
-  if (process.env.LLM_PROVIDER === 'mock') return 'mock';
-  if (process.env.LLM_PROVIDER === 'featherless' && process.env.FEATHERLESS_API_KEY) return 'featherless';
-  if (process.env.LLM_PROVIDER === 'chutes' && process.env.CHUTES_API_TOKEN) return 'chutes';
-  if (process.env.CHUTES_API_TOKEN && process.env.FEATHERLESS_API_KEY) {
-    console.warn('[server] Both CHUTES_API_TOKEN and FEATHERLESS_API_KEY are set. Ignoring LLM_PROVIDER, using CHUTES_API_TOKEN. Set LLM_PROVIDER=featherless to override.');
-    return 'chutes';
-  }
-  if (process.env.CHUTES_API_TOKEN) return 'chutes';
-  if (process.env.FEATHERLESS_API_KEY) return 'featherless';
-  return 'mock';
+function getProvider(): Provider {
+  return detectProvider();
 }
 
 // Create LLM adapter
 function createAdapter(): LLMAdapter {
   const provider = getProvider();
-  
-  switch (provider) {
-    case 'mock':
-      console.log('[server] Using mock LLM adapter');
-      return new MockLLMAdapter(0.4, 0.25);
-    case 'chutes':
-      console.log('[server] Using Chutes API provider');
-      return new ChutesLLMAdapter(createChutesClient());
-    case 'featherless':
-      console.log('[server] Using Featherless API provider');
-      return new FeatherlessLLMAdapter(createFeatherlessClient());
-    default:
-      console.log('[server] Using mock LLM adapter (no API key configured)');
-      return new MockLLMAdapter(0.4, 0.25);
+
+  if (provider === 'mock') {
+    console.log('[server] Using mock LLM adapter');
+    return new MockLLMAdapter(0.4, 0.25);
   }
+
+  return createProviderAdapter(provider);
 }
 
 const logger = new GameLogger(LOGS_DIR);
+
+function getModelsFromGames(games: { players: { modelId: string }[] }[]): string[] {
+  return [...new Set(games.flatMap((game) => game.players.map((player) => player.modelId)))].sort();
+}
 
 // Parse JSON body
 async function parseBody(req: http.IncomingMessage): Promise<any> {
@@ -228,6 +216,7 @@ async function handleStartGame(req: http.IncomingMessage, res: http.ServerRespon
   const adapter = createAdapter();
 
   const provider = getProvider();
+  state.metadata = buildRunMetadata(provider);
   console.log(`\n[game] New game ${gameId} (experiment ${experimentId}, adapter: ${provider.toUpperCase()})`);
   console.log(`[game] Players: ${players.join(', ')}`);
 
@@ -318,25 +307,21 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
       );
       console.log(`[step]   Response in ${Date.now() - startTime}ms — plays ${playResponse.cards_to_play.join(', ')} (claims ${playResponse.claim_count})`);
 
-      // Parse cards
-      const actualCards: Card[] = [];
-      for (const cardStr of playResponse.cards_to_play) {
-        const parsed = parseCard(cardStr);
-        if (parsed && currentPlayer.hand.some(c => c.rank === parsed.rank && c.suit === parsed.suit)) {
-          actualCards.push(parsed);
-        }
-      }
-      if (actualCards.length === 0 && currentPlayer.hand.length > 0) {
-        console.log(`[step]   WARNING: No valid cards parsed from response, using fallback card`);
-        actualCards.push(currentPlayer.hand[0]);
+      const normalizedPlay = normalizePlaySelection(
+        playResponse.cards_to_play,
+        currentPlayer.hand,
+        playResponse.claim_count
+      );
+      for (const note of normalizedPlay.notes) {
+        console.log(`[step]   WARNING: ${note}`);
       }
 
       // Process the play
       const turn = processPlay(
         game.state,
         currentPlayer.id,
-        actualCards,
-        playResponse.claim_count || actualCards.length,
+        normalizedPlay.actualCards,
+        normalizedPlay.claimedCount,
         playResponse.reasoning
       );
 
@@ -378,6 +363,8 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
         const challengerId = game.challengeQueue.shift()!;
         const challenger = game.state.players.find(p => p.id === challengerId)!;
         const currentPlayer = getCurrentPlayer(game.state);
+        game.pendingTurn.challengeOfferedTo ??= [];
+        game.pendingTurn.challengeOfferedTo.push(challenger.id);
 
         console.log(`[step]   Asking ${challenger.modelId} whether to challenge...`);
         if (stream) sendSSE(res, 'thinking', { playerId: challenger.id, modelId: challenger.modelId, type: 'challenge' });
@@ -453,7 +440,9 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     
     // Check if this is a connection error that requires adapter reset
     const errorStr = String(error);
-    const isConnectionError = error instanceof APIConnectionError ||
+    const isConnectionError = error instanceof FeatherlessAPIConnectionError ||
+                              error instanceof ChutesAPIConnectionError ||
+                              error instanceof NimAPIConnectionError ||
                               errorStr.includes('API connection unstable') ||
                               errorStr.includes('TimeoutError') ||
                               errorStr.includes('terminated');
@@ -541,23 +530,20 @@ async function handleNextStepInternal(game: ActiveGame) {
     );
     console.log(`[auto]   Play response in ${Date.now() - startTime}ms`);
 
-    const actualCards: Card[] = [];
-    for (const cardStr of playResponse.cards_to_play) {
-      const parsed = parseCard(cardStr);
-      if (parsed && currentPlayer.hand.some(c => c.rank === parsed.rank && c.suit === parsed.suit)) {
-        actualCards.push(parsed);
-      }
-    }
-    if (actualCards.length === 0 && currentPlayer.hand.length > 0) {
-      console.log(`[auto]   WARNING: No valid cards parsed, using fallback`);
-      actualCards.push(currentPlayer.hand[0]);
+    const normalizedPlay = normalizePlaySelection(
+      playResponse.cards_to_play,
+      currentPlayer.hand,
+      playResponse.claim_count
+    );
+    for (const note of normalizedPlay.notes) {
+      console.log(`[auto]   WARNING: ${note}`);
     }
 
     const turn = processPlay(
       game.state,
       currentPlayer.id,
-      actualCards,
-      playResponse.claim_count || actualCards.length,
+      normalizedPlay.actualCards,
+      normalizedPlay.claimedCount,
       playResponse.reasoning
     );
     turn.playResponseTimeMs = playResponse.responseTimeMs;
@@ -574,6 +560,8 @@ async function handleNextStepInternal(game: ActiveGame) {
     const challengerId = game.challengeQueue.shift()!;
     const challenger = game.state.players.find(p => p.id === challengerId)!;
     const currentPlayer = getCurrentPlayer(game.state);
+    game.pendingTurn.challengeOfferedTo ??= [];
+    game.pendingTurn.challengeOfferedTo.push(challenger.id);
 
     console.log(`[auto]   Asking ${challenger.modelId} to challenge...`);
 
@@ -660,7 +648,9 @@ function handleGetGame(res: http.ServerResponse, gameId: string) {
 function handleGetStats(res: http.ServerResponse, experiment?: string) {
   try {
     const expId = experiment ? parseInt(experiment) : undefined;
-    const games = logger.loadAllLogs(expId);
+    const rawGames = logger.loadAllLogs(expId);
+    const selection = selectComparableGameCohort(rawGames);
+    const games = selection.games;
     const counts = logger.getGameCounts();
 
     if (games.length === 0) {
@@ -676,12 +666,14 @@ function handleGetStats(res: http.ServerResponse, experiment?: string) {
       return;
     }
 
-    const stats = calculateAllStats([...MODELS], games, expId);
+    const stats = calculateAllStats(getModelsFromGames(games), games, expId);
     const statsObj: Record<string, any> = {};
     stats.forEach((v, k) => statsObj[k] = v);
 
     sendJSON(res, {
       stats: statsObj,
+      cohort: selection.cohort,
+      excludedGames: selection.excludedGames,
       counts: { ...counts, total: Object.values(counts).reduce((a, b) => a + b, 0) },
     });
   } catch (e) {
@@ -755,7 +747,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   const provider = getProvider();
-  const modeDisplay = provider === 'mock' ? 'Mock LLM' : provider === 'chutes' ? 'Chutes API' : 'Featherless API';
+  const modeDisplay = getProviderDisplayName(provider);
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║         🃏 LLM Bullshit - Game Visualizer 🃏          ║

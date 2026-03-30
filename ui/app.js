@@ -470,8 +470,17 @@ const winnerName = document.getElementById('winner-name');
 const thoughtModal = document.getElementById('thought-modal');
 const logToggleBtn = document.getElementById('log-toggle-btn');
 const logCloseBtn = document.getElementById('log-close-btn');
+const statsModal = document.getElementById('stats-modal');
+const statsToggleBtn = document.getElementById('stats-toggle-btn');
+const statsCloseBtn = document.getElementById('stats-close-btn');
+const statsRefreshBtn = document.getElementById('stats-refresh-btn');
+const statsMeta = document.getElementById('stats-meta');
+const statsBody = document.getElementById('stats-body');
+const statsEmpty = document.getElementById('stats-empty');
+const statsTableWrap = document.getElementById('stats-table-wrap');
 const roundNumberDisplay = document.getElementById('round-number');
 const turnQueueDisplay = document.getElementById('turn-queue');
+let statsRefreshTimer = null;
 
 // ─── Theme Application ──────────────────────────────────────────────
 
@@ -844,6 +853,119 @@ logToggleBtn.addEventListener('click', () => {
 logCloseBtn.addEventListener('click', () => {
   thoughtModal.classList.add('drawer-hidden');
 });
+statsToggleBtn.addEventListener('click', () => {
+  const willOpen = statsModal.classList.contains('drawer-hidden');
+  statsModal.classList.toggle('drawer-hidden');
+  if (willOpen) {
+    refreshLeaderboard();
+    startStatsAutoRefresh();
+  } else {
+    stopStatsAutoRefresh();
+  }
+});
+statsCloseBtn.addEventListener('click', () => {
+  statsModal.classList.add('drawer-hidden');
+  stopStatsAutoRefresh();
+});
+statsRefreshBtn.addEventListener('click', () => {
+  refreshLeaderboard();
+});
+experimentSelect.addEventListener('change', () => {
+  if (!statsModal.classList.contains('drawer-hidden')) {
+    refreshLeaderboard();
+  }
+});
+
+function startStatsAutoRefresh() {
+  stopStatsAutoRefresh();
+  statsRefreshTimer = setInterval(() => {
+    if (!statsModal.classList.contains('drawer-hidden')) {
+      refreshLeaderboard();
+    }
+  }, 15000);
+}
+
+function stopStatsAutoRefresh() {
+  if (statsRefreshTimer) {
+    clearInterval(statsRefreshTimer);
+    statsRefreshTimer = null;
+  }
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return '0.0%';
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function buildLeaderboardRows(statsObj) {
+  return Object.values(statsObj || {}).sort((a, b) => {
+    if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    if (b.challengeAccuracy !== a.challengeAccuracy) return b.challengeAccuracy - a.challengeAccuracy;
+    return b.lieSuccessRate - a.lieSuccessRate;
+  });
+}
+
+async function refreshLeaderboard() {
+  const experimentId = experimentSelect.value;
+  statsMeta.textContent = `loading experiment ${experimentId} leaderboard...`;
+  statsEmpty.style.display = 'block';
+  statsTableWrap.style.display = 'none';
+
+  try {
+    const response = await fetch(`${API_BASE}/stats?experiment=${experimentId}`);
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      throw new Error(data.error || 'Failed to load stats');
+    }
+
+    const rows = buildLeaderboardRows(data.stats);
+    const completedGames = data.counts?.[experimentId] ?? 0;
+    const cohortText = data.cohort
+      ? `schema v${data.cohort.schemaVersion} • ${data.cohort.provider} • ${data.cohort.promptVersion}`
+      : 'no comparable cohort yet';
+    const excludedText = data.excludedGames ? ` • excluded ${data.excludedGames} mixed games` : '';
+    statsMeta.textContent = `exp ${experimentId} • ${completedGames} completed games • ${cohortText}${excludedText}`;
+
+    if (rows.length === 0) {
+      statsEmpty.textContent = `no completed games for experiment ${experimentId} yet`;
+      statsEmpty.style.display = 'block';
+      statsTableWrap.style.display = 'none';
+      return;
+    }
+
+    statsBody.innerHTML = rows.map((stat, index) => {
+      const theme = window.ModelThemes.getTheme(stat.modelId);
+      return `
+        <tr>
+          <td class="stats-rank">#${index + 1}</td>
+          <td>
+            <div class="stats-model">
+              <span class="stats-dot" style="background:${theme.accent};"></span>
+              <span class="stats-model-name">${shortenModelName(stat.modelId)}</span>
+            </div>
+          </td>
+          <td>${formatPercent(stat.winRate)}</td>
+          <td>${stat.wins}/${stat.gamesPlayed}</td>
+          <td>${formatPercent(stat.lieFrequency)}</td>
+          <td>${formatPercent(stat.lieSuccessRate)}</td>
+          <td>${formatPercent(stat.paranoiaFrequency)}</td>
+          <td>${formatPercent(stat.challengeAccuracy)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    statsEmpty.style.display = 'none';
+    statsTableWrap.style.display = 'block';
+  } catch (error) {
+    console.error('Failed to load leaderboard:', error);
+    statsMeta.textContent = 'leaderboard unavailable';
+    statsEmpty.textContent = `failed to load stats: ${error.message}`;
+    statsEmpty.style.display = 'block';
+    statsTableWrap.style.display = 'none';
+  }
+}
 
 async function startNewGame() {
   const experimentId = parseInt(experimentSelect.value);

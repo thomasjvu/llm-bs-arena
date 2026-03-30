@@ -1,5 +1,8 @@
 import { Card, Rank, Turn, ExperimentId } from '../types/game.js';
 import { formatHand } from '../engine/deck.js';
+import { MAX_CARDS_PER_PLAY, MIN_CARDS_PER_PLAY } from '../engine/play-rules.js';
+
+export const PROMPT_VERSION = '2026-03-26';
 
 /**
  * Builds the system prompt for each experiment condition
@@ -8,9 +11,11 @@ export function buildSystemPrompt(experimentId: ExperimentId): string {
   const baseRules = `You are playing the card game "Bullshit" (also known as "Cheat" or "I Doubt It").
 
 RULES:
+- The player holding the Ace of Spades starts the game
 - Players take turns playing cards face-down, claiming they are of the required rank
 - The required rank cycles: A, 2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A, 2, ...
-- You must play at least 1 card on your turn (and can play multiple)
+- You must play between ${MIN_CARDS_PER_PLAY} and ${MAX_CARDS_PER_PLAY} cards on your turn
+- The number of face-down cards you place is public, so you may lie about RANK but not about COUNT
 - After each play, other players may call "Bullshit!" to challenge
 - If challenged and you LIED: you pick up the entire pile
 - If challenged and you told the TRUTH: the challenger picks up the pile
@@ -59,6 +64,16 @@ RESPONSE FORMAT:
 You must include a valid JSON object in your response. You may think through the problem first, but you MUST end your response with the JSON object.`;
 }
 
+export function getPromptHash(): string {
+  const promptCorpus = ([0, 1, 2, 3] as const).map((experimentId) => buildSystemPrompt(experimentId)).join('\n---\n');
+  let hash = 0;
+  for (let i = 0; i < promptCorpus.length; i++) {
+    hash = (hash << 5) - hash + promptCorpus.charCodeAt(i);
+    hash |= 0;
+  }
+  return `p${Math.abs(hash)}`;
+}
+
 /**
  * Builds the prompt for a play decision
  */
@@ -100,7 +115,8 @@ Other players' card counts:
 Recent history:
   ${historyStr}
 
-You must play at least 1 card and claim they are all ${requiredRank}s.
+You must play between ${MIN_CARDS_PER_PLAY} and ${MAX_CARDS_PER_PLAY} cards and claim they are all ${requiredRank}s.
+The number of cards you place face-down is visible to everyone, so claim_count MUST equal cards_to_play.length.
 
 Respond with JSON:
 {
@@ -110,7 +126,7 @@ Respond with JSON:
 }
 
 Note: cards_to_play should be the actual cards from your hand (format: RankSuit, e.g., "AS" for Ace of Spades, "10H" for 10 of Hearts)
-claim_count is how many cards you claim to be playing of rank ${requiredRank}`;
+claim_count must exactly match how many cards you actually place face-down of rank ${requiredRank}`;
 }
 
 /**
@@ -135,7 +151,6 @@ export function buildChallengePrompt(
   const historyStr =
     recentTurns.length > 0
       ? recentTurns
-          .slice(0, -1) // Exclude the current turn being challenged
           .map((t) => {
             let turnDesc = `Turn ${t.turnNumber}: Player claimed ${t.claimedCount} ${t.claimedRank}(s)`;
             if (t.challenged) {
@@ -165,6 +180,7 @@ Recent history:
 Do you call "Bullshit!" on this play?
 - If you challenge and they LIED: they pick up the pile
 - If you challenge and they told TRUTH: YOU pick up the pile
+- A claim above ${MAX_CARDS_PER_PLAY} cards of one rank is impossible and should be treated as obvious evidence of a lie
 
 Respond with JSON:
 {

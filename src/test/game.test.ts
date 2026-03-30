@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createDeck, shuffleDeck, dealCards, parseCard, cardToString, countRank } from '../engine/deck.js';
 import {
   createGameState,
@@ -8,19 +8,21 @@ import {
   processChallenge,
   checkWinner,
 } from '../engine/game-state.js';
-import { combinations, generateMatchups } from '../tournament/matchup-generator.js';
+import { TurnManager, LLMAdapter } from '../engine/turn-manager.js';
+import { combinations, createTournamentConfig, generateMatchups, resolveMatchupShard, shuffleSeating } from '../tournament/matchup-generator.js';
+import { formatTournamentGameCompletion } from '../tournament/tournament-runner.js';
 import { calculatePlayerStats, calculateParanoia } from '../metrics/player-stats.js';
 import { parsePlayResponse, parseChallengeResponse, extractJSON } from '../llm/response-parser.js';
-import { RANKS, Card, GameLog, Turn } from '../types/game.js';
+import { MODELS, RANKS, Card, GameLog } from '../types/game.js';
+import { GameLogger, selectComparableGameCohort } from '../logging/game-logger.js';
+import { ResilientLLMAdapter } from '../llm/provider.js';
+import { APIConnectionError as NimAPIConnectionError, NimClient } from '../llm/nim-api.js';
+import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
 
 describe('Deck', () => {
-  it('should create a 52-card deck', () => {
+  it('should create a standard 52-card deck with 4 of each rank', () => {
     const deck = createDeck();
     expect(deck.length).toBe(52);
-  });
-
-  it('should have 4 of each rank', () => {
-    const deck = createDeck();
     for (const rank of RANKS) {
       const count = deck.filter((c) => c.rank === rank).length;
       expect(count).toBe(4);
@@ -49,19 +51,13 @@ describe('Deck', () => {
     }
   });
 
-  it('should parse card strings correctly', () => {
+  it('should parse, stringify, and count cards correctly', () => {
     expect(parseCard('AS')).toEqual({ rank: 'A', suit: 'S' });
     expect(parseCard('10H')).toEqual({ rank: '10', suit: 'H' });
     expect(parseCard('KD')).toEqual({ rank: 'K', suit: 'D' });
     expect(parseCard('invalid')).toBeNull();
-  });
-
-  it('should convert cards to strings', () => {
     expect(cardToString({ rank: 'A', suit: 'S' })).toBe('AS');
     expect(cardToString({ rank: '10', suit: 'H' })).toBe('10H');
-  });
-
-  it('should count cards of a rank', () => {
     const hand: Card[] = [
       { rank: 'A', suit: 'S' },
       { rank: 'A', suit: 'H' },
@@ -74,29 +70,43 @@ describe('Deck', () => {
 });
 
 describe('GameState', () => {
-  it('should create game state with 4 players', () => {
+  it('should create a valid initial game state', () => {
     const models = ['model1', 'model2', 'model3', 'model4'];
     const state = createGameState('test-game', 1, models);
 
     expect(state.players.length).toBe(4);
+    for (const player of state.players) {
+      expect(player.hand.length).toBe(13);
+    }
     expect(state.currentRank).toBe('A');
     expect(state.pile.length).toBe(0);
     expect(state.winner).toBeNull();
   });
 
-  it('should deal 13 cards to each player', () => {
+  it('should start with the player holding the Ace of Spades', () => {
     const models = ['model1', 'model2', 'model3', 'model4'];
-    const state = createGameState('test-game', 1, models);
+    const state = createGameState('test-game', 1, models, 42);
+    const startingPlayer = state.players[state.currentPlayerIndex];
 
-    for (const player of state.players) {
-      expect(player.hand.length).toBe(13);
-    }
+    expect(startingPlayer.hand.some((card) => card.rank === 'A' && card.suit === 'S')).toBe(true);
+    expect(state.currentRank).toBe('A');
   });
 
   it('should cycle ranks correctly', () => {
     expect(getNextRank('A')).toBe('2');
     expect(getNextRank('K')).toBe('A');
     expect(getNextRank('10')).toBe('J');
+  });
+
+  it('should deal deterministic hands with the same seed', () => {
+    const models = ['model1', 'model2', 'model3', 'model4'];
+    const stateA = createGameState('game-a', 1, models, 42);
+    const stateB = createGameState('game-b', 1, models, 42);
+
+    const handsA = stateA.players.map((player) => player.hand.map(cardToString));
+    const handsB = stateB.players.map((player) => player.hand.map(cardToString));
+
+    expect(handsA).toEqual(handsB);
   });
 
   it('should detect win when hand is empty', () => {
@@ -149,9 +159,356 @@ describe('GameState', () => {
       expect(state.pile.length).toBe(0);
     }
   });
+
+  it('should resolve challenge correctly when player told the truth', () => {
+    const models = ['model1', 'model2', 'model3', 'model4'];
+    const state = createGameState('test-game', 1, models, 42);
+    const player = state.players[0];
+    const challenger = state.players[1];
+    const truthfulCard = { rank: 'A', suit: 'S' } as const;
+
+    state.currentRank = 'A';
+    player.hand = [truthfulCard];
+    challenger.hand = [{ rank: 'K', suit: 'D' }];
+
+    const initialPlayerHand = player.hand.length;
+    const initialChallengerHand = challenger.hand.length;
+    const turn = processPlay(state, player.id, [truthfulCard], 1, 'Truthful play');
+
+    processChallenge(state, turn, challenger.id, 'Bad challenge');
+
+    expect(turn.wasLie).toBe(false);
+    expect(turn.challengeCorrect).toBe(false);
+    expect(player.hand.length).toBe(initialPlayerHand - 1);
+    expect(challenger.hand.length).toBe(initialChallengerHand + 1);
+    expect(state.pile.length).toBe(0);
+  });
+
+  it('should reject plays above the four-card maximum', () => {
+    const models = ['model1', 'model2', 'model3', 'model4'];
+    const state = createGameState('test-game', 1, models, 42);
+    const player = state.players[0];
+
+    player.hand = [
+      { rank: 'A', suit: 'S' },
+      { rank: '2', suit: 'S' },
+      { rank: '3', suit: 'S' },
+      { rank: '4', suit: 'S' },
+      { rank: '5', suit: 'S' },
+    ];
+
+    expect(() =>
+      processPlay(state, player.id, player.hand.slice(0, 5), 5, 'Impossible five-card dump')
+    ).toThrow(/between 1 and 4 cards/);
+  });
+
+  it('should reject claim counts that differ from the number of face-down cards', () => {
+    const models = ['model1', 'model2', 'model3', 'model4'];
+    const state = createGameState('test-game', 1, models, 42);
+    const player = state.players[0];
+
+    expect(() =>
+      processPlay(state, player.id, [player.hand[0]], 2, 'Count lies are not allowed')
+    ).toThrow(/Claimed count must match/);
+  });
+});
+
+describe('TurnManager', () => {
+  it('should run a complete game with a deterministic local adapter', async () => {
+    const adapter: LLMAdapter = {
+      async getPlayDecision(_playerId, _modelId, visibleState) {
+        const card = visibleState.hand[0];
+        return {
+          reasoning: 'Play the first available card.',
+          cards_to_play: [cardToString(card)],
+          claim_count: 1,
+        };
+      },
+      async getChallengeDecision() {
+        return {
+          reasoning: 'Never challenge in this scripted test.',
+          challenge: false,
+        };
+      },
+    };
+
+    const state = createGameState('integration-game', 1, ['m1', 'm2', 'm3', 'm4'], 99);
+    const turnManager = new TurnManager();
+    const finalState = await turnManager.runGame(state, adapter);
+
+    expect(finalState.winner).not.toBeNull();
+    expect(finalState.turns.length).toBeGreaterThan(0);
+    expect(finalState.turns.length).toBeLessThanOrEqual(52);
+    expect(finalState.turns.every((turn) => turn.challengeOfferedTo?.length === 3)).toBe(true);
+    expect(finalState.endTime).toBeDefined();
+    expect(finalState.terminationReason).toBe('winner');
+    expect(finalState.maxTurns).toBeUndefined();
+  });
+
+  it('should mark games that end due to the turn cap', async () => {
+    const adapter: LLMAdapter = {
+      async getPlayDecision() {
+        return {
+          reasoning: 'Always play the first card.',
+          cards_to_play: ['AS'],
+          claim_count: 1,
+        };
+      },
+      async getChallengeDecision() {
+        return {
+          reasoning: 'Never challenge.',
+          challenge: false,
+        };
+      },
+    };
+
+    const state = createGameState('turn-cap-game', 1, ['m1', 'm2', 'm3', 'm4'], 42);
+    const turnManager = new TurnManager({ maxTurns: 1 });
+    const finalState = await turnManager.runGame(state, adapter);
+
+    expect(finalState.turns.length).toBe(1);
+    expect(finalState.winner).toBeNull();
+    expect(finalState.terminationReason).toBe('turn_cap');
+    expect(finalState.maxTurns).toBe(1);
+    expect(finalState.endTime).toBeDefined();
+  });
+
+  it('should reject an invalid maxTurns value', () => {
+    expect(() => new TurnManager({ maxTurns: Number.NaN })).toThrow(/maxTurns/);
+  });
+
+  it('should normalize impossible model plays to a valid four-card move', async () => {
+    const adapter: LLMAdapter = {
+      async getPlayDecision(_playerId, _modelId, visibleState) {
+        return {
+          reasoning: 'Dump everything.',
+          cards_to_play: visibleState.hand.slice(0, 6).map(cardToString),
+          claim_count: 10,
+        };
+      },
+      async getChallengeDecision() {
+        return {
+          reasoning: 'Never challenge.',
+          challenge: false,
+        };
+      },
+    };
+
+    const state = createGameState('normalize-game', 1, ['m1', 'm2', 'm3', 'm4'], 42);
+    const currentPlayer = getCurrentPlayer(state);
+    currentPlayer.hand = [
+      { rank: 'A', suit: 'S' },
+      { rank: '2', suit: 'S' },
+      { rank: '3', suit: 'S' },
+      { rank: '4', suit: 'S' },
+      { rank: '5', suit: 'S' },
+      { rank: '6', suit: 'S' },
+    ];
+
+    const turnManager = new TurnManager({ maxTurns: 10 });
+    const turn = await turnManager.executeTurn(state, adapter);
+
+    expect(turn.actualCards.length).toBe(MAX_CARDS_PER_PLAY);
+    expect(turn.claimedCount).toBe(MAX_CARDS_PER_PLAY);
+  });
+});
+
+describe('Adapter Recovery', () => {
+  it('should recreate the adapter and retry a recoverable request once', async () => {
+    let factoryCalls = 0;
+
+    const resilient = new ResilientLLMAdapter(() => {
+      factoryCalls++;
+
+      if (factoryCalls === 1) {
+        return {
+          async getPlayDecision() {
+            throw new NimAPIConnectionError('temporary timeout');
+          },
+          async getChallengeDecision() {
+            return { reasoning: 'unused', challenge: false };
+          },
+        } satisfies LLMAdapter;
+      }
+
+      return {
+        async getPlayDecision() {
+          return {
+            reasoning: 'Recovered after adapter reset.',
+            cards_to_play: ['AS'],
+            claim_count: 1,
+          };
+        },
+        async getChallengeDecision() {
+          return { reasoning: 'unused', challenge: false };
+        },
+      } satisfies LLMAdapter;
+    }, 'TEST', 60_000, 1);
+
+    const response = await resilient.getPlayDecision(
+      'player_0',
+      'model-a',
+      {
+        hand: [{ rank: 'A', suit: 'S' }],
+        currentRank: 'A',
+        pileSize: 0,
+        otherPlayersCounts: {},
+        recentTurns: [],
+      },
+      1
+    );
+
+    expect(factoryCalls).toBe(2);
+    expect(response.cards_to_play).toEqual(['AS']);
+    expect(response.claim_count).toBe(1);
+  });
+
+  it('should stop retrying after the recovery window is exhausted', async () => {
+    let factoryCalls = 0;
+    const resilient = new ResilientLLMAdapter(() => {
+      factoryCalls++;
+      return {
+        async getPlayDecision() {
+          throw new NimAPIConnectionError('persistent outage');
+        },
+        async getChallengeDecision() {
+          return { reasoning: 'unused', challenge: false };
+        },
+      } satisfies LLMAdapter;
+    }, 'TEST', 1, 1);
+
+    await expect(
+      resilient.getPlayDecision(
+        'player_0',
+        'model-a',
+        {
+          hand: [{ rank: 'A', suit: 'S' }],
+          currentRank: 'A',
+          pileSize: 0,
+          otherPlayersCounts: {},
+          recentTurns: [],
+        },
+        1
+      )
+    ).rejects.toThrow(/persistent outage/);
+
+    expect(factoryCalls).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('NVIDIA NIM Client', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('should retry degraded-function 400 responses as recoverable outages', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      calls++;
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            status: 400,
+            title: 'Bad Request',
+            detail: "Function id 'abc': DEGRADED function cannot be invoked",
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 'resp-1',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new NimClient({
+      apiKey: 'test-key',
+      baseUrl: 'https://example.invalid/v1',
+      maxRetries: 2,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    const response = await client.chatCompletion('model-a', [{ role: 'user', content: 'hi' }], 32);
+
+    expect(calls).toBe(2);
+    expect(response.content).toContain('"challenge":false');
+  });
+
+  it('should retry null-content responses instead of crashing the logger', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      calls++;
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            id: 'resp-null',
+            choices: [
+              {
+                message: { role: 'assistant', content: null },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 'resp-ok',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new NimClient({
+      apiKey: 'test-key',
+      baseUrl: 'https://example.invalid/v1',
+      maxRetries: 2,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    const response = await client.chatCompletion('model-a', [{ role: 'user', content: 'hi' }], 32);
+
+    expect(calls).toBe(2);
+    expect(response.content).toContain('"challenge":false');
+  });
 });
 
 describe('Matchup Generator', () => {
+  it('should ship the current default 6-model roster', () => {
+    expect(MODELS).toContain('minimaxai/minimax-m2.5');
+    expect(MODELS).not.toContain('minimaxai/minimax-m2.1');
+    expect(MODELS.length).toBe(6);
+  });
+
   it('should generate correct number of combinations', () => {
     const items = [1, 2, 3, 4, 5];
     const combs = combinations(items, 2);
@@ -159,11 +516,9 @@ describe('Matchup Generator', () => {
     expect(combs.length).toBe(10);
   });
 
-  it('should generate 210 matchups for 10 models', () => {
-    const models = Array.from({ length: 10 }, (_, i) => `model${i}`);
-    const matchups = generateMatchups(models, 1);
-    // C(10,4) = 210
-    expect(matchups.length).toBe(210);
+  it('should generate 15 matchups for the shipped 6-model roster', () => {
+    const matchups = generateMatchups([...MODELS], 1);
+    expect(matchups.length).toBe(15);
   });
 
   it('should include all 4 models in each matchup', () => {
@@ -174,6 +529,68 @@ describe('Matchup Generator', () => {
       expect(matchup.players.length).toBe(4);
       expect(matchup.games).toBe(5);
     }
+  });
+
+  it('should shuffle seating deterministically with a seed', () => {
+    const players = ['a', 'b', 'c', 'd'];
+    expect(shuffleSeating(players, 42)).toEqual(shuffleSeating(players, 42));
+    expect(shuffleSeating(players, 42)).not.toEqual(shuffleSeating(players, 99));
+  });
+
+  it('should create tournament config from the current model roster', () => {
+    const config = createTournamentConfig(2, 7, 'custom-logs');
+    expect(config.experimentId).toBe(2);
+    expect(config.models).toEqual([...MODELS]);
+    expect(config.gamesPerMatchup).toBe(7);
+    expect(config.outputDir).toBe('custom-logs');
+    expect(config.maxTurns).toBeUndefined();
+  });
+
+  it('should include shard bounds in tournament config when provided', () => {
+    const config = createTournamentConfig(1, 10, 'custom-logs', 200, 3, 8);
+    expect(config.matchupStart).toBe(3);
+    expect(config.matchupEnd).toBe(8);
+    expect(config.maxTurns).toBe(200);
+  });
+
+  it('should resolve a valid matchup shard', () => {
+    const shard = resolveMatchupShard(15, 5, 9);
+    expect(shard).toEqual({
+      start: 5,
+      end: 9,
+      count: 5,
+      label: '5-9',
+    });
+  });
+
+  it('should reject an invalid matchup shard range', () => {
+    expect(() => resolveMatchupShard(15, 9, 5)).toThrow(/matchupEnd/);
+    expect(() => resolveMatchupShard(15, 15, 15)).toThrow(/matchupStart/);
+  });
+
+  it('should format tournament completion lines with the winner model name', () => {
+    const message = formatTournamentGameCompletion(
+      {
+        gameId: 'exp1_m0_g0_123',
+        experimentId: 1,
+        players: [
+          { id: 'player_0', modelId: 'qwen/qwen3.5-397b-a17b' },
+          { id: 'player_1', modelId: 'minimaxai/minimax-m2.5' },
+          { id: 'player_2', modelId: 'nvidia/nemotron-3-super-120b-a12b' },
+          { id: 'player_3', modelId: 'mistralai/mistral-small-4-119b-2603' },
+        ],
+        turns: [],
+        winner: 'player_3',
+        totalTurns: 82,
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        durationMs: 1000,
+      },
+      2
+    );
+
+    expect(message).toContain('Winner: mistralai/mistral-small-4-119b-2603');
+    expect(message).not.toContain('Winner: player_3');
   });
 });
 
@@ -287,5 +704,140 @@ describe('Metrics', () => {
     expect(stats.gamesPlayed).toBe(0);
     expect(stats.winRate).toBe(0);
     expect(stats.lieFrequency).toBe(0);
+  });
+
+  it('should only count actual challenge opportunities', () => {
+    const limitedOpportunityLog: GameLog = {
+      gameId: 'limited-opportunity',
+      experimentId: 1,
+      players: [
+        { id: 'player_0', modelId: 'model-a' },
+        { id: 'player_1', modelId: 'model-b' },
+        { id: 'player_2', modelId: 'model-c' },
+        { id: 'player_3', modelId: 'model-d' },
+      ],
+      turns: [
+        {
+          turnNumber: 1,
+          playerId: 'player_1',
+          claimedRank: 'A',
+          claimedCount: 1,
+          actualCards: [{ rank: 'K', suit: 'S' }],
+          wasLie: true,
+          challengeOfferedTo: ['player_0'],
+          challenged: true,
+          challengerId: 'player_0',
+          challengeCorrect: true,
+          reasoning: 'Test',
+          pileAfterTurn: 1,
+          handSizesAfterTurn: {},
+        },
+      ],
+      winner: 'player_0',
+      totalTurns: 1,
+      startTime: '2024-01-01T00:00:00Z',
+      endTime: '2024-01-01T00:01:00Z',
+      durationMs: 60000,
+    };
+
+    const stats = calculatePlayerStats('model-c', [limitedOpportunityLog]);
+    expect(stats.challengeOpportunities).toBe(0);
+    expect(stats.paranoiaFrequency).toBe(0);
+  });
+
+  it('should count instruction violations in experiment 3', () => {
+    const exp3Log: GameLog = {
+      ...mockGameLog,
+      gameId: 'exp3-game',
+      experimentId: 3,
+    };
+
+    const stats = calculatePlayerStats('model-a', [exp3Log], 3);
+    expect(stats.instructionViolations).toBe(1);
+    expect(stats.instructionViolationRate).toBe(1);
+  });
+});
+
+describe('Analysis Cohorts', () => {
+  it('should prefer the highest-schema dominant cohort', () => {
+    const logs: GameLog[] = [
+      {
+        gameId: 'legacy',
+        experimentId: 1,
+        players: [{ id: 'p1', modelId: 'a' }, { id: 'p2', modelId: 'b' }, { id: 'p3', modelId: 'c' }, { id: 'p4', modelId: 'd' }],
+        turns: [],
+        winner: null,
+        totalTurns: 0,
+        startTime: '2024-01-01T00:00:00Z',
+        endTime: '2024-01-01T00:00:01Z',
+        durationMs: 1000,
+      },
+      {
+        gameId: 'new-1',
+        experimentId: 1,
+        players: [{ id: 'p1', modelId: 'a' }, { id: 'p2', modelId: 'b' }, { id: 'p3', modelId: 'c' }, { id: 'p4', modelId: 'd' }],
+        metadata: {
+          logSchemaVersion: 2,
+          provider: 'nim',
+          promptVersion: '2026-03-25',
+          promptHash: 'p123',
+        },
+        turns: [],
+        winner: null,
+        totalTurns: 0,
+        startTime: '2024-01-01T00:00:00Z',
+        endTime: '2024-01-01T00:00:01Z',
+        durationMs: 1000,
+      },
+      {
+        gameId: 'new-2',
+        experimentId: 1,
+        players: [{ id: 'p1', modelId: 'a' }, { id: 'p2', modelId: 'b' }, { id: 'p3', modelId: 'c' }, { id: 'p4', modelId: 'd' }],
+        metadata: {
+          logSchemaVersion: 2,
+          provider: 'nim',
+          promptVersion: '2026-03-25',
+          promptHash: 'p123',
+        },
+        turns: [],
+        winner: null,
+        totalTurns: 0,
+        startTime: '2024-01-01T00:00:00Z',
+        endTime: '2024-01-01T00:00:01Z',
+        durationMs: 1000,
+      },
+    ];
+
+    const selection = selectComparableGameCohort(logs);
+    expect(selection.games.map((log) => log.gameId)).toEqual(['new-1', 'new-2']);
+    expect(selection.excludedGames).toBe(1);
+    expect(selection.cohort?.schemaVersion).toBe(2);
+  });
+});
+
+describe('GameLogger', () => {
+  it('should preserve metadata, seed, and seating order when converting state to a log', () => {
+    const state = createGameState('logged-game', 1, ['a', 'b', 'c', 'd'], 123);
+    state.metadata = {
+      logSchemaVersion: 2,
+      provider: 'nim',
+      providerBaseUrl: 'https://integrate.api.nvidia.com/v1',
+      promptVersion: '2026-03-25',
+      promptHash: 'p123',
+    };
+    state.winner = 'player_2';
+    state.maxTurns = 200;
+    state.terminationReason = 'winner';
+
+    const logger = new GameLogger('logs/test-games');
+    const log = logger.stateToLog(state);
+
+    expect(log.gameId).toBe('logged-game');
+    expect(log.metadata).toEqual(state.metadata);
+    expect(log.seed).toBe(123);
+    expect(log.maxTurns).toBe(200);
+    expect(log.seatingOrder).toEqual(['a', 'b', 'c', 'd']);
+    expect(log.winner).toBe('player_2');
+    expect(log.terminationReason).toBe('winner');
   });
 });

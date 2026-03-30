@@ -44,6 +44,47 @@ def load_game_logs(logs_dir: str, experiment_id: Optional[int] = None) -> List[d
     return games
 
 
+def select_comparable_game_cohort(games: List[dict]) -> Dict:
+    if not games:
+        return {"cohort": None, "games": [], "excluded_games": 0}
+
+    cohorts: Dict[str, Dict] = {}
+    for game in games:
+        metadata = game.get("metadata") or {}
+        schema_version = metadata.get("logSchemaVersion", 0)
+        provider = metadata.get("provider", "unknown")
+        prompt_version = metadata.get("promptVersion", "unknown")
+        prompt_hash = metadata.get("promptHash", "unknown")
+        key = f"{schema_version}|{provider}|{prompt_version}|{prompt_hash}"
+
+        if key not in cohorts:
+            cohorts[key] = {
+                "cohort": {
+                    "schema_version": schema_version,
+                    "provider": provider,
+                    "prompt_version": prompt_version,
+                    "prompt_hash": prompt_hash,
+                    "size": 0,
+                },
+                "games": [],
+            }
+
+        cohorts[key]["games"].append(game)
+        cohorts[key]["cohort"]["size"] += 1
+
+    ranked = sorted(
+        cohorts.values(),
+        key=lambda entry: (entry["cohort"]["schema_version"], entry["cohort"]["size"]),
+        reverse=True,
+    )
+    selected = ranked[0]
+    return {
+        "cohort": selected["cohort"],
+        "games": selected["games"],
+        "excluded_games": len(games) - len(selected["games"]),
+    }
+
+
 def calculate_player_stats(model_id: str, games: List[dict], experiment_id: Optional[int] = None) -> PlayerStats:
     """Calculate all stats for a single model."""
     games_played = 0
@@ -78,7 +119,13 @@ def calculate_player_stats(model_id: str, games: List[dict], experiment_id: Opti
                     if not turn["challenged"]:
                         successful_lies += 1
             else:
-                challenge_opportunities += 1
+                offered_to = turn.get("challengeOfferedTo")
+                if isinstance(offered_to, list):
+                    if player_id in offered_to:
+                        challenge_opportunities += 1
+                else:
+                    challenge_opportunities += 1
+
                 if turn.get("challengerId") == player_id:
                     challenges_made += 1
                     if turn.get("challengeCorrect"):
@@ -128,6 +175,11 @@ def games_to_turns_df(games: List[dict]) -> pd.DataFrame:
             rows.append({
                 "game_id": game["gameId"],
                 "experiment_id": game["experimentId"],
+                "provider": (game.get("metadata") or {}).get("provider", ""),
+                "provider_base_url": (game.get("metadata") or {}).get("providerBaseUrl", ""),
+                "prompt_version": (game.get("metadata") or {}).get("promptVersion", ""),
+                "prompt_hash": (game.get("metadata") or {}).get("promptHash", ""),
+                "log_schema_version": (game.get("metadata") or {}).get("logSchemaVersion"),
                 "turn_number": turn["turnNumber"],
                 "player_id": turn["playerId"],
                 "model_id": model_map.get(turn["playerId"], ""),
@@ -136,6 +188,7 @@ def games_to_turns_df(games: List[dict]) -> pd.DataFrame:
                 "actual_cards": ";".join(f"{c['rank']}{c['suit']}" for c in turn["actualCards"]),
                 "was_lie": turn["wasLie"],
                 "challenged": turn["challenged"],
+                "challenge_offered_to": ";".join(turn.get("challengeOfferedTo", [])),
                 "challenger_id": turn.get("challengerId", ""),
                 "challenger_model": model_map.get(turn.get("challengerId", ""), ""),
                 "challenge_correct": turn.get("challengeCorrect"),
@@ -160,6 +213,15 @@ def games_to_summary_df(games: List[dict]) -> pd.DataFrame:
         rows.append({
             "game_id": game["gameId"],
             "experiment_id": game["experimentId"],
+            "provider": (game.get("metadata") or {}).get("provider", ""),
+            "provider_base_url": (game.get("metadata") or {}).get("providerBaseUrl", ""),
+            "prompt_version": (game.get("metadata") or {}).get("promptVersion", ""),
+            "prompt_hash": (game.get("metadata") or {}).get("promptHash", ""),
+                "log_schema_version": (game.get("metadata") or {}).get("logSchemaVersion"),
+                "seed": game.get("seed"),
+                "max_turns": game.get("maxTurns"),
+                "termination_reason": game.get("terminationReason", ""),
+                "seating_order": ";".join(game.get("seatingOrder", [])),
             "player_0": game["players"][0]["modelId"] if len(game["players"]) > 0 else "",
             "player_1": game["players"][1]["modelId"] if len(game["players"]) > 1 else "",
             "player_2": game["players"][2]["modelId"] if len(game["players"]) > 2 else "",
@@ -172,6 +234,69 @@ def games_to_summary_df(games: List[dict]) -> pd.DataFrame:
             "successful_challenges": successful_challenges,
             "duration_ms": game["durationMs"],
         })
+
+    return pd.DataFrame(rows)
+
+
+def games_to_player_game_df(games: List[dict]) -> pd.DataFrame:
+    """Convert games to one row per player per game."""
+    rows = []
+
+    for game in games:
+        metadata = game.get("metadata") or {}
+
+        for player in game["players"]:
+            player_id = player["id"]
+            model_id = player["modelId"]
+            player_turns = [turn for turn in game["turns"] if turn["playerId"] == player_id]
+            opponent_turns = [turn for turn in game["turns"] if turn["playerId"] != player_id]
+
+            total_plays = len(player_turns)
+            total_lies = sum(1 for turn in player_turns if turn["wasLie"])
+            successful_lies = sum(1 for turn in player_turns if turn["wasLie"] and not turn["challenged"])
+            challenges_made = sum(1 for turn in opponent_turns if turn.get("challengerId") == player_id)
+            challenge_opportunities = 0
+            for turn in opponent_turns:
+                offered_to = turn.get("challengeOfferedTo")
+                if isinstance(offered_to, list):
+                    if player_id in offered_to:
+                        challenge_opportunities += 1
+                else:
+                    challenge_opportunities += 1
+
+            correct_challenges = sum(
+                1 for turn in opponent_turns
+                if turn.get("challengerId") == player_id and turn.get("challengeCorrect")
+            )
+
+            rows.append({
+                "game_id": game["gameId"],
+                "experiment_id": game["experimentId"],
+                "provider": metadata.get("provider", ""),
+                "provider_base_url": metadata.get("providerBaseUrl", ""),
+                "prompt_version": metadata.get("promptVersion", ""),
+                "prompt_hash": metadata.get("promptHash", ""),
+                "log_schema_version": metadata.get("logSchemaVersion"),
+                "seed": game.get("seed"),
+                "max_turns": game.get("maxTurns"),
+                "termination_reason": game.get("terminationReason", ""),
+                "seating_order": ";".join(game.get("seatingOrder", [])),
+                "player_id": player_id,
+                "model_id": model_id,
+                "won": 1 if game.get("winner") == player_id else 0,
+                "total_plays": total_plays,
+                "total_lies": total_lies,
+                "lie_frequency": total_lies / total_plays if total_plays > 0 else 0,
+                "successful_lies": successful_lies,
+                "lie_success_rate": successful_lies / total_lies if total_lies > 0 else 0,
+                "challenges_made": challenges_made,
+                "challenge_opportunities": challenge_opportunities,
+                "paranoia_frequency": challenges_made / challenge_opportunities if challenge_opportunities > 0 else 0,
+                "correct_challenges": correct_challenges,
+                "challenge_accuracy": correct_challenges / challenges_made if challenges_made > 0 else 0,
+                "instruction_violations": total_lies if game["experimentId"] == 3 else None,
+                "instruction_violation_rate": (total_lies / total_plays if total_plays > 0 else 0) if game["experimentId"] == 3 else None,
+            })
 
     return pd.DataFrame(rows)
 
@@ -218,13 +343,28 @@ if __name__ == "__main__":
     parser.add_argument("--logs-dir", default="logs/games", help="Directory containing game logs")
     parser.add_argument("--experiment", type=int, help="Experiment ID to analyze")
     parser.add_argument("--output-dir", default="logs/csv", help="Output directory for CSVs")
+    parser.add_argument("--include-mixed", action="store_true", help="Export all logs instead of auto-filtering to the dominant comparable cohort")
     args = parser.parse_args()
 
-    games = load_game_logs(args.logs_dir, args.experiment)
+    raw_games = load_game_logs(args.logs_dir, args.experiment)
+    selection = None if args.include_mixed else select_comparable_game_cohort(raw_games)
+    games = selection["games"] if selection else raw_games
 
     if not games:
         print("No games found")
         exit(1)
+
+    if selection and selection["cohort"] is not None:
+        cohort = selection["cohort"]
+        print(
+            "Using dominant comparable cohort: "
+            f"schema v{cohort['schema_version']}, "
+            f"provider={cohort['provider']}, "
+            f"prompt={cohort['prompt_version']}/{cohort['prompt_hash']} "
+            f"({len(games)}/{len(raw_games)} games)"
+        )
+        if selection["excluded_games"] > 0:
+            print(f"Excluded {selection['excluded_games']} mixed or legacy games. Pass --include-mixed to override.")
 
     print(f"Loaded {len(games)} games")
 
@@ -246,6 +386,9 @@ if __name__ == "__main__":
 
     summary_df = games_to_summary_df(games)
     summary_df.to_csv(output_dir / "game_summary.csv", index=False)
+
+    player_game_df = games_to_player_game_df(games)
+    player_game_df.to_csv(output_dir / "player_game_stats.csv", index=False)
 
     stats_df = stats_to_df(stats)
     exp_suffix = f"_exp{args.experiment}" if args.experiment else ""

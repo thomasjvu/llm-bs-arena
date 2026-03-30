@@ -9,7 +9,7 @@ import {
   finalizeGame,
   getVisibleState,
 } from './game-state.js';
-import { parseCard } from './deck.js';
+import { normalizePlaySelection } from './play-rules.js';
 
 export interface LLMAdapter {
   getPlayDecision(
@@ -31,12 +31,11 @@ export interface LLMAdapter {
 }
 
 export interface TurnManagerConfig {
-  maxTurns: number; // Cap to prevent infinite games
+  maxTurns?: number; // Optional safety cap for debugging/recovery runs
   challengeOrder: 'sequential' | 'random';
 }
 
 const DEFAULT_CONFIG: TurnManagerConfig = {
-  maxTurns: 100,
   challengeOrder: 'sequential',
 };
 
@@ -48,13 +47,21 @@ export class TurnManager {
 
   constructor(config: Partial<TurnManagerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    if (
+      this.config.maxTurns !== undefined &&
+      (!Number.isInteger(this.config.maxTurns) || this.config.maxTurns <= 0)
+    ) {
+      throw new Error(`TurnManager maxTurns must be a positive integer, got: ${this.config.maxTurns}`);
+    }
   }
 
   /**
-   * Runs a complete game until someone wins or max turns reached
+   * Runs a complete game until someone wins or an optional safety cap is reached.
    */
   async runGame(state: GameState, llm: LLMAdapter): Promise<GameState> {
-    while (!state.winner && state.turns.length < this.config.maxTurns) {
+    state.maxTurns = this.config.maxTurns;
+
+    while (!state.winner && (this.config.maxTurns === undefined || state.turns.length < this.config.maxTurns)) {
       await this.executeTurn(state, llm);
 
       const winner = checkWinner(state);
@@ -64,13 +71,15 @@ export class TurnManager {
       }
     }
 
-    // Handle draw (max turns reached)
-    if (!state.winner) {
-      // Winner is player with fewest cards
-      const sortedPlayers = [...state.players]
-        .filter((p) => !p.isEliminated)
-        .sort((a, b) => a.hand.length - b.hand.length);
-      finalizeGame(state, sortedPlayers[0].id);
+    if (
+      !state.winner &&
+      this.config.maxTurns !== undefined &&
+      state.turns.length >= this.config.maxTurns
+    ) {
+      // Capped games are explicitly incomplete/censored, not heuristic wins.
+      state.winner = null;
+      state.terminationReason = 'turn_cap';
+      state.endTime = new Date();
     }
 
     return state;
@@ -92,16 +101,23 @@ export class TurnManager {
     );
 
     // Parse cards from response
-    const actualCards = this.parseCardsFromResponse(playResponse.cards_to_play, currentPlayer.hand);
-
-    // Validate play (must play at least 1 card)
-    if (actualCards.length === 0) {
-      // Force playing one card if LLM fails
-      actualCards.push(currentPlayer.hand[0]);
+    const normalizedPlay = normalizePlaySelection(
+      playResponse.cards_to_play,
+      currentPlayer.hand,
+      playResponse.claim_count
+    );
+    for (const note of normalizedPlay.notes) {
+      console.warn(`[turn] ${currentPlayer.modelId}: ${note}`);
     }
 
     // Create turn
-    const turn = processPlay(state, currentPlayer.id, actualCards, playResponse.claim_count, playResponse.reasoning);
+    const turn = processPlay(
+      state,
+      currentPlayer.id,
+      normalizedPlay.actualCards,
+      normalizedPlay.claimedCount,
+      playResponse.reasoning
+    );
 
     // Challenge window - each other player gets a chance
     const otherPlayers = getOtherPlayers(state);
@@ -109,6 +125,7 @@ export class TurnManager {
       this.config.challengeOrder === 'random' ? this.shuffleArray(otherPlayers) : otherPlayers;
 
     for (const challenger of challengeOrder) {
+      turn.challengeOfferedTo?.push(challenger.id);
       const challengerVisibleState = getVisibleState(state, challenger.id);
 
       const challengeResponse = await llm.getChallengeDecision(
@@ -132,29 +149,6 @@ export class TurnManager {
     advanceTurn(state, turn);
     return turn;
   }
-
-  /**
-   * Parses card strings from LLM response, filtering to valid cards in hand
-   */
-  private parseCardsFromResponse(cardStrings: string[], hand: Card[]): Card[] {
-    const cards: Card[] = [];
-
-    for (const cardStr of cardStrings) {
-      const parsed = parseCard(cardStr);
-      if (parsed) {
-        // Check if card is in hand and not already used
-        const handIndex = hand.findIndex(
-          (c) => c.rank === parsed.rank && c.suit === parsed.suit && !cards.some((used) => used.rank === c.rank && used.suit === c.suit)
-        );
-        if (handIndex !== -1) {
-          cards.push(parsed);
-        }
-      }
-    }
-
-    return cards;
-  }
-
   /**
    * Fisher-Yates shuffle for challenge order randomization
    */

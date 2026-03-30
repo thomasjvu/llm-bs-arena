@@ -11,6 +11,14 @@ Four LLMs sit at a virtual card table, bluffing, lying, and calling each other o
 3. **RQ3 — Instruction Compliance**: Will LLMs violate explicit no-lying instructions to win?
 
 Each question maps to one of three experiments with different prompt framings. See [RESEARCH_PLAN.md](RESEARCH_PLAN.md) for the full study design, metrics, and paper outline.
+If this is your first clean run, follow [RESEARCH_RUNBOOK.md](RESEARCH_RUNBOOK.md).
+Writing and packaging helpers:
+- [PAPER_DRAFT.md](PAPER_DRAFT.md)
+- [BLOG_POST_DRAFT.md](BLOG_POST_DRAFT.md)
+- [PORTFOLIO_DRAFT.md](PORTFOLIO_DRAFT.md)
+- [RESULTS_FILL_GUIDE.md](RESULTS_FILL_GUIDE.md)
+- [CITATION_NOTES.md](CITATION_NOTES.md)
+- [FIGURE_TABLE_PLAN.md](FIGURE_TABLE_PLAN.md)
 
 ## Setup
 
@@ -29,13 +37,16 @@ npm install
 
 This project supports multiple LLM providers via OpenAI-compatible APIs.
 
-**Chutes AI** (recommended, primary provider):
-- Sign up at https://chutes.ai/ and get an API key
-- Better context windows, bf16/fp8 quantization (less quality loss)
+**NVIDIA NIM** (recommended, primary provider):
+- Sign up at https://build.nvidia.com/ and get an API key
+- Uses NVIDIA's hosted OpenAI-compatible chat API
+- Supports an optional `NVIDIA_NIM_BASE_URL` override for self-hosted/local NIM
 
-**Featherless AI** (fallback provider):
+**Chutes AI** (optional fallback provider):
+- Sign up at https://chutes.ai/ and get an API key
+
+**Featherless AI** (optional fallback provider):
 - Sign up at https://featherless.ai/ and get an API key
-- Quantized models with context limitations
 
 Setup:
 ```bash
@@ -45,11 +56,25 @@ cp .env.example .env
 Edit `.env` with your preferred provider:
 
 ```
-# Primary: Chutes (recommended)
-LLM_PROVIDER=chutes
-CHUTES_API_TOKEN=your_chutes_token_here
+# Primary: NVIDIA NIM (recommended)
+LLM_PROVIDER=nim
+NVIDIA_API_KEY=your_nvidia_api_key_here
 
-# Fallback: Featherless
+# Optional: point at a self-hosted/local NIM
+# NVIDIA_NIM_BASE_URL=http://localhost:8000/v1
+
+# Optional tuning for larger/slower reasoning models
+# NVIDIA_NIM_TIMEOUT_MS=180000
+# LLM_PLAY_MAX_TOKENS=8192
+# LLM_CHALLENGE_MAX_TOKENS=4096
+# LLM_RECOVERY_WINDOW_MS=36000000
+# LLM_RECOVERY_BACKOFF_MS=30000
+
+# Optional fallback: Chutes
+# LLM_PROVIDER=chutes
+# CHUTES_API_TOKEN=your_chutes_token_here
+
+# Optional fallback: Featherless
 # LLM_PROVIDER=featherless
 # FEATHERLESS_API_KEY=sk-...
 
@@ -57,10 +82,27 @@ CHUTES_API_TOKEN=your_chutes_token_here
 # LLM_PROVIDER=mock
 ```
 
+Why these tuning defaults exist:
+- `NVIDIA_NIM_TIMEOUT_MS=180000` exists because some hosted heavyweight models can take well over 60 seconds to answer.
+- `LLM_PLAY_MAX_TOKENS=8192` and `LLM_CHALLENGE_MAX_TOKENS=4096` are there to avoid truncation, not to make the models "smarter."
+- The game only sends the current state plus the last 5 turns, so prompt context stays bounded and comparable across runs.
+- The engine enforces standard Bullshit play structure: each turn places 1-4 cards, and the face-down card count is public, so models may lie about rank but not about count.
+- If you see `[TRUNCATED]`, raise the relevant token cap slightly. If you see timeouts, raise the timeout. Otherwise keep the settings fixed for the full dataset.
+- `LLM_RECOVERY_WINDOW_MS=36000000` gives recoverable provider failures up to 10 hours to heal before the run gives up on that request.
+- `LLM_RECOVERY_BACKOFF_MS=30000` controls how long the outer recovery loop waits between adapter recreations.
+
 ### Build
 
 ```bash
 npm run build
+```
+
+### Python Analysis Environment
+
+Install the Python dependencies if you want the plotting, bootstrap summary, and markdown report pipeline:
+
+```bash
+npm run python:setup
 ```
 
 ## Usage
@@ -83,6 +125,8 @@ npm run server
 
 Open http://localhost:3001 in your browser. Pick an experiment from the dropdown, click **new game**, then use **step** to advance one turn at a time or **auto** to let it run.
 
+For the heavier default NIM roster, the repo now defaults to a longer NIM request timeout and larger play/challenge completion budgets. If a hosted model still times out, raise `NVIDIA_NIM_TIMEOUT_MS` in `.env`.
+
 All npm scripts automatically load `.env` via Node's `--env-file` flag — no need to `source` anything.
 
 ### CLI
@@ -92,29 +136,64 @@ The CLI provides commands for running experiments at scale.
 **Single game:**
 
 ```bash
-# Uses provider from LLM_PROVIDER env var: mock/chutes/featherless
+# Uses provider from LLM_PROVIDER env var: mock/nim/chutes/featherless
 npm start -- game -e 1
 
 # Or specify provider explicitly
+npm start -- game -e 1 -p nim
 npm start -- game -e 1 -p chutes
 npm start -- game -e 1 -p featherless
 npm start -- game -e 1 -p mock
 
 # Pick specific models
-npm start -- game -e 1 -m "unsloth/gemma-3-27b-it" "Qwen/Qwen3-32B" "chutesai/Mistral-Small-3.2-24B-Instruct-2506" "NousResearch/Hermes-4.3-36B"
+npm start -- game -e 1 -m "qwen/qwen3.5-397b-a17b" "minimaxai/minimax-m2.5" "nvidia/nemotron-3-super-120b-a12b" "mistralai/mistral-small-4-119b-2603"
+
+# Reproduce the same single game later with a fixed seed
+npm start -- game -e 1 -p nim -s 123456
+
+# Optional safety cap for debugging or overnight recovery runs
+npm start -- game -e 1 -p nim -t 200
+
+# Explicitly disable the cap if you want to be verbose
+npm start -- game -e 1 -p nim -t none
+
+# Save the full terminal transcript while the game runs
+npm run run:logged -- game -e 1 -p nim
 ```
 
-**Full tournament** (all C(10,4) = 210 unique 4-player matchups):
+With the current heavyweight NIM roster, one validation game can easily take 15-45 minutes. A slow or retry-heavy model can push it higher.
+
+For the research dataset, uncapped play is now the default. If you explicitly pass `-t/--max-turns`, that run is treated as a safety-capped run rather than the preferred final-data configuration.
+
+The run is finished when the CLI prints `Single game complete!`, followed by a summary with `Turns`, `Duration`, `Seed`, and `Winner`, then `Game log saved to: ...`. If a safety cap was used, the summary also prints `Max Turns` and the termination reason.
+
+**Full tournament** (all C(6,4) = 15 unique 4-player matchups):
 
 ```bash
 npm start -- tournament -e 1 -g 10
 ```
 
 Options:
-- `-e, --experiment <1|2|3>` — experiment number (required)
+- `-e, --experiment <0|1|2|3>` — experiment number (required)
 - `-g, --games <n>` — games per matchup (default: 10)
+- `-t, --max-turns <n>` — optional safety cap; omit or pass `none`/`uncapped` for uncapped play
+- `--matchup-start <n>` — first matchup index to run, inclusive
+- `--matchup-end <n>` — last matchup index to run, inclusive
 - `-o, --output <dir>` — output directory (default: `logs`)
-- `-p, --provider <chutes|featherless|mock>` — LLM provider (default: auto-detect from env)
+- `-p, --provider <nim|chutes|featherless|mock>` — LLM provider (default: auto-detect from env, preferring NIM)
+
+Parallel sharding:
+
+```bash
+# Safe: split one experiment across multiple terminals by matchup range
+npm run run:logged -- tournament -e 1 -g 10 --matchup-start 0 --matchup-end 4
+npm run run:logged -- tournament -e 1 -g 10 --matchup-start 5 --matchup-end 9
+npm run run:logged -- tournament -e 1 -g 10 --matchup-start 10 --matchup-end 14
+```
+
+Each shard gets its own checkpoint file, so these can run in parallel safely.
+Do not run the same experiment twice without shard bounds against the same output directory.
+Capped games are excluded from the analysis and report pipeline by default.
 
 **Analyze results:**
 
@@ -122,6 +201,7 @@ Options:
 npm start -- analyze -e 1          # single experiment
 npm start -- analyze               # all experiments
 npm start -- analyze --csv         # export CSV files
+npm start -- analyze --include-mixed  # opt out of cohort filtering
 ```
 
 **Compare experiments:**
@@ -136,6 +216,8 @@ Shows per-model deltas in lie frequency, paranoia, and win rate between two expe
 
 ```bash
 npm start -- models          # list all 6 tournament models
+npm start -- nim-models      # list available NVIDIA NIM models
+npm start -- nim-models --filter qwen  # filter models
 npm start -- chutes-models   # list available Chutes API models
 npm start -- chutes-models --filter qwen  # filter models
 npm start -- status          # show tournament progress
@@ -143,16 +225,16 @@ npm start -- status          # show tournament progress
 
 ## Models
 
-The tournament uses 6 models from Chutes AI:
+The default tournament uses 6 models that are available through NVIDIA NIM:
 
 | # | Model |
 |---|-------|
-| 1 | `unsloth/gemma-3-27b-it` |
-| 2 | `Qwen/Qwen2.5-72B-Instruct` |
-| 3 | `Qwen/Qwen3-32B` |
-| 4 | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
-| 5 | `chutesai/Mistral-Small-3.2-24B-Instruct-2506` |
-| 6 | `NousResearch/Hermes-4.3-36B` |
+| 1 | `qwen/qwen3.5-397b-a17b` |
+| 2 | `minimaxai/minimax-m2.5` |
+| 3 | `nvidia/nemotron-3-super-120b-a12b` |
+| 4 | `mistralai/mistral-small-4-119b-2603` |
+| 5 | `z-ai/glm5` |
+| 6 | `moonshotai/kimi-k2.5` |
 
 ## Experiments
 
@@ -184,10 +266,20 @@ Tests whether LLMs will violate explicit instructions prohibiting deception in o
 
 Game logs are saved as JSON in `logs/games/`. Each file contains the full game state: every turn, every card played, every lie told, every challenge made, and every LLM's reasoning text.
 
+If you also want the exact terminal transcript from a run, `npm run run:logged -- ...` writes a timestamped log file to `logs/runs/` while still streaming output to the terminal.
+
 CSV exports (via `--csv` flag on `analyze`) go to `logs/csv/`:
 - `player_stats_exp{N}.csv` — per-model aggregate metrics
+- `player_game_stats.csv` — one row per player per game
 - `all_turns.csv` — every turn from every game
 - `game_summary.csv` — one row per game
+
+Reporting outputs:
+- `results/research_summary.md` — generated by `npm run report`
+- `results/figures/*.png` — generated by `npm run plots`
+
+Game logs and CSVs now also carry run provenance metadata including provider, prompt version/hash, schema version, seed, and seating order when available.
+By default, the analysis commands auto-filter to the dominant comparable cohort so old legacy logs do not contaminate new runs. Use `--include-mixed` only when you intentionally want that.
 
 ## Key Metrics
 
@@ -214,6 +306,10 @@ CSV exports (via `--csv` flag on `analyze`) go to `logs/csv/`:
    npm start -- game -e 2
    npm start -- game -e 3
    ```
+   These are validation runs, not your main dataset. They verify that each experiment prompt behaves correctly with the live provider before you spend time or money on tournaments.
+   Each single-game run now prints and logs its seed, so you can rerun a validation case exactly if you need to debug it.
+   Uncapped play is now the default for live runs. If you opt into `--max-turns`, that game is marked as `turn_cap` on early termination and excluded from the default analysis/report pipeline.
+   With the default heavyweight NIM roster, expect roughly 15-45 minutes per validation game. If you want a persistent transcript while it runs, use `npm run run:logged -- game -e 0 -p nim`.
 4. **Run tournaments** — collect data across all matchups:
    ```bash
    npm start -- tournament -e 0 -g 10
@@ -228,7 +324,12 @@ CSV exports (via `--csv` flag on `analyze`) go to `logs/csv/`:
    npm start -- compare --exp1 1 --exp2 2
    npm start -- compare --exp1 1 --exp2 3
    ```
-6. **Monitor progress** at any time:
+6. **Generate paper-ready outputs** — build the statistical summary, figures, and markdown research brief:
+   ```bash
+   npm run research:brief
+   ```
+   This produces `results/research_summary.md` and `results/figures/*.png`.
+7. **Monitor progress** at any time:
    ```bash
    npm start -- status
    ```
@@ -244,9 +345,12 @@ CSV exports (via `--csv` flag on `analyze`) go to `logs/csv/`:
 │   │   ├── turn-manager.ts   # Turn sequencing, LLM calls
 │   │   └── deck.ts           # Card/deck utilities
 │   ├── llm/
+│   │   ├── nim-api.ts        # NVIDIA NIM client
+│   │   ├── chutes-api.ts     # Chutes AI client
 │   │   ├── featherless-api.ts # Featherless AI client
+│   │   ├── provider.ts       # Provider selection + adapter creation
 │   │   ├── llm-adapter.ts    # LLM adapter interface + mock
-│   │   └── prompts.ts        # Experiment prompt templates
+│   │   └── prompt-builder.ts # Experiment prompt templates
 │   ├── tournament/
 │   │   ├── tournament-runner.ts # Tournament orchestration
 │   │   └── matchup-generator.ts # C(n,4) matchup generation

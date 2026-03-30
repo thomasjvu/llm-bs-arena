@@ -22,6 +22,14 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface RunMetadata {
+  logSchemaVersion: number;
+  provider: string;
+  providerBaseUrl?: string;
+  promptVersion: string;
+  promptHash: string;
+}
+
 export interface Turn {
   turnNumber: number;
   playerId: string;
@@ -29,6 +37,7 @@ export interface Turn {
   claimedCount: number;
   actualCards: Card[];
   wasLie: boolean;
+  challengeOfferedTo?: string[];
   challenged: boolean;
   challengerId?: string;
   challengeCorrect?: boolean;
@@ -56,11 +65,16 @@ export interface GameState {
   gameId: string;
   experimentId: ExperimentId;
   players: Player[];
+  metadata?: RunMetadata;
+  seatingOrder?: string[];
+  seed?: number;
+  maxTurns?: number;
   currentPlayerIndex: number;
   currentRank: Rank;
   pile: Card[];
   turns: Turn[];
   winner: string | null;
+  terminationReason?: 'winner' | 'turn_cap';
   startTime: Date;
   endTime?: Date;
 }
@@ -69,7 +83,7 @@ export interface GameState {
 export interface PlayTurnResponse {
   reasoning: string;
   cards_to_play: string[]; // e.g., ["AS", "2H"]
-  claim_count: number;
+  claim_count: number; // must match cards_to_play.length
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
 }
@@ -112,14 +126,22 @@ export interface TournamentConfig {
   models: string[];
   gamesPerMatchup: number;
   outputDir: string;
+  maxTurns?: number;
+  matchupStart?: number;
+  matchupEnd?: number;
 }
 
 export interface GameLog {
   gameId: string;
   experimentId: ExperimentId;
   players: { id: string; modelId: string }[];
+  metadata?: RunMetadata;
+  seatingOrder?: string[];
+  seed?: number;
+  maxTurns?: number;
   turns: Turn[];
   winner: string | null;
+  terminationReason?: 'winner' | 'turn_cap';
   totalTurns: number;
   startTime: string;
   endTime: string;
@@ -141,12 +163,12 @@ export const RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10',
 export const SUITS: Suit[] = ['H', 'D', 'C', 'S'];
 
 export const MODELS = [
-  'unsloth/gemma-3-27b-it',
-  'Qwen/Qwen2.5-72B-Instruct',
-  'Qwen/Qwen3-32B',
-  'Qwen/Qwen3-Next-80B-A3B-Instruct',
-  'chutesai/Mistral-Small-3.2-24B-Instruct-2506',
-  'NousResearch/Hermes-4.3-36B',
+  'qwen/qwen3.5-397b-a17b',
+  'minimaxai/minimax-m2.5',
+  'nvidia/nemotron-3-super-120b-a12b',
+  'mistralai/mistral-small-4-119b-2603',
+  'z-ai/glm5',
+  'moonshotai/kimi-k2.5',
 ] as const;
 
 export type ModelId = typeof MODELS[number];

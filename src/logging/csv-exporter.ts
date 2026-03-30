@@ -22,6 +22,11 @@ export class CSVExporter {
     const headers = [
       'game_id',
       'experiment_id',
+      'provider',
+      'provider_base_url',
+      'prompt_version',
+      'prompt_hash',
+      'log_schema_version',
       'turn_number',
       'player_id',
       'model_id',
@@ -29,6 +34,7 @@ export class CSVExporter {
       'claimed_count',
       'actual_cards',
       'was_lie',
+      'challenge_offered_to',
       'challenged',
       'challenger_id',
       'challenger_model',
@@ -57,6 +63,11 @@ export class CSVExporter {
         const row = [
           game.gameId,
           game.experimentId,
+          game.metadata?.provider || '',
+          game.metadata?.providerBaseUrl || '',
+          game.metadata?.promptVersion || '',
+          game.metadata?.promptHash || '',
+          game.metadata?.logSchemaVersion ?? '',
           turn.turnNumber,
           turn.playerId,
           modelMap[turn.playerId] || '',
@@ -64,6 +75,7 @@ export class CSVExporter {
           turn.claimedCount,
           turn.actualCards.map((c) => `${c.rank}${c.suit}`).join(';'),
           turn.wasLie ? 1 : 0,
+          (turn.challengeOfferedTo || []).join(';'),
           turn.challenged ? 1 : 0,
           turn.challengerId || '',
           turn.challengerId ? modelMap[turn.challengerId] || '' : '',
@@ -96,6 +108,15 @@ export class CSVExporter {
     const headers = [
       'game_id',
       'experiment_id',
+      'provider',
+      'provider_base_url',
+      'prompt_version',
+      'prompt_hash',
+      'log_schema_version',
+      'seed',
+      'max_turns',
+      'termination_reason',
+      'seating_order',
       'player_0',
       'player_1',
       'player_2',
@@ -131,6 +152,15 @@ export class CSVExporter {
       const row = [
         game.gameId,
         game.experimentId,
+        game.metadata?.provider || '',
+        game.metadata?.providerBaseUrl || '',
+        game.metadata?.promptVersion || '',
+        game.metadata?.promptHash || '',
+        game.metadata?.logSchemaVersion ?? '',
+        game.seed ?? '',
+        game.maxTurns ?? '',
+        game.terminationReason || '',
+        (game.seatingOrder || []).join(';'),
         game.players[0]?.modelId || '',
         game.players[1]?.modelId || '',
         game.players[2]?.modelId || '',
@@ -147,6 +177,102 @@ export class CSVExporter {
         totalPromptTokens + totalCompletionTokens,
       ];
       rows.push(row.join(','));
+    }
+
+    fs.writeFileSync(filepath, rows.join('\n'));
+    return filepath;
+  }
+
+  /**
+   * Exports one row per player per game for downstream statistics.
+   */
+  exportPlayerGameStats(games: GameLog[]): string {
+    const filepath = path.join(this.outputDir, 'player_game_stats.csv');
+
+    const headers = [
+      'game_id',
+      'experiment_id',
+      'provider',
+      'provider_base_url',
+      'prompt_version',
+      'prompt_hash',
+      'log_schema_version',
+      'seed',
+      'max_turns',
+      'termination_reason',
+      'seating_order',
+      'player_id',
+      'model_id',
+      'won',
+      'total_plays',
+      'total_lies',
+      'lie_frequency',
+      'successful_lies',
+      'lie_success_rate',
+      'challenges_made',
+      'challenge_opportunities',
+      'paranoia_frequency',
+      'correct_challenges',
+      'challenge_accuracy',
+      'instruction_violations',
+      'instruction_violation_rate',
+    ];
+
+    const rows: string[] = [headers.join(',')];
+
+    for (const game of games) {
+      for (const player of game.players) {
+        const playerId = player.id;
+        const playerTurns = game.turns.filter((turn) => turn.playerId === playerId);
+        const opponentTurns = game.turns.filter((turn) => turn.playerId !== playerId);
+
+        const totalPlays = playerTurns.length;
+        const totalLies = playerTurns.filter((turn) => turn.wasLie).length;
+        const successfulLies = playerTurns.filter((turn) => turn.wasLie && !turn.challenged).length;
+        const challengesMade = opponentTurns.filter((turn) => turn.challengerId === playerId).length;
+        const challengeOpportunities = opponentTurns.filter((turn) => {
+          if (Array.isArray(turn.challengeOfferedTo)) {
+            return turn.challengeOfferedTo.includes(playerId);
+          }
+          return true;
+        }).length;
+        const correctChallenges = opponentTurns.filter((turn) => turn.challengerId === playerId && turn.challengeCorrect).length;
+        const instructionViolations = game.experimentId === 3 ? totalLies : '';
+        const instructionViolationRate = game.experimentId === 3
+          ? (totalPlays > 0 ? (totalLies / totalPlays).toFixed(4) : '0.0000')
+          : '';
+
+        const row = [
+          game.gameId,
+          game.experimentId,
+          game.metadata?.provider || '',
+          game.metadata?.providerBaseUrl || '',
+          game.metadata?.promptVersion || '',
+          game.metadata?.promptHash || '',
+          game.metadata?.logSchemaVersion ?? '',
+          game.seed ?? '',
+          game.maxTurns ?? '',
+          game.terminationReason || '',
+          (game.seatingOrder || []).join(';'),
+          playerId,
+          player.modelId,
+          game.winner === playerId ? 1 : 0,
+          totalPlays,
+          totalLies,
+          totalPlays > 0 ? (totalLies / totalPlays).toFixed(4) : '0.0000',
+          successfulLies,
+          totalLies > 0 ? (successfulLies / totalLies).toFixed(4) : '0.0000',
+          challengesMade,
+          challengeOpportunities,
+          challengeOpportunities > 0 ? (challengesMade / challengeOpportunities).toFixed(4) : '0.0000',
+          correctChallenges,
+          challengesMade > 0 ? (correctChallenges / challengesMade).toFixed(4) : '0.0000',
+          instructionViolations,
+          instructionViolationRate,
+        ];
+
+        rows.push(row.join(','));
+      }
     }
 
     fs.writeFileSync(filepath, rows.join('\n'));

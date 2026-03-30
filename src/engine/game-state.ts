@@ -1,5 +1,6 @@
 import { Card, GameState, Player, Rank, Turn, ExperimentId, RANKS } from '../types/game.js';
 import { createDeck, shuffleDeck, dealCards } from './deck.js';
+import { MAX_CARDS_PER_PLAY, MIN_CARDS_PER_PLAY } from './play-rules.js';
 
 /**
  * Creates a new game state with dealt hands
@@ -24,12 +25,18 @@ export function createGameState(
     isEliminated: false,
   }));
 
+  const startingPlayerIndex = players.findIndex((player) =>
+    player.hand.some((card) => card.rank === 'A' && card.suit === 'S')
+  );
+
   return {
     gameId,
     experimentId,
     players,
-    currentPlayerIndex: 0,
-    currentRank: 'A', // Game always starts with Aces
+    seatingOrder: [...modelIds],
+    seed,
+    currentPlayerIndex: startingPlayerIndex >= 0 ? startingPlayerIndex : 0,
+    currentRank: 'A',
     pile: [],
     turns: [],
     winner: null,
@@ -93,6 +100,16 @@ export function processPlay(
     throw new Error(`Player ${playerId} not found`);
   }
 
+  if (actualCards.length < MIN_CARDS_PER_PLAY || actualCards.length > MAX_CARDS_PER_PLAY) {
+    throw new Error(
+      `Players must place between ${MIN_CARDS_PER_PLAY} and ${MAX_CARDS_PER_PLAY} cards, got: ${actualCards.length}`
+    );
+  }
+
+  if (claimedCount !== actualCards.length) {
+    throw new Error(`Claimed count must match the number of face-down cards, got ${claimedCount} for ${actualCards.length} card(s)`);
+  }
+
   // Validate player has the cards
   for (const card of actualCards) {
     const hasCard = player.hand.some((c) => c.rank === card.rank && c.suit === card.suit);
@@ -102,7 +119,7 @@ export function processPlay(
   }
 
   // Determine if it's a lie
-  const wasLie = actualCards.some((card) => card.rank !== state.currentRank) || actualCards.length !== claimedCount;
+  const wasLie = actualCards.some((card) => card.rank !== state.currentRank);
 
   // Remove cards from hand and add to pile
   removeCardsFromHand(player, actualCards);
@@ -115,6 +132,7 @@ export function processPlay(
     claimedCount,
     actualCards,
     wasLie,
+    challengeOfferedTo: [],
     challenged: false,
     reasoning,
     pileAfterTurn: state.pile.length,
@@ -192,6 +210,7 @@ export function checkWinner(state: GameState): string | null {
  */
 export function finalizeGame(state: GameState, winnerId: string): void {
   state.winner = winnerId;
+  state.terminationReason = 'winner';
   state.endTime = new Date();
 }
 

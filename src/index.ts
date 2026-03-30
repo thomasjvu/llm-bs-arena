@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 
-import { Command } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
 import { TournamentRunner } from './tournament/tournament-runner.js';
 import { createTournamentConfig, generateMatchups, combinations } from './tournament/matchup-generator.js';
-import { FeatherlessLLMAdapter, ChutesLLMAdapter, MockLLMAdapter } from './llm/llm-adapter.js';
-import { createFeatherlessClient } from './llm/featherless-api.js';
 import { createChutesClient } from './llm/chutes-api.js';
-import { GameLogger, formatGameSummary } from './logging/game-logger.js';
+import { createNimClient } from './llm/nim-api.js';
+import { GameLogger, formatGameSummary, selectComparableGameCohort } from './logging/game-logger.js';
 import { CSVExporter } from './logging/csv-exporter.js';
 import { calculateAllStats, generateSummaryReport } from './metrics/player-stats.js';
 import { MODELS, ExperimentId } from './types/game.js';
 import { createGameState } from './engine/game-state.js';
 import { TurnManager } from './engine/turn-manager.js';
+import { buildRunMetadata, createAdapter, detectProvider, Provider } from './llm/provider.js';
 
 const program = new Command();
 
@@ -20,50 +20,42 @@ program
   .description('LLM Bullshit Research Framework')
   .version('1.0.0');
 
-type Provider = 'chutes' | 'featherless' | 'mock';
-
-function createAdapter(provider: Provider = 'chutes') {
-  switch (provider) {
-    case 'mock':
-      console.log('Using mock LLM adapter');
-      return new MockLLMAdapter();
-    case 'chutes':
-      if (!process.env.CHUTES_API_TOKEN) {
-        throw new Error('CHUTES_API_TOKEN environment variable is required for chutes provider');
-      }
-      console.log('Using Chutes API provider');
-      return new ChutesLLMAdapter(createChutesClient());
-    case 'featherless':
-      if (!process.env.FEATHERLESS_API_KEY) {
-        throw new Error('FEATHERLESS_API_KEY environment variable is required for featherless provider');
-      }
-      console.log('Using Featherless API provider');
-      return new FeatherlessLLMAdapter(createFeatherlessClient());
-    default:
-      throw new Error(`Unknown provider: ${provider}`);
-  }
+function getModelsFromGames(games: { players: { modelId: string }[] }[]): string[] {
+  return [...new Set(games.flatMap((game) => game.players.map((player) => player.modelId)))].sort();
 }
 
-function detectProvider(): Provider {
-  if (process.env.LLM_PROVIDER === 'mock') return 'mock';
-  if (process.env.LLM_PROVIDER === 'featherless' && process.env.FEATHERLESS_API_KEY) return 'featherless';
-  if (process.env.LLM_PROVIDER === 'chutes' && process.env.CHUTES_API_TOKEN) return 'chutes';
-  if (process.env.CHUTES_API_TOKEN && process.env.FEATHERLESS_API_KEY) {
-    return 'chutes';
+function parseIntegerOption(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) {
+    throw new InvalidArgumentError(`Expected an integer, got "${value}"`);
   }
-  if (process.env.CHUTES_API_TOKEN) return 'chutes';
-  if (process.env.FEATHERLESS_API_KEY) return 'featherless';
-  return 'mock';
+  return parsed;
+}
+
+function parseMaxTurnsOption(value: string): number | undefined {
+  const normalized = value.trim().toLowerCase();
+  if (['0', 'none', 'uncapped', 'unlimited'].includes(normalized)) {
+    return undefined;
+  }
+
+  const parsed = parseIntegerOption(value);
+  if (parsed <= 0) {
+    throw new InvalidArgumentError(`Expected a positive integer or one of: 0, none, uncapped, unlimited. Got "${value}"`);
+  }
+  return parsed;
 }
 
 // Run tournament command
 program
   .command('tournament')
   .description('Run a tournament experiment')
-  .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseInt)
-  .option('-g, --games <number>', 'Games per matchup', parseInt, 10)
+  .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseIntegerOption)
+  .option('-g, --games <number>', 'Games per matchup', parseIntegerOption, 10)
+  .option('-t, --max-turns <number>', 'Optional safety cap; omit or pass "none" for uncapped play', parseMaxTurnsOption)
+  .option('--matchup-start <number>', 'First matchup index to run (inclusive)', parseIntegerOption)
+  .option('--matchup-end <number>', 'Last matchup index to run (inclusive)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
-  .option('-p, --provider <provider>', 'LLM provider: chutes, featherless, or mock')
+  .option('-p, --provider <provider>', 'LLM provider: nim, chutes, featherless, or mock')
   .action(async (options) => {
     const experimentId = options.experiment as ExperimentId;
     if (![0, 1, 2, 3].includes(experimentId)) {
@@ -73,14 +65,25 @@ program
 
     console.log(`Starting Experiment ${experimentId}`);
     console.log(`Games per matchup: ${options.games}`);
+    console.log(`Max turns per game: ${options.maxTurns ?? 'none'}`);
+    if (options.matchupStart !== undefined || options.matchupEnd !== undefined) {
+      console.log(`Matchup shard: ${options.matchupStart ?? 0}-${options.matchupEnd ?? 'end'}`);
+    }
     console.log(`Output directory: ${options.output}`);
 
-    const config = createTournamentConfig(experimentId, options.games, options.output);
+    const config = createTournamentConfig(
+      experimentId,
+      options.games,
+      options.output,
+      options.maxTurns,
+      options.matchupStart,
+      options.matchupEnd
+    );
 
     const provider = options.provider || detectProvider();
     const adapter = createAdapter(provider as Provider);
 
-    const runner = new TournamentRunner(config, adapter);
+    const runner = new TournamentRunner(config, adapter, buildRunMetadata(provider as Provider));
 
     await runner.run((progress) => {
       process.stdout.write(
@@ -95,9 +98,11 @@ program
 program
   .command('game')
   .description('Run a single game')
-  .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseInt)
+  .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseIntegerOption)
   .option('-m, --models <models...>', 'Model IDs (exactly 4)')
-  .option('-p, --provider <provider>', 'LLM provider: chutes, featherless, or mock')
+  .option('-p, --provider <provider>', 'LLM provider: nim, chutes, featherless, or mock')
+  .option('-s, --seed <number>', 'Deterministic deck/shuffle seed', parseIntegerOption)
+  .option('-t, --max-turns <number>', 'Optional safety cap; omit or pass "none" for uncapped play', parseMaxTurnsOption)
   .option('-v, --verbose', 'Show detailed turn-by-turn output')
   .action(async (options) => {
     const experimentId = options.experiment as ExperimentId;
@@ -110,12 +115,17 @@ program
     const models = options.models?.length === 4 ? options.models : MODELS.slice(0, 4);
     console.log(`Running single game with: ${models.join(', ')}`);
 
+    const seed = Number.isFinite(options.seed) ? options.seed : Date.now();
+    console.log(`Seed: ${seed}`);
+    console.log(`Max turns: ${options.maxTurns ?? 'none'}`);
+
     const provider = options.provider || detectProvider();
     const adapter = createAdapter(provider as Provider);
 
     const gameId = `single_${Date.now()}`;
-    const state = createGameState(gameId, experimentId, [...models]);
-    const turnManager = new TurnManager({ maxTurns: 100 });
+    const state = createGameState(gameId, experimentId, [...models], seed);
+    state.metadata = buildRunMetadata(provider as Provider);
+    const turnManager = new TurnManager({ maxTurns: options.maxTurns });
 
     const finalState = await turnManager.runGame(state, adapter);
 
@@ -123,7 +133,8 @@ program
     const log = logger.stateToLog(finalState);
     const filepath = logger.saveGameLog(log);
 
-    console.log(formatGameSummary(log));
+    console.log('\nSingle game complete!');
+    console.log(formatGameSummary(log, { verbose: options.verbose }));
     console.log(`\nGame log saved to: ${filepath}`);
   });
 
@@ -131,16 +142,34 @@ program
 program
   .command('analyze')
   .description('Analyze tournament results')
-  .option('-e, --experiment <number>', 'Experiment ID to analyze (or all)', parseInt)
+  .option('-e, --experiment <number>', 'Experiment ID to analyze (or all)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
   .option('--csv', 'Export results to CSV')
+  .option('--include-mixed', 'Analyze all logs instead of auto-filtering to the dominant comparable cohort')
   .action(async (options) => {
     const logger = new GameLogger(`${options.output}/games`);
-    const games = logger.loadAllLogs(options.experiment);
+    const rawGames = logger.loadAllLogs(options.experiment);
+    const selection = options.includeMixed ? null : selectComparableGameCohort(rawGames);
+    const games = (selection ? selection.games : rawGames).filter((game) => game.terminationReason !== 'turn_cap');
+    const excludedTurnCapGames = (selection ? selection.games : rawGames).length - games.length;
 
     if (games.length === 0) {
       console.log('No games found to analyze');
       return;
+    }
+
+    if (selection?.cohort) {
+      console.log(
+        `Using dominant comparable cohort: schema v${selection.cohort.schemaVersion}, ` +
+        `provider=${selection.cohort.provider}, prompt=${selection.cohort.promptVersion}/${selection.cohort.promptHash} ` +
+        `(${games.length}/${rawGames.length} games)`
+      );
+      if (selection.excludedGames > 0) {
+        console.log(`Excluded ${selection.excludedGames} mixed or legacy games. Pass --include-mixed to override.`);
+      }
+    }
+    if (excludedTurnCapGames > 0) {
+      console.log(`Excluded ${excludedTurnCapGames} turn-cap games from analysis.`);
     }
 
     console.log(`Analyzing ${games.length} games`);
@@ -156,7 +185,7 @@ program
       console.log(`${'='.repeat(80)}`);
       console.log(`Total games: ${expGames.length}`);
 
-      const stats = calculateAllStats([...MODELS], expGames, expId);
+      const stats = calculateAllStats(getModelsFromGames(expGames), expGames, expId);
       console.log(generateSummaryReport(stats));
 
       if (options.csv) {
@@ -170,8 +199,10 @@ program
       const exporter = new CSVExporter(`${options.output}/csv`);
       const turnsPath = exporter.exportTurns(games);
       const summaryPath = exporter.exportGameSummary(games);
+      const playerGamePath = exporter.exportPlayerGameStats(games);
       console.log(`Turns exported to: ${turnsPath}`);
       console.log(`Summary exported to: ${summaryPath}`);
+      console.log(`Player-game stats exported to: ${playerGamePath}`);
     }
   });
 
@@ -179,24 +210,43 @@ program
 program
   .command('compare')
   .description('Compare results between experiments')
-  .requiredOption('--exp1 <number>', 'First experiment ID', parseInt)
-  .requiredOption('--exp2 <number>', 'Second experiment ID', parseInt)
+  .requiredOption('--exp1 <number>', 'First experiment ID', parseIntegerOption)
+  .requiredOption('--exp2 <number>', 'Second experiment ID', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
+  .option('--include-mixed', 'Compare all logs instead of auto-filtering to the dominant comparable cohort')
   .action(async (options) => {
     const logger = new GameLogger(`${options.output}/games`);
 
-    const exp1Games = logger.loadAllLogs(options.exp1);
-    const exp2Games = logger.loadAllLogs(options.exp2);
+    const rawExp1Games = logger.loadAllLogs(options.exp1);
+    const rawExp2Games = logger.loadAllLogs(options.exp2);
+    const rawCombined = [...rawExp1Games, ...rawExp2Games];
+    const selection = options.includeMixed ? null : selectComparableGameCohort(rawCombined);
+    const exp1Games = (selection ? selection.games.filter((game) => game.experimentId === options.exp1) : rawExp1Games)
+      .filter((game) => game.terminationReason !== 'turn_cap');
+    const exp2Games = (selection ? selection.games.filter((game) => game.experimentId === options.exp2) : rawExp2Games)
+      .filter((game) => game.terminationReason !== 'turn_cap');
 
     if (exp1Games.length === 0 || exp2Games.length === 0) {
       console.log('Need games from both experiments to compare');
       return;
     }
 
+    if (selection?.cohort) {
+      console.log(
+        `Using dominant comparable cohort: schema v${selection.cohort.schemaVersion}, ` +
+        `provider=${selection.cohort.provider}, prompt=${selection.cohort.promptVersion}/${selection.cohort.promptHash} ` +
+        `(${selection.games.length}/${rawCombined.length} games across both experiments)`
+      );
+      if (selection.excludedGames > 0) {
+        console.log(`Excluded ${selection.excludedGames} mixed or legacy games. Pass --include-mixed to override.`);
+      }
+    }
+
     console.log(`Comparing Experiment ${options.exp1} (${exp1Games.length} games) vs Experiment ${options.exp2} (${exp2Games.length} games)`);
 
-    const exp1Stats = calculateAllStats([...MODELS], exp1Games, options.exp1);
-    const exp2Stats = calculateAllStats([...MODELS], exp2Games, options.exp2);
+    const modelIds = getModelsFromGames([...exp1Games, ...exp2Games]);
+    const exp1Stats = calculateAllStats(modelIds, exp1Games, options.exp1);
+    const exp2Stats = calculateAllStats(modelIds, exp2Games, options.exp2);
 
     console.log('\nCHANGES FROM EXP1 TO EXP2:');
     console.log('-'.repeat(80));
@@ -235,6 +285,46 @@ program
     });
     console.log(`\nTotal: ${MODELS.length} models`);
     console.log(`Total matchups (C(${MODELS.length}, 4)): ${combinations([...MODELS], 4).length}`);
+  });
+
+// List NVIDIA NIM models command
+program
+  .command('nim-models')
+  .description('List available models from NVIDIA NIM')
+  .option('--filter <pattern>', 'Filter models by pattern (e.g., "qwen", "gemma")')
+  .action(async (options) => {
+    if (!process.env.NVIDIA_API_KEY && !process.env.NVIDIA_NIM_API_KEY && !process.env.NVIDIA_NIM_BASE_URL) {
+      console.error('NVIDIA_API_KEY or NVIDIA_NIM_BASE_URL environment variable is required');
+      process.exit(1);
+    }
+
+    try {
+      const client = createNimClient();
+      console.log('Fetching available models from NVIDIA NIM...\n');
+      const models = await client.fetchAvailableModels();
+
+      let filteredModels = models;
+      if (options.filter) {
+        const pattern = options.filter.toLowerCase();
+        filteredModels = models.filter(m => m.id.toLowerCase().includes(pattern));
+      }
+
+      console.log(`Found ${filteredModels.length} models${options.filter ? ` matching "${options.filter}"` : ''}:\n`);
+
+      filteredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+      filteredModels.forEach((model, i) => {
+        const ctx = model.max_model_len || 'N/A';
+        console.log(`  ${i + 1}. ${model.id}`);
+        console.log(`     Context: ${ctx}`);
+        if (model.owned_by) {
+          console.log(`     Owned by: ${model.owned_by}`);
+        }
+      });
+    } catch (error) {
+      console.error(`Failed to fetch models: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
+    }
   });
 
 // List Chutes models command

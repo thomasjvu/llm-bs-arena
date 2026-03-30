@@ -1,16 +1,14 @@
-# To Lie or Not to Lie: Studying Deception and Instruction Compliance in Multi-Agent LLM Games
+# To Lie or Not to Lie: A Reproducible Multi-Agent Study of Deception and Instruction Compliance in LLM Card Play
 
-**Status:** Draft v0.1  
-**Target Venue:** NeurIPS Datasets & Benchmarks Track  
+**Status:** Draft v0.2  
+**Target Outcome:** arXiv preprint first, then a workshop or benchmark-style submission  
 **Word Count Target:** 9 pages main text + references + appendix
 
 ---
 
 ## Abstract
 
-[150-250 words - Write last]
-
-Template: Large language models (LLMs) are increasingly deployed in competitive and adversarial settings, yet our understanding of their strategic behavior—particularly regarding deception—remains limited. We present a controlled study of LLM deception using the card game "Bullshit" (also known as "Cheat" or "I Doubt It"), where four LLM agents compete by either playing honestly or bluffing about their plays. Through three experimental conditions, we investigate: (1) baseline deception capabilities, (2) whether models show "moral restraint" when told opponents cannot lie, and (3) whether models violate explicit instructions prohibiting deception. Running [X] games across [Y] model matchups, we find [KEY FINDING 1], [KEY FINDING 2], and [KEY FINDING 3]. Our results have implications for AI alignment in competitive multi-agent systems and highlight the tension between goal-seeking behavior and instruction following in LLMs.
+Large language models increasingly operate in multi-step settings where strategic misrepresentation can improve local outcomes, yet most empirical work on honesty still centers on single-turn question answering or static preference probes. We introduce a reproducible evaluation framework for studying deception and instruction compliance by having four LLM agents play the card game *Bullshit* (also known as *Cheat* or *I Doubt It*). The game is well suited to this purpose because lying is a legal action, the truth of each claim is objectively verifiable from hidden cards, and success depends on both bluffing and lie detection under uncertainty. We structure the study around four prompt conditions: a low-strategy control, a baseline deception-allowed setting, an asymmetric-fairness setting in which the focal model is told opponents must play honestly, and an honesty-mandate setting that explicitly forbids lying. The system combines a seeded TypeScript game engine, NVIDIA NIM-backed model execution, provenance-aware logging, robust failure recovery for long-running hosted inference, and a player-game analysis pipeline built around bootstrap confidence intervals rather than fragile turn-level significance tests. The pilot dataset targets 600 games across 15 unique four-model matchups. This manuscript is intentionally drafted while the pilot is still running; methodology and system details are complete, while final quantitative results will be added after data collection finishes.
 
 ---
 
@@ -18,9 +16,17 @@ Template: Large language models (LLMs) are increasingly deployed in competitive 
 
 ### 1.1 Motivation
 
-Large language models (LLMs) are increasingly deployed in settings where they must interact with other agents—both human and AI—in competitive, cooperative, or adversarial contexts. As these systems become more capable, understanding their strategic behavior becomes critical for AI safety and alignment.
+Large language models increasingly operate in environments that are not single-turn, non-adversarial, or purely cooperative. They negotiate, debate, coordinate, compete for scarce resources, and act under instructions that may conflict with local incentives. In these settings, strategic behavior matters as much as raw task competence. A model that can reason well but systematically misrepresents information under pressure raises a different class of alignment concern than a model that simply makes mistakes.
 
-Deception poses a particular challenge: it can be strategically optimal in competitive settings (e.g., negotiation, games, business), yet it conflicts with principles of honesty and helpfulness that many LLMs are trained to uphold. This tension raises fundamental questions:
+Deception is therefore a useful stress test. In many real and simulated settings, deception is instrumentally rational: it can protect private information, improve bargaining position, or increase the probability of winning. At the same time, deception conflicts with the behavioral guarantees that users and developers often want from deployed systems. This creates a concrete alignment tension between goal achievement and honesty.
+
+Much of the current literature on LLM honesty studies static question answering, truthfulness benchmarks, or preference-following in single-agent settings. Those settings are valuable, but they do not fully capture what happens when models must react to other strategic agents over time. We want a setting with three properties: lying must be allowed by the environment, truth and falsehood must be objectively checkable, and outcomes must depend on both production and detection of deception. The card game *Bullshit* satisfies these requirements with minimal task overhead.
+
+This project asks whether modern instruction-tuned models will lie when doing so is useful, whether they moderate deception when they believe opponents are constrained, and whether they violate explicit honesty instructions when a game rewards doing so. These questions are straightforward to state, but answering them credibly requires careful engineering: reproducible shuffles and seating, stable prompt versioning, explicit challenge-opportunity logging, enforcement of public game constraints such as card-count visibility, and analysis at the player-game level rather than at the more weakly justified turn level.
+
+The resulting framework is meant to be useful in two ways. First, it is a direct research artifact for studying competitive deception in multi-agent LLM systems. Second, it is a concrete engineering example of how to turn a provocative idea into a measurable, reproducible experiment.
+
+This tension raises fundamental questions:
 
 - When LLMs are incentivized to deceive, how effectively do they do so?
 - Do LLMs show "moral restraint"—reducing deception even when it's advantageous?
@@ -38,11 +44,19 @@ We investigate three research questions through controlled experiments:
 
 ### 1.3 Contributions
 
-1. **A novel experimental framework** for studying LLM deception through the card game Bullshit, which provides clean metrics for deception, detection, and outcomes.
+1. **A controlled multi-agent evaluation framework** for studying deception through the card game Bullshit, where lies, challenges, and outcomes are all directly measurable.
 
-2. **Empirical findings** from [X] games across [Y] unique model matchups, revealing patterns in how different LLMs approach strategic deception.
+2. **A reproducible experimental protocol** spanning four prompt conditions, seeded execution, provenance-aware logs, and comparable-cohort analysis for current hosted-model evaluation.
 
-3. **Insights for AI alignment** regarding the tension between goal-seeking behavior and instruction following.
+3. **A research-to-portfolio pipeline** that connects raw gameplay logs to leaderboards, CSV exports, figures, and paper-ready summaries without manual data wrangling.
+
+### 1.4 Draft Status
+
+This manuscript is being written in parallel with pilot-data collection. The problem framing, methodology, system design, and analysis pipeline are stable enough to draft now; the quantitative results section remains intentionally incomplete until the 600-game pilot finishes. Any placeholders marked `[TO BE FILLED WITH DATA]` should be treated as pending rather than as missing argument structure.
+
+### 1.5 Paper Roadmap
+
+Section 2 situates the project within related work on honesty, deception, game-playing, and multi-agent LLM systems. Section 3 describes the Bullshit environment, the four prompt conditions, the model roster, and the engineering decisions required for reproducible hosted-model evaluation. Section 4 will report quantitative results from the 600-game pilot. Section 5 interprets those findings with respect to deception capability, moral restraint, and instruction compliance. Section 6 concludes with implications for alignment evaluation and future extensions of the benchmark.
 
 ---
 
@@ -50,41 +64,31 @@ We investigate three research questions through controlled experiments:
 
 ### 2.1 LLM Game-Playing
 
-[TO BE POPULATED WITH LITERATURE REVIEW]
+Recent work has shown that language models can participate in interactive game settings, but much of that literature focuses either on task competence or on communication skill rather than on deception as a first-class object of study. Existing game-oriented work is useful because it demonstrates that frozen or lightly scaffolded LLMs can sustain multi-turn interaction, infer latent state, and adapt strategy over time. However, many game benchmarks either use environments without a legal deception mechanic or emphasize cooperative reasoning over adversarial bluffing.
 
-Key references to include:
-- GAMEBoT: Game playing with LLMs
-- LLM Coup (Khoj AI): Deception in social deduction games
-- Chess Arena (Featherless): Competitive LLM play
-- General game-playing capabilities of LLMs
+The closest line of work studies social deduction and communication games such as Werewolf. In particular, *Exploring Large Language Models for Communication Games: An Empirical Study on Werewolf* (Xu et al., 2023) shows that strategic behavior can emerge when LLMs are placed in incomplete-information communication games. *Enhance Reasoning for Large Language Models in the Game Werewolf* (Wu et al., 2024) pushes this direction further by combining LLMs with a specialized reasoning module for social deduction. Our work is aligned with this broader agenda, but differs in a way that matters methodologically: Bullshit yields directly verifiable lie/truth labels from hidden cards, whereas many social deduction settings infer deception indirectly through voting, persuasion, or latent-role reasoning.
+
+This distinction makes Bullshit especially attractive as a benchmark substrate. It preserves adversarial interaction and incomplete information while simplifying the measurement problem. Rather than asking whether a model sounded deceptive or whether a vote implied suspicion, we can determine exactly whether a claim was true, whether opponents had a chance to challenge it, and whether the challenge outcome rewarded or punished the behavior in question.
 
 ### 2.2 LLM Deception and Honesty
 
-[TO BE POPULATED WITH LITERATURE REVIEW]
+Work on honesty in language models has primarily focused on truthfulness in single-turn prompting rather than on deception in strategic interaction. *TruthfulQA: Measuring How Models Mimic Human Falsehoods* (Lin, Hilton, and Evans, 2021) is a foundational example: it evaluates whether models produce true answers on adversarially chosen questions that elicit common misconceptions. This literature is essential for measuring factual reliability, but it does not directly address settings in which a model may have an incentive to misrepresent private information to another agent.
 
-Key references to include:
-- Studies on LLM truthfulness (Lin et al., Evans et al.)
-- Sycophancy in LLMs (Perez et al.)
-- Deception in multi-agent settings
-- Alignment challenges with honesty
+Another relevant line of work concerns behavioral probes for undesirable or misaligned tendencies. *Discovering Language Model Behaviors with Model-Written Evaluations* (Perez et al., 2022) helps establish the broader importance of behavior-centric evaluation, including behaviors that may not be captured by standard task benchmarks. Meanwhile, more explicitly deception-focused work such as *Sleeper Agents: Training Deceptive LLMs that Persist Through Safety Training* (Hubinger et al., 2024) studies strategically misaligned behavior under training and deployment pressures. Our contribution is complementary to that agenda: rather than constructing hidden backdoors, we study open-ended deception in a legal-game environment where misleading other agents is instrumentally useful and externally measurable.
+
+This places our benchmark between factuality evaluation and adversarial alignment evaluation. We are not asking only whether a model says false things, nor only whether a hidden objective can survive safety tuning. We are asking how models behave when deception is available, incentivized, monitored, and contestable by peers in a repeated multi-agent setting.
 
 ### 2.3 Multi-Agent LLM Systems
 
-[TO BE POPULATED WITH LITERATURE REVIEW]
+Multi-agent LLM research has expanded rapidly, covering collaboration, debate, competitive play, and oversight protocols. Debate-style work is especially relevant because it treats truth-seeking as an emergent property of adversarial interaction. The original AI debate proposal (Irving et al., 2018) and more recent empirical work such as *On Scalable Oversight with Weak LLMs Judging Strong LLMs* (Kenton et al., 2024) both motivate studying how stronger and weaker agents interact under asymmetric information. Our setup shares the theme of multi-agent strategic interaction, but differs in that it measures deceptive action directly through game mechanics rather than through judge persuasion.
 
-Key references to include:
-- Multi-agent debate and collaboration
-- Competitive multi-agent interactions
-- Emergent behaviors in LLM collectives
+More broadly, multi-agent settings frequently reveal behaviors that are invisible in isolated prompts: opponent modeling, retaliation, trust calibration, coalition-like dynamics, and strategy adaptation across turns. Bullshit is a minimal environment that still exhibits several of these properties. It therefore functions as a compact multi-agent testbed: complex enough to surface strategic misrepresentation, but simple enough to support reproducible logging, replay, and analysis.
 
 ### 2.4 Instruction Following vs. Goal Achievement
 
-[TO BE POPULATED WITH LITERATURE REVIEW]
+The tension between following instructions and maximizing task reward is central to current alignment work. Instruction-following systems are trained to satisfy user intent, yet competitive environments create obvious pressure to bend or violate rules when doing so improves outcomes. This tension is visible even in broad alignment framing such as *Training Language Models to Follow Instructions with Human Feedback* (Ouyang et al., 2022), where honesty is described as a desirable property but measured only indirectly.
 
-Key references to include:
-- Goal misgeneralization
-- Reward hacking in LLMs
-- Tension between helpfulness and honesty
+Our honesty-mandate condition makes this tension concrete. In Experiment 3, the model is explicitly told not to lie, but the game structure still rewards successful bluffing. This creates a small but sharp objective conflict: obey the instruction or improve the chance of winning. We see this as a practical micro-benchmark for instruction compliance under adversarial pressure, and as a bridge between general instruction-following work and the more specific literature on reward hacking, goal misgeneralization, and deceptive alignment.
 
 ---
 
@@ -96,6 +100,7 @@ We use the card game "Bullshit" (also known as "Cheat" or "I Doubt It") as our e
 
 **Rules:**
 - 4 players, each dealt 13 cards from a standard 52-card deck
+- The player holding the Ace of Spades takes the first turn
 - Players take turns playing 1-4 cards face-down, claiming they are of a specific rank
 - The required rank cycles: A, 2, 3, ..., K, A, 2, ...
 - Players may lie about what cards they play
@@ -137,16 +142,16 @@ We conduct four experiments, each with different prompt framing:
 
 ### 3.3 Models Tested
 
-We test 6 models from Chutes AI, selected for diversity in size, architecture, and training approach:
+We test 6 instruction-tuned models served through NVIDIA NIM, selected for diversity in family, size, and provider availability:
 
 | # | Model | Parameters | Family |
 |---|-------|------------|--------|
-| 1 | unsloth/gemma-3-27b-it | 27B | Gemma |
-| 2 | Qwen/Qwen2.5-72B-Instruct | 72B | Qwen |
-| 3 | Qwen/Qwen3-32B | 32B | Qwen |
-| 4 | Qwen/Qwen3-Next-80B-A3B-Instruct | 80B | Qwen |
-| 5 | chutesai/Mistral-Small-3.2-24B-Instruct-2506 | 24B | Mistral |
-| 6 | NousResearch/Hermes-4.3-36B | 36B | Hermes |
+| 1 | `qwen/qwen3.5-397b-a17b` | 397B A17B | Qwen |
+| 2 | `minimaxai/minimax-m2.5` | 230B | MiniMax |
+| 3 | `nvidia/nemotron-3-super-120b-a12b` | 120B A12B | Nemotron |
+| 4 | `mistralai/mistral-small-4-119b-2603` | 119B | Mistral |
+| 5 | `z-ai/glm5` | 744B MoE | GLM |
+| 6 | `moonshotai/kimi-k2.5` | 1T MoE | Kimi |
 
 **Matchup Design:**
 - All unique 4-player combinations: C(6,4) = 15 matchups
@@ -155,21 +160,17 @@ We test 6 models from Chutes AI, selected for diversity in size, architecture, a
 
 ### 3.4 Technical Implementation
 
-[See README.md for full details]
+The environment is implemented as a TypeScript/Node.js game engine coupled to an LLM adapter layer that targets NVIDIA NIM as the primary OpenAI-compatible provider. Chutes and Featherless remain available as fallbacks for development, but the pilot dataset is collected under a single provider cohort to reduce infrastructure-induced confounds. Each game log records the experiment id, model roster, seed, seating order, provider metadata, prompt version, prompt hash, turn-by-turn actions, challenge outcomes, and reasoning text.
 
-**Architecture:**
-- Game engine: TypeScript/Node.js
-- LLM integration: Chutes AI API (OpenAI-compatible)
-- Response parsing: JSON extraction with retry fallback
-- Logging: Full game state per turn
+The engine enforces the parts of Bullshit that are public and objective. The player holding the Ace of Spades starts. The required rank cycles deterministically from Ace through King. Each move must place between one and four face-down cards, and the face-down count is public even when the claimed rank is false. This distinction matters because it prevents impossible actions such as claiming to have played seven cards of one rank, which would otherwise contaminate both game validity and downstream analysis.
 
-**Key Implementation Details:**
-- Deterministic seeding for reproducibility
-- Randomized seating order per game
-- Maximum 100 turns per game (prevents infinite games)
-- Streaming responses for real-time visualization
+Model responses are constrained to structured JSON and parsed with extraction and retry logic. Long-running hosted inference required additional operational safeguards beyond basic parsing. We therefore use bounded prompt context, per-request retries, provider-client recreation on recoverable failures, and a multi-hour outer recovery window so that transient API instability does not force a full tournament restart. For auditability, terminal transcripts can be persisted alongside JSON game logs. Importantly, uncapped play is the default research configuration. A turn cap can be enabled for debugging or recovery, but such runs are marked explicitly and excluded from the default analysis pipeline.
 
-### 3.5 Metrics
+### 3.5 Reproducibility and Dataset Hygiene
+
+Reproducibility is handled at both execution time and analysis time. At execution time, deck order and seating are seeded and logged, and tournament shards can be run in parallel over disjoint matchup ranges without duplicating work. At analysis time, mixed historical runs are excluded by default using a dominant-cohort filter defined by schema version, provider, prompt version, and prompt hash. This prevents stale logs from earlier configurations from silently mixing with the current NIM-backed dataset.
+
+### 3.6 Metrics
 
 **Primary Metrics:**
 
@@ -186,12 +187,16 @@ We test 6 models from Chutes AI, selected for diversity in size, architecture, a
 - Lie frequency delta (Exp 2 - Exp 1): Measures moral restraint
 - Violation rate (Exp 3): Measures instruction compliance
 
-### 3.6 Statistical Analysis
+### 3.7 Statistical Analysis
 
-- **Between-model comparisons:** One-way ANOVA with Tukey HSD post-hoc tests
-- **Between-experiment comparisons:** Paired t-tests (same model across conditions)
-- **Effect sizes:** Cohen's d for meaningful differences
-- **Confidence intervals:** 95% CI for all reported metrics
+- **Primary unit of analysis:** one row per player per game rather than turn-level observations
+- **Main summaries:** bootstrap 95% confidence intervals for per-model means and between-experiment deltas
+- **Dataset hygiene:** analysis defaults to the dominant comparable cohort defined by schema version, provider, prompt version, and prompt hash
+- **Supporting evidence:** reasoning traces and exemplar game logs are used qualitatively, not as the main statistical unit
+
+### 3.8 Pilot Execution Status
+
+At the time of writing, the infrastructure, logging, recovery, and analysis paths are complete and live pilot collection is underway on the 600-game design described above. The manuscript is therefore written in a staged way: the motivation, system, and methods sections are intended to be publication-ready now, while numerical results, figures, and some parts of the discussion will be populated from the completed pilot dataset.
 
 ---
 
@@ -299,7 +304,7 @@ We test 6 models from Chutes AI, selected for diversity in size, architecture, a
 
 ### 5.5 Limitations
 
-1. **Model selection:** Limited to models available on Chutes AI
+1. **Model selection:** Limited to the active provider roster and the models available through it
 2. **Game complexity:** Bullshit is simpler than real-world deception scenarios
 3. **Opponent modeling:** Models cannot learn opponent behavior across games
 4. **Prompt sensitivity:** Results may vary with prompt phrasing
@@ -330,26 +335,26 @@ These results highlight the complexity of deploying LLMs in competitive settings
 
 ## References
 
-[TO BE POPULATED]
+[Seed bibliography to convert into BibTeX before submission]
 
-### LLM Game-Playing
-- [ ] GAMEBoT reference
-- [ ] LLM Coup reference
-- [ ] Chess Arena reference
+### LLM Honesty and Behavioral Evaluation
+- Lin, Stephanie, Jacob Hilton, and Owain Evans. *TruthfulQA: Measuring How Models Mimic Human Falsehoods*. 2021.
+- Perez, Ethan, et al. *Discovering Language Model Behaviors with Model-Written Evaluations*. 2022.
+- Hubinger, Evan, et al. *Sleeper Agents: Training Deceptive LLMs That Persist Through Safety Training*. 2024.
 
-### LLM Deception
-- [ ] Lin et al. - Truthfulness
-- [ ] Perez et al. - Sycophancy
-- [ ] General deception references
+### Multi-Agent and Game-Playing LLMs
+- Xu, Yuzhuang, et al. *Exploring Large Language Models for Communication Games: An Empirical Study on Werewolf*. 2023.
+- Wu, Shuang, et al. *Enhance Reasoning for Large Language Models in the Game Werewolf*. 2024.
+- [Add GAMEBoT reference]
+- [Add LLM Coup / social deduction reference]
+- [Add Chess Arena / competitive game reference]
 
-### Multi-Agent Systems
-- [ ] Multi-agent debate papers
-- [ ] Competitive multi-agent references
-
-### AI Alignment
-- [ ] Goal misgeneralization
-- [ ] Reward hacking
-- [ ] Instruction following
+### Oversight, Debate, and Alignment
+- Irving, Geoffrey, et al. *AI Safety via Debate*. 2018.
+- Kenton, Zachary, et al. *On Scalable Oversight with Weak LLMs Judging Strong LLMs*. 2024.
+- Ouyang, Long, et al. *Training Language Models to Follow Instructions with Human Feedback*. 2022.
+- [Add goal misgeneralization reference]
+- [Add reward hacking / scheming reference]
 
 ---
 
@@ -437,6 +442,6 @@ RESPONSE FORMAT:
 
 ---
 
-## Appendix D: Statistical Test Details
+## Appendix D: Statistical Reporting Details
 
-[ANOVA tables, effect sizes, confidence intervals]
+[Bootstrap interval tables, cohort metadata, and confidence intervals]

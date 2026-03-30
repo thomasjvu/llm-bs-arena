@@ -3,12 +3,26 @@
 Visualization for LLM Bullshit research.
 """
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import os
 from pathlib import Path
 from typing import Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_CACHE_DIR = PROJECT_ROOT / ".cache"
+MPL_CACHE_DIR = PROJECT_CACHE_DIR / "matplotlib"
+
+PROJECT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+MPL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("XDG_CACHE_HOME", str(PROJECT_CACHE_DIR.resolve()))
+os.environ.setdefault("MPLCONFIGDIR", str(MPL_CACHE_DIR.resolve()))
+
+import pandas as pd
+import numpy as np
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 def setup_style():
