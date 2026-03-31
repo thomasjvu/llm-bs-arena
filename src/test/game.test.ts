@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createDeck, shuffleDeck, dealCards, parseCard, cardToString, countRank } from '../engine/deck.js';
 import {
@@ -10,14 +13,15 @@ import {
 } from '../engine/game-state.js';
 import { TurnManager, LLMAdapter } from '../engine/turn-manager.js';
 import { combinations, createTournamentConfig, generateMatchups, resolveMatchupShard, shuffleSeating } from '../tournament/matchup-generator.js';
-import { formatTournamentGameCompletion } from '../tournament/tournament-runner.js';
+import { formatTournamentGameCompletion, TournamentRunner } from '../tournament/tournament-runner.js';
 import { calculatePlayerStats, calculateParanoia } from '../metrics/player-stats.js';
 import { parsePlayResponse, parseChallengeResponse, extractJSON } from '../llm/response-parser.js';
-import { MODELS, RANKS, Card, GameLog } from '../types/game.js';
-import { GameLogger, selectComparableGameCohort } from '../logging/game-logger.js';
-import { ResilientLLMAdapter } from '../llm/provider.js';
+import { MODELS, BASELINE_MODELS, RANKS, Card, GameLog } from '../types/game.js';
+import { GameLogger, selectComparableGameCohort, buildCohortManifest } from '../logging/game-logger.js';
+import { ResilientLLMAdapter, buildRunMetadata } from '../llm/provider.js';
 import { APIConnectionError as NimAPIConnectionError, NimClient } from '../llm/nim-api.js';
 import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
+import { ScriptedBaselineAdapter } from '../llm/llm-adapter.js';
 
 describe('Deck', () => {
   it('should create a standard 52-card deck with 4 of each rank', () => {
@@ -113,7 +117,6 @@ describe('GameState', () => {
     const models = ['model1', 'model2', 'model3', 'model4'];
     const state = createGameState('test-game', 1, models);
 
-    // Manually empty a player's hand
     state.players[0].hand = [];
 
     const winner = checkWinner(state);
@@ -139,7 +142,6 @@ describe('GameState', () => {
     const models = ['model1', 'model2', 'model3', 'model4'];
     const state = createGameState('test-game', 1, models, 42);
 
-    // Play a card that doesn't match current rank (force a lie)
     const player = state.players[0];
     const wrongCard = player.hand.find((c) => c.rank !== state.currentRank);
 
@@ -154,7 +156,6 @@ describe('GameState', () => {
 
       expect(turn.challenged).toBe(true);
       expect(turn.challengeCorrect).toBe(true);
-      // Liar picks up pile
       expect(player.hand.length).toBeGreaterThan(12);
       expect(state.pile.length).toBe(0);
     }
@@ -396,6 +397,63 @@ describe('Adapter Recovery', () => {
   });
 });
 
+describe('Scripted Baseline Adapter', () => {
+  it('should play truthfully when it has the required rank', async () => {
+    const adapter = new ScriptedBaselineAdapter();
+
+    const response = await adapter.getPlayDecision(
+      'player_0',
+      'baseline/scripted',
+      {
+        hand: [
+          { rank: 'A', suit: 'S' },
+          { rank: 'A', suit: 'H' },
+          { rank: 'K', suit: 'D' },
+        ],
+        currentRank: 'A',
+        pileSize: 0,
+        otherPlayersCounts: {},
+        recentTurns: [],
+      },
+      1
+    );
+
+    expect(response.cards_to_play).toEqual(['AH', 'AS']);
+    expect(response.claim_count).toBe(2);
+  });
+
+  it('should challenge mathematically impossible claims', async () => {
+    const adapter = new ScriptedBaselineAdapter();
+
+    const response = await adapter.getChallengeDecision(
+      'player_1',
+      'baseline/scripted',
+      {
+        hand: [
+          { rank: 'Q', suit: 'S' },
+          { rank: 'Q', suit: 'H' },
+          { rank: 'Q', suit: 'D' },
+        ],
+        currentRank: 'Q',
+        pileSize: 4,
+        otherPlayersCounts: {
+          'model-a': 2,
+        },
+        recentTurns: [],
+      },
+      {
+        playerId: 'model-a',
+        claimedCount: 2,
+        claimedRank: 'Q',
+      },
+      1
+    );
+
+    expect(response.challenge).toBe(true);
+    expect(response.reasoning).toMatch(/impossible/i);
+  });
+});
+
 describe('NVIDIA NIM Client', () => {
   const originalFetch = globalThis.fetch;
 
@@ -507,12 +565,12 @@ describe('Matchup Generator', () => {
     expect(MODELS).toContain('minimaxai/minimax-m2.5');
     expect(MODELS).not.toContain('minimaxai/minimax-m2.1');
     expect(MODELS.length).toBe(6);
+    expect(BASELINE_MODELS).toEqual(['baseline/scripted']);
   });
 
   it('should generate correct number of combinations', () => {
     const items = [1, 2, 3, 4, 5];
     const combs = combinations(items, 2);
-    // C(5,2) = 10
     expect(combs.length).toBe(10);
   });
 
@@ -553,6 +611,36 @@ describe('Matchup Generator', () => {
     expect(config.maxTurns).toBe(200);
   });
 
+  it('should allow a custom roster for scripted-baseline side tournaments', () => {
+    const config = createTournamentConfig(
+      1,
+      3,
+      'custom-logs',
+      undefined,
+      undefined,
+      undefined,
+      ['baseline/scripted', 'qwen/qwen3.5-397b-a17b', 'minimaxai/minimax-m2.5', 'nvidia/nemotron-3-super-120b-a12b']
+    );
+
+    expect(config.models).toEqual([
+      'baseline/scripted',
+      'qwen/qwen3.5-397b-a17b',
+      'minimaxai/minimax-m2.5',
+      'nvidia/nemotron-3-super-120b-a12b',
+    ]);
+  });
+
+  it('should tag mixed scripted/provider runs in metadata', () => {
+    const metadata = buildRunMetadata('nim', [
+      'baseline/scripted',
+      'qwen/qwen3.5-397b-a17b',
+      'minimaxai/minimax-m2.5',
+      'nvidia/nemotron-3-super-120b-a12b',
+    ]);
+
+    expect(metadata.provider).toBe('nim+scripted');
+  });
+
   it('should resolve a valid matchup shard', () => {
     const shard = resolveMatchupShard(15, 5, 9);
     expect(shard).toEqual({
@@ -591,6 +679,113 @@ describe('Matchup Generator', () => {
 
     expect(message).toContain('Winner: mistralai/mistral-small-4-119b-2603');
     expect(message).not.toContain('Winner: player_3');
+  });
+
+  it('should retry a failed tournament slot until it produces the configured number of successful games', async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-runner-'));
+    const config = createTournamentConfig(1, 2, outputDir, undefined, 0, 0);
+    const runner = new TournamentRunner(config, {} as LLMAdapter);
+    const savedGameIds: string[] = [];
+    let callCount = 0;
+
+    (runner as any).sleep = async () => {};
+    (runner as any).saveGameLog = (log: GameLog) => {
+      savedGameIds.push(log.gameId);
+    };
+    (runner as any).runSingleGame = async (_matchup: unknown, matchupIndex: number, gameIndex: number) => {
+      callCount++;
+      if (callCount <= 2) {
+        throw new Error('transient provider failure');
+      }
+
+      return {
+        gameId: `exp1_m${matchupIndex}_g${gameIndex}_success_${callCount}`,
+        experimentId: 1,
+        players: [
+          { id: 'player_0', modelId: 'a' },
+          { id: 'player_1', modelId: 'b' },
+          { id: 'player_2', modelId: 'c' },
+          { id: 'player_3', modelId: 'd' },
+        ],
+        turns: [],
+        winner: 'player_0',
+        terminationReason: 'winner',
+        totalTurns: 1,
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        durationMs: 1000,
+      } satisfies GameLog;
+    };
+
+    await runner.run();
+
+    expect(callCount).toBe(4);
+    expect(savedGameIds).toEqual([
+      'exp1_m0_g0_success_3',
+      'exp1_m0_g1_success_4',
+    ]);
+
+    const checkpoint = JSON.parse(
+      fs.readFileSync(path.join(outputDir, 'checkpoint_exp1_m0-0.json'), 'utf-8')
+    );
+    expect(checkpoint.completedGames).toHaveLength(2);
+  });
+
+  it('should repair legacy checkpoints with holes instead of skipping missing game slots', async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-hole-'));
+    const config = createTournamentConfig(0, 4, outputDir, undefined, 0, 0);
+    const checkpointPath = path.join(outputDir, 'checkpoint_exp0_m0-0.json');
+
+    fs.writeFileSync(
+      checkpointPath,
+      JSON.stringify(
+        {
+          experimentId: 0,
+          gamesPerMatchup: 4,
+          matchupStart: 0,
+          matchupEnd: 0,
+          matchupIndex: 0,
+          gameIndex: 4,
+          completedGames: ['exp0_m0_g2_123', 'exp0_m0_g3_456'],
+          timestamp: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+
+    const runner = new TournamentRunner(config, {} as LLMAdapter);
+    const savedSlots: string[] = [];
+
+    (runner as any).sleep = async () => {};
+    (runner as any).saveGameLog = () => {};
+    (runner as any).runSingleGame = async (_matchup: unknown, matchupIndex: number, gameIndex: number) => {
+      savedSlots.push(`${matchupIndex}:${gameIndex}`);
+      return {
+        gameId: `exp0_m${matchupIndex}_g${gameIndex}_${Date.now()}`,
+        experimentId: 0,
+        players: [
+          { id: 'player_0', modelId: 'a' },
+          { id: 'player_1', modelId: 'b' },
+          { id: 'player_2', modelId: 'c' },
+          { id: 'player_3', modelId: 'd' },
+        ],
+        turns: [],
+        winner: 'player_0',
+        terminationReason: 'winner',
+        totalTurns: 1,
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        durationMs: 1000,
+      } satisfies GameLog;
+    };
+
+    await runner.run();
+
+    expect(savedSlots).toEqual(['0:0', '0:1']);
+
+    const checkpoint = JSON.parse(fs.readFileSync(checkpointPath, 'utf-8'));
+    expect(checkpoint.completedGames).toHaveLength(4);
   });
 });
 
@@ -694,7 +889,6 @@ describe('Metrics', () => {
   it('should calculate paranoia correctly', () => {
     const paranoia = calculateParanoia('model-a', [mockGameLog]);
 
-    // model-a had 1 opportunity to challenge (turn 2) and did challenge
     expect(paranoia).toBe(1);
   });
 
@@ -812,6 +1006,76 @@ describe('Analysis Cohorts', () => {
     expect(selection.games.map((log) => log.gameId)).toEqual(['new-1', 'new-2']);
     expect(selection.excludedGames).toBe(1);
     expect(selection.cohort?.schemaVersion).toBe(2);
+  });
+
+  it('should build a cohort manifest with explicit exclusion reasons', () => {
+    const logs: GameLog[] = [
+      {
+        gameId: 'mixed',
+        experimentId: 1,
+        players: [{ id: 'p1', modelId: 'a' }, { id: 'p2', modelId: 'b' }, { id: 'p3', modelId: 'c' }, { id: 'p4', modelId: 'd' }],
+        metadata: {
+          logSchemaVersion: 1,
+          provider: 'legacy',
+          promptVersion: 'old',
+          promptHash: 'old',
+        },
+        turns: [],
+        winner: 'p1',
+        terminationReason: 'winner',
+        totalTurns: 1,
+        startTime: '2024-01-01T00:00:00Z',
+        endTime: '2024-01-01T00:00:01Z',
+        durationMs: 1000,
+      },
+      {
+        gameId: 'turn-cap',
+        experimentId: 1,
+        players: [{ id: 'p1', modelId: 'a' }, { id: 'p2', modelId: 'b' }, { id: 'p3', modelId: 'c' }, { id: 'p4', modelId: 'd' }],
+        metadata: {
+          logSchemaVersion: 2,
+          provider: 'nim',
+          promptVersion: '2026-03-25',
+          promptHash: 'p123',
+        },
+        turns: [],
+        winner: null,
+        terminationReason: 'turn_cap',
+        totalTurns: 10,
+        startTime: '2024-01-01T00:00:00Z',
+        endTime: '2024-01-01T00:00:01Z',
+        durationMs: 1000,
+      },
+      {
+        gameId: 'valid',
+        experimentId: 1,
+        players: [{ id: 'p1', modelId: 'a' }, { id: 'p2', modelId: 'b' }, { id: 'p3', modelId: 'c' }, { id: 'p4', modelId: 'd' }],
+        metadata: {
+          logSchemaVersion: 2,
+          provider: 'nim',
+          promptVersion: '2026-03-25',
+          promptHash: 'p123',
+        },
+        turns: [],
+        winner: 'p1',
+        terminationReason: 'winner',
+        totalTurns: 10,
+        startTime: '2024-01-01T00:00:00Z',
+        endTime: '2024-01-01T00:00:01Z',
+        durationMs: 1000,
+      },
+    ];
+
+    const manifest = buildCohortManifest(logs);
+
+    expect(manifest.includedGames).toEqual(['valid']);
+    expect(manifest.excludedGamesByReason.mixedCohort).toEqual(['mixed']);
+    expect(manifest.excludedGamesByReason.turnCap).toEqual(['turn-cap']);
+    expect(manifest.countsByExperiment[1]).toEqual({
+      included: 1,
+      excludedMixedCohort: 1,
+      excludedTurnCap: 1,
+    });
   });
 });
 

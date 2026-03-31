@@ -110,7 +110,6 @@ export function processPlay(
     throw new Error(`Claimed count must match the number of face-down cards, got ${claimedCount} for ${actualCards.length} card(s)`);
   }
 
-  // Validate player has the cards
   for (const card of actualCards) {
     const hasCard = player.hand.some((c) => c.rank === card.rank && c.suit === card.suit);
     if (!hasCard) {
@@ -118,10 +117,8 @@ export function processPlay(
     }
   }
 
-  // Determine if it's a lie
   const wasLie = actualCards.some((card) => card.rank !== state.currentRank);
 
-  // Remove cards from hand and add to pile
   removeCardsFromHand(player, actualCards);
   state.pile.push(...actualCards);
 
@@ -162,21 +159,16 @@ export function processChallenge(
   turn.challengerId = challengerId;
   turn.challengeReasoning = challengeReasoning;
 
-  // Challenge is correct if the play was a lie
   turn.challengeCorrect = turn.wasLie;
 
   if (turn.wasLie) {
-    // Liar picks up the pile
     addCardsToHand(playedBy, state.pile);
   } else {
-    // Challenger picks up the pile
     addCardsToHand(challenger, state.pile);
   }
 
-  // Clear the pile
   state.pile = [];
 
-  // Update hand sizes after challenge resolution
   turn.handSizesAfterTurn = Object.fromEntries(state.players.map((p) => [p.id, p.hand.length]));
 }
 
@@ -187,7 +179,6 @@ export function advanceTurn(state: GameState, turn: Turn): void {
   state.turns.push(turn);
   state.currentRank = getNextRank(state.currentRank);
 
-  // Move to next player (skip eliminated players)
   do {
     state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   } while (state.players[state.currentPlayerIndex].isEliminated);
@@ -236,7 +227,6 @@ export function getVisibleState(state: GameState, playerId: string): {
     }
   }
 
-  // Show last 5 turns for context
   const recentTurns = state.turns.slice(-5);
 
   return {

@@ -42,8 +42,11 @@ export class TournamentRunner {
   private turnManager: TurnManager;
   private checkpointPath: string;
   private logsDir: string;
+  private snapshotsDir: string;
   private runMetadata?: RunMetadata;
   private checkpointPrefix: string;
+  private gameRetryDelayMs: number;
+  private maxGameFailuresPerSlot: number;
 
   constructor(config: TournamentConfig, llmAdapter: LLMAdapter, runMetadata?: RunMetadata) {
     this.config = config;
@@ -51,11 +54,14 @@ export class TournamentRunner {
     this.runMetadata = runMetadata;
     this.turnManager = new TurnManager({ maxTurns: config.maxTurns });
     this.logsDir = path.join(config.outputDir, 'games');
+    this.snapshotsDir = path.join(config.outputDir, 'active');
     this.checkpointPrefix = `checkpoint_exp${config.experimentId}`;
     this.checkpointPath = path.join(config.outputDir, `${this.checkpointPrefix}.json`);
+    this.gameRetryDelayMs = config.gameRetryDelayMs ?? 30_000;
+    this.maxGameFailuresPerSlot = config.maxGameFailuresPerSlot ?? 10;
 
-    // Ensure directories exist
     fs.mkdirSync(this.logsDir, { recursive: true });
+    fs.mkdirSync(this.snapshotsDir, { recursive: true });
   }
 
   /**
@@ -70,65 +76,89 @@ export class TournamentRunner {
     );
     const checkpoint = this.loadCheckpoint();
 
-    let startMatchup = checkpoint?.matchupIndex ?? shard.start;
-    let startGame = checkpoint?.gameIndex || 0;
     const completedGames = [...(checkpoint?.completedGames || [])];
+    const completedSlots = this.extractCompletedSlotKeys(completedGames);
 
     console.log(`Starting experiment ${this.config.experimentId}`);
     console.log(`Total matchups in experiment: ${matchups.length}`);
     console.log(`Shard matchups: ${shard.start}-${shard.end} (${shard.count} matchups)`);
     console.log(`Games per matchup: ${this.config.gamesPerMatchup}`);
     console.log(`Total games in shard: ${shard.count * this.config.gamesPerMatchup}`);
+    console.log(`Retry delay per failed game slot: ${Math.round(this.gameRetryDelayMs / 1000)}s`);
+    console.log(`Max failed attempts per game slot before aborting shard: ${this.maxGameFailuresPerSlot}`);
 
     if (checkpoint) {
-      console.log(`Resuming from matchup ${startMatchup}, game ${startGame}`);
+      const nextPending = this.findNextPendingSlot(shard, matchups, completedSlots);
+      console.log(
+        `Resuming shard with ${completedGames.length}/${shard.count * this.config.gamesPerMatchup} completed games` +
+        (nextPending ? `; next pending slot is matchup ${nextPending.matchupIndex}, game ${nextPending.gameIndex}` : '; shard is complete')
+      );
     }
 
-    for (let m = startMatchup; m <= shard.end; m++) {
+    for (let m = shard.start; m <= shard.end; m++) {
       const matchup = matchups[m];
-      const gameStart = m === startMatchup ? startGame : 0;
 
-      for (let g = gameStart; g < matchup.games; g++) {
-        const gameId = generateGameId(this.config.experimentId, m, g);
-        const seed = hashString(`${this.config.experimentId}:${m}:${g}`);
+      for (let g = 0; g < matchup.games; g++) {
+        const slotKey = this.buildSlotKey(m, g);
+        if (completedSlots.has(slotKey)) {
+          continue;
+        }
 
-        try {
-          const gameLog = await this.runSingleGame(matchup, gameId, seed);
-          this.saveGameLog(gameLog);
-          completedGames.push(gameId);
+        let failuresForSlot = 0;
+        while (true) {
+          const seed = hashString(`${this.config.experimentId}:${m}:${g}`);
 
-          // Update checkpoint
-          this.saveCheckpoint({
-            experimentId: this.config.experimentId,
-            gamesPerMatchup: this.config.gamesPerMatchup,
-            matchupStart: shard.start,
-            matchupEnd: shard.end,
-            matchupIndex: m,
-            gameIndex: g + 1,
-            completedGames,
-            timestamp: new Date().toISOString(),
-          });
+          try {
+            const gameLog = await this.runSingleGame(matchup, m, g, seed);
+            this.saveGameLog(gameLog);
+            completedGames.push(gameLog.gameId);
+            completedSlots.add(slotKey);
+            this.deleteGameSnapshot(m, g);
 
-          // Report progress
-          if (onProgress) {
-            const progress = calculateProgress(
-              m - shard.start,
-              g + 1,
-              shard.count,
-              this.config.gamesPerMatchup
+            const nextPending = this.findNextPendingSlot(shard, matchups, completedSlots);
+
+            this.saveCheckpoint({
+              experimentId: this.config.experimentId,
+              gamesPerMatchup: this.config.gamesPerMatchup,
+              matchupStart: shard.start,
+              matchupEnd: shard.end,
+              matchupIndex: nextPending?.matchupIndex ?? shard.end,
+              gameIndex: nextPending?.gameIndex ?? matchup.games,
+              completedGames,
+              timestamp: new Date().toISOString(),
+            });
+
+            if (onProgress) {
+              onProgress(this.buildProgress(shard, matchups, completedSlots));
+            }
+
+            console.log(
+              formatTournamentGameCompletion(
+                gameLog,
+                (completedSlots.size / (shard.count * this.config.gamesPerMatchup)) * 100
+              )
             );
-            onProgress(progress);
-          }
+            break;
+          } catch (error) {
+            failuresForSlot++;
+            const slotLabel = this.buildSlotKey(m, g);
+            console.error(
+              `[tournament] Error in game slot ${slotLabel}, attempt ${failuresForSlot}/${this.maxGameFailuresPerSlot}:`,
+              error
+            );
 
-          console.log(
-            formatTournamentGameCompletion(
-              gameLog,
-              ((m - shard.start) * matchup.games + g + 1) / (shard.count * matchup.games) * 100
-            )
-          );
-        } catch (error) {
-          console.error(`Error in game ${gameId}:`, error);
-          // Continue to next game
+            if (failuresForSlot >= this.maxGameFailuresPerSlot) {
+              throw new Error(
+                `Aborting shard after ${failuresForSlot} failed attempt(s) for ${slotLabel}. ` +
+                `Fix the underlying issue, then rerun the same shard command to resume.`
+              );
+            }
+
+            console.log(
+              `[tournament] Waiting ${(this.gameRetryDelayMs / 1000).toFixed(1)}s before retrying ${slotLabel}...`
+            );
+            await this.sleep(this.gameRetryDelayMs);
+          }
         }
       }
     }
@@ -139,20 +169,25 @@ export class TournamentRunner {
   /**
    * Runs a single game
    */
-  async runSingleGame(matchup: Matchup, gameId: string, seed: number): Promise<GameLog> {
-    // Randomize seating order
-    const players = shuffleSeating(matchup.players, seed);
+  async runSingleGame(matchup: Matchup, matchupIndex: number, gameIndex: number, seed: number): Promise<GameLog> {
+    const snapshotState = this.loadGameSnapshot(matchupIndex, gameIndex);
+    const state = snapshotState ?? (() => {
+      const gameId = generateGameId(this.config.experimentId, matchupIndex, gameIndex);
+      const players = shuffleSeating(matchup.players, seed);
+      const freshState = createGameState(gameId, this.config.experimentId, players, seed);
+      freshState.metadata = this.runMetadata;
+      this.saveGameSnapshot(matchupIndex, gameIndex, freshState);
+      return freshState;
+    })();
 
-    // Create game state
-    const state = createGameState(gameId, this.config.experimentId, players, seed);
-    state.metadata = this.runMetadata;
+    const startTime = state.startTime.getTime();
+    const finalState = await this.turnManager.runGameWithCallback(
+      state,
+      this.llmAdapter,
+      async (updatedState) => this.saveGameSnapshot(matchupIndex, gameIndex, updatedState)
+    );
+    const endTime = finalState.endTime?.getTime() ?? Date.now();
 
-    // Run the game
-    const startTime = Date.now();
-    const finalState = await this.turnManager.runGame(state, this.llmAdapter);
-    const endTime = Date.now();
-
-    // Convert to log format
     return this.stateToLog(finalState, startTime, endTime);
   }
 
@@ -222,6 +257,116 @@ export class TournamentRunner {
    */
   private saveCheckpoint(checkpoint: Checkpoint): void {
     fs.writeFileSync(this.checkpointPath, JSON.stringify(checkpoint, null, 2));
+  }
+
+  private buildSlotKey(matchupIndex: number, gameIndex: number): string {
+    return `exp${this.config.experimentId}_m${matchupIndex}_g${gameIndex}`;
+  }
+
+  private extractCompletedSlotKeys(gameIds: string[]): Set<string> {
+    const slots = new Set<string>();
+
+    for (const gameId of gameIds) {
+      const match = gameId.match(/^exp(\d+)_m(\d+)_g(\d+)_/);
+      if (!match) {
+        continue;
+      }
+
+      const [, experimentId, matchupIndex, gameIndex] = match;
+      if (Number.parseInt(experimentId, 10) !== this.config.experimentId) {
+        continue;
+      }
+
+      slots.add(`exp${experimentId}_m${matchupIndex}_g${gameIndex}`);
+    }
+
+    return slots;
+  }
+
+  private findNextPendingSlot(
+    shard: ReturnType<typeof resolveMatchupShard>,
+    matchups: Matchup[],
+    completedSlots: Set<string>
+  ): { matchupIndex: number; gameIndex: number } | null {
+    for (let m = shard.start; m <= shard.end; m++) {
+      for (let g = 0; g < matchups[m].games; g++) {
+        if (!completedSlots.has(this.buildSlotKey(m, g))) {
+          return { matchupIndex: m, gameIndex: g };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private buildProgress(
+    shard: ReturnType<typeof resolveMatchupShard>,
+    matchups: Matchup[],
+    completedSlots: Set<string>
+  ): TournamentProgress {
+    let completedMatchups = 0;
+    for (let m = shard.start; m <= shard.end; m++) {
+      const allGamesPresent = Array.from({ length: matchups[m].games }, (_, gameIndex) =>
+        completedSlots.has(this.buildSlotKey(m, gameIndex))
+      ).every(Boolean);
+      if (allGamesPresent) {
+        completedMatchups++;
+      }
+    }
+
+    const totalGames = shard.count * this.config.gamesPerMatchup;
+    const completedGames = completedSlots.size;
+
+    return {
+      totalMatchups: shard.count,
+      completedMatchups,
+      totalGames,
+      completedGames,
+      percentComplete: totalGames > 0 ? (completedGames / totalGames) * 100 : 0,
+    };
+  }
+
+  private getSnapshotPath(matchupIndex: number, gameIndex: number): string {
+    return path.join(this.snapshotsDir, `${this.buildSlotKey(matchupIndex, gameIndex)}.snapshot.json`);
+  }
+
+  private saveGameSnapshot(matchupIndex: number, gameIndex: number, state: GameState): void {
+    const filepath = this.getSnapshotPath(matchupIndex, gameIndex);
+    const payload = {
+      ...state,
+      startTime: state.startTime.toISOString(),
+      endTime: state.endTime?.toISOString(),
+    };
+    fs.writeFileSync(filepath, JSON.stringify(payload, null, 2));
+  }
+
+  private loadGameSnapshot(matchupIndex: number, gameIndex: number): GameState | null {
+    const filepath = this.getSnapshotPath(matchupIndex, gameIndex);
+    if (!fs.existsSync(filepath)) {
+      return null;
+    }
+
+    const raw = JSON.parse(fs.readFileSync(filepath, 'utf-8')) as GameState & {
+      startTime: string;
+      endTime?: string;
+    };
+
+    return {
+      ...raw,
+      startTime: new Date(raw.startTime),
+      endTime: raw.endTime ? new Date(raw.endTime) : undefined,
+    };
+  }
+
+  private deleteGameSnapshot(matchupIndex: number, gameIndex: number): void {
+    const filepath = this.getSnapshotPath(matchupIndex, gameIndex);
+    if (fs.existsSync(filepath)) {
+      fs.unlinkSync(filepath);
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

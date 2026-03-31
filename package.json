@@ -14,7 +14,7 @@
     "server": "tsx --env-file=.env src/server.ts",
     "server:mock": "LLM_PROVIDER=mock tsx src/server.ts",
     "test": "vitest run",
-    "lint": "tsc --noEmit && python3 -m py_compile analysis/analyze.py analysis/stats.py analysis/plots.py analysis/report.py",
+    "lint": "tsc --noEmit && python3 -B -m py_compile analysis/analyze.py analysis/stats.py analysis/plots.py analysis/report.py",
     "check": "npm run lint && npm test && npm run build",
     "audit": "npm audit",
     "python:setup": "python3 -m venv .venv && .venv/bin/python -m pip install -r analysis/requirements.txt",

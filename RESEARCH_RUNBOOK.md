@@ -230,9 +230,9 @@ This produces:
 If you want to parallelize one experiment safely across multiple terminals, shard by matchup index:
 
 ```bash
-npm run run:logged -- tournament -e 1 -g 10 -t 200 --matchup-start 0 --matchup-end 4
-npm run run:logged -- tournament -e 1 -g 10 -t 200 --matchup-start 5 --matchup-end 9
-npm run run:logged -- tournament -e 1 -g 10 -t 200 --matchup-start 10 --matchup-end 14
+npm run run:logged -- tournament -e 1 -g 10 --matchup-start 0 --matchup-end 4
+npm run run:logged -- tournament -e 1 -g 10 --matchup-start 5 --matchup-end 9
+npm run run:logged -- tournament -e 1 -g 10 --matchup-start 10 --matchup-end 14
 ```
 
 Rules for sharding:
@@ -240,6 +240,8 @@ Rules for sharding:
 - each shard writes a separate checkpoint file
 - it is safe to run different shards of the same experiment in parallel
 - do not run the same experiment twice without shard bounds against the same output directory
+- shard progress is counted by successful completed games, not raw attempts
+- interrupted long games can resume from `logs/active/` snapshots when you restart the same shard command
 
 During the run, check progress with:
 

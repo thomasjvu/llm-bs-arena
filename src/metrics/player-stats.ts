@@ -32,28 +32,23 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
       continue;
     }
 
-    // Find this model's player ID in this game
     const playerInfo = game.players.find((p) => p.modelId === modelId);
     if (!playerInfo) continue;
 
     const playerId = playerInfo.id;
     gamesPlayed++;
 
-    // Check for win
     if (game.winner === playerId) {
       wins++;
     }
 
-    // Analyze turns
     for (const turn of game.turns) {
       if (turn.playerId === playerId) {
-        // This was our play
         totalPlays++;
 
         if (turn.wasLie) {
           totalLies++;
 
-          // Track instruction violations in experiment 3
           if (experimentId === 3) {
             instructionViolations++;
           }
@@ -94,7 +89,6 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
     challengeAccuracy: challengesMade > 0 ? correctChallenges / challengesMade : 0,
   };
 
-  // Add experiment 3 specific metrics
   if (experimentId === 3) {
     stats.instructionViolations = instructionViolations;
     stats.instructionViolationRate = totalPlays > 0 ? instructionViolations / totalPlays : 0;
@@ -144,7 +138,6 @@ export function calculateAllStats(
   const stats = new Map<string, PlayerStats>();
 
   for (const modelId of modelIds) {
-    // Filter games that include this model
     const modelGames = games.filter((game) => game.players.some((p) => p.modelId === modelId));
     stats.set(modelId, calculatePlayerStats(modelId, modelGames, experimentId));
   }

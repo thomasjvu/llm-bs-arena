@@ -16,6 +16,22 @@ export interface CohortSelection {
   excludedGames: number;
 }
 
+export interface CohortManifest {
+  generatedAt: string;
+  totalGamesFound: number;
+  includedGames: string[];
+  excludedGamesByReason: {
+    mixedCohort: string[];
+    turnCap: string[];
+  };
+  comparableCohort: AnalysisCohort | null;
+  countsByExperiment: Record<number, {
+    included: number;
+    excludedMixedCohort: number;
+    excludedTurnCap: number;
+  }>;
+}
+
 /**
  * Handles game logging to JSON files
  */
@@ -169,6 +185,53 @@ export function selectComparableGameCohort(logs: GameLog[]): CohortSelection {
     cohort: selected.cohort,
     games: selected.games,
     excludedGames: logs.length - selected.games.length,
+  };
+}
+
+export function buildCohortManifest(
+  logs: GameLog[],
+  options: { includeMixed?: boolean } = {}
+): CohortManifest {
+  const selection = options.includeMixed ? { cohort: null, games: logs, excludedGames: 0 } : selectComparableGameCohort(logs);
+  const selectionIds = new Set(selection.games.map((game) => game.gameId));
+  const includedGames: string[] = [];
+  const excludedMixedCohort: string[] = [];
+  const excludedTurnCap: string[] = [];
+  const countsByExperiment: CohortManifest['countsByExperiment'] = { 0: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 }, 1: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 }, 2: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 }, 3: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 } };
+
+  for (const log of logs) {
+    const counts = countsByExperiment[log.experimentId] ?? (countsByExperiment[log.experimentId] = {
+      included: 0,
+      excludedMixedCohort: 0,
+      excludedTurnCap: 0,
+    });
+
+    if (!selectionIds.has(log.gameId)) {
+      excludedMixedCohort.push(log.gameId);
+      counts.excludedMixedCohort++;
+      continue;
+    }
+
+    if (log.terminationReason === 'turn_cap') {
+      excludedTurnCap.push(log.gameId);
+      counts.excludedTurnCap++;
+      continue;
+    }
+
+    includedGames.push(log.gameId);
+    counts.included++;
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totalGamesFound: logs.length,
+    includedGames,
+    excludedGamesByReason: {
+      mixedCohort: excludedMixedCohort,
+      turnCap: excludedTurnCap,
+    },
+    comparableCohort: selection.cohort,
+    countsByExperiment,
   };
 }
 

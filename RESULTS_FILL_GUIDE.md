@@ -71,6 +71,22 @@ Add:
 
 Keep the blog more narrative than the paper.
 
+## 3.5 Fill the qualitative examples
+
+Use:
+- `QUALITATIVE_CASE_STUDIES.md`
+
+Select:
+- 1 successful bluff
+- 1 strong challenge/detection example
+- 1 moral-restraint example
+- 1 honesty-violation or compliance example
+
+Make sure every selected case:
+- comes from the final valid cohort
+- supports a quantitative result already in the paper
+- does not rely on capped or quarantined runs
+
 ## 4. Fill the portfolio / resume
 
 Update:

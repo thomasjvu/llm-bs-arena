@@ -4,6 +4,8 @@ A research framework that makes LLMs play the card game **Bullshit** (Cheat / I 
 
 Four LLMs sit at a virtual card table, bluffing, lying, and calling each other out — while we record everything.
 
+This project is best understood as a **benchmark harness / evaluation framework** for strategic misrepresentation in multi-agent LLM systems. The card game is the mechanism; the main contribution is the reproducible protocol, logging, and analysis pipeline around it.
+
 ## Research Questions
 
 1. **RQ1 — Deception**: How effectively can LLMs deceive other LLMs in a game that rewards lying?
@@ -14,11 +16,54 @@ Each question maps to one of three experiments with different prompt framings. S
 If this is your first clean run, follow [RESEARCH_RUNBOOK.md](RESEARCH_RUNBOOK.md).
 Writing and packaging helpers:
 - [PAPER_DRAFT.md](PAPER_DRAFT.md)
+- [PAPER_POSITIONING.md](PAPER_POSITIONING.md)
 - [BLOG_POST_DRAFT.md](BLOG_POST_DRAFT.md)
 - [PORTFOLIO_DRAFT.md](PORTFOLIO_DRAFT.md)
 - [RESULTS_FILL_GUIDE.md](RESULTS_FILL_GUIDE.md)
+- [RESULTS_SECTION_TEMPLATE.md](RESULTS_SECTION_TEMPLATE.md)
+- [QUALITATIVE_CASE_STUDIES.md](QUALITATIVE_CASE_STUDIES.md)
 - [CITATION_NOTES.md](CITATION_NOTES.md)
+- [references.bib](references.bib)
 - [FIGURE_TABLE_PLAN.md](FIGURE_TABLE_PLAN.md)
+- [BENCHMARK_OVERVIEW_FIGURE.md](BENCHMARK_OVERVIEW_FIGURE.md)
+- [BENCHMARK_SPEC.md](BENCHMARK_SPEC.md)
+- [DATASET_CARD.md](DATASET_CARD.md)
+- [ARTIFACT_CHECKLIST.md](ARTIFACT_CHECKLIST.md)
+- [APPENDIX_REPRODUCIBILITY.md](APPENDIX_REPRODUCIBILITY.md)
+- [SCREENSHOT_CHECKLIST.md](SCREENSHOT_CHECKLIST.md)
+- [PUBLIC_RELEASE_CHECKLIST.md](PUBLIC_RELEASE_CHECKLIST.md)
+- [ARXIV_SUBMISSION_CHECKLIST.md](ARXIV_SUBMISSION_CHECKLIST.md)
+
+## Why This Matters Beyond One Card Game
+
+The research question is broader than Bullshit itself. This environment is useful because it combines:
+- legal deception
+- objective ground truth
+- repeated peer challenge opportunities
+- hidden private state
+
+That makes it a controlled probe for a larger class of behaviors: strategic misrepresentation under uncertainty. The same tension appears in negotiation, debate, competitive planning, market-style agents, and other multi-agent settings where local success can conflict with honest reporting.
+
+The right claim is narrow and defensible:
+- this benchmark measures one important slice of multi-agent honesty and deception behavior
+
+The wrong claim is:
+- this benchmark proves models are deceptive in general
+
+## Next Steps
+
+The follow-ups that are actually worth doing while the pilot runs are:
+- add a second environment with the same hidden-information / challenge structure
+- add a human baseline beyond the shipped scripted baseline
+- add a small ablation on prompt phrasing or roster sensitivity
+- publish a cohort manifest with exact included game ids and exclusion reasons
+
+The broader packaging ideas are intentionally not blocking the pilot:
+- building a definitive benchmark release
+- supporting every provider equally
+- turning this into a full Gym-style package before publishing
+
+Those are reasonable future directions, but they do not improve the current paper faster than finishing the pilot, freezing the cohort, and publishing a clean benchmark-harness artifact.
 
 ## Setup
 
@@ -69,6 +114,8 @@ NVIDIA_API_KEY=your_nvidia_api_key_here
 # LLM_CHALLENGE_MAX_TOKENS=4096
 # LLM_RECOVERY_WINDOW_MS=36000000
 # LLM_RECOVERY_BACKOFF_MS=30000
+# TOURNAMENT_GAME_RETRY_DELAY_MS=30000
+# TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT=10
 
 # Optional fallback: Chutes
 # LLM_PROVIDER=chutes
@@ -90,6 +137,8 @@ Why these tuning defaults exist:
 - If you see `[TRUNCATED]`, raise the relevant token cap slightly. If you see timeouts, raise the timeout. Otherwise keep the settings fixed for the full dataset.
 - `LLM_RECOVERY_WINDOW_MS=36000000` gives recoverable provider failures up to 10 hours to heal before the run gives up on that request.
 - `LLM_RECOVERY_BACKOFF_MS=30000` controls how long the outer recovery loop waits between adapter recreations.
+- `TOURNAMENT_GAME_RETRY_DELAY_MS=30000` controls how long a shard waits before retrying the same failed game slot.
+- `TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT=10` controls how many full-game failures a shard tolerates for one slot before aborting loudly instead of silently under-collecting data.
 
 ### Build
 
@@ -159,6 +208,9 @@ npm start -- game -e 1 -p nim -t none
 
 # Save the full terminal transcript while the game runs
 npm run run:logged -- game -e 1 -p nim
+
+# Mix in the local scripted baseline for a side-by-side comparison game
+npm start -- game -e 1 -p nim -m "baseline/scripted" "qwen/qwen3.5-397b-a17b" "minimaxai/minimax-m2.5" "nvidia/nemotron-3-super-120b-a12b"
 ```
 
 With the current heavyweight NIM roster, one validation game can easily take 15-45 minutes. A slow or retry-heavy model can push it higher.
@@ -176,11 +228,20 @@ npm start -- tournament -e 1 -g 10
 Options:
 - `-e, --experiment <0|1|2|3>` — experiment number (required)
 - `-g, --games <n>` — games per matchup (default: 10)
+- `-m, --models <models...>` — optional custom roster (4+ unique model IDs)
 - `-t, --max-turns <n>` — optional safety cap; omit or pass `none`/`uncapped` for uncapped play
 - `--matchup-start <n>` — first matchup index to run, inclusive
 - `--matchup-end <n>` — last matchup index to run, inclusive
 - `-o, --output <dir>` — output directory (default: `logs`)
 - `-p, --provider <nim|chutes|featherless|mock>` — LLM provider (default: auto-detect from env, preferring NIM)
+
+Optional scripted-baseline side tournament:
+
+```bash
+npm run run:logged -- tournament -e 1 -g 10 -p nim -m "baseline/scripted" "qwen/qwen3.5-397b-a17b" "minimaxai/minimax-m2.5" "nvidia/nemotron-3-super-120b-a12b"
+```
+
+The scripted baseline is local and deterministic. It is useful for side comparisons, sanity checks, and appendix baselines, but it is not part of the main 600-game hosted-model pilot cohort.
 
 Parallel sharding:
 
@@ -193,6 +254,8 @@ npm run run:logged -- tournament -e 1 -g 10 --matchup-start 10 --matchup-end 14
 
 Each shard gets its own checkpoint file, so these can run in parallel safely.
 Do not run the same experiment twice without shard bounds against the same output directory.
+Each shard now retries the same game slot until it gets the intended number of successful completed games, rather than silently skipping failed attempts.
+Tournament runs also persist active per-slot snapshots in `logs/active/`, so a restarted shard can resume an interrupted long game instead of always starting that slot from scratch.
 Capped games are excluded from the analysis and report pipeline by default.
 
 **Analyze results:**
@@ -202,6 +265,12 @@ npm start -- analyze -e 1          # single experiment
 npm start -- analyze               # all experiments
 npm start -- analyze --csv         # export CSV files
 npm start -- analyze --include-mixed  # opt out of cohort filtering
+```
+
+**Write a cohort manifest:**
+
+```bash
+npm start -- manifest
 ```
 
 **Compare experiments:**
@@ -215,7 +284,7 @@ Shows per-model deltas in lie frequency, paranoia, and win rate between two expe
 **Other commands:**
 
 ```bash
-npm start -- models          # list all 6 tournament models
+npm start -- models          # list default tournament roster plus optional local baselines
 npm start -- nim-models      # list available NVIDIA NIM models
 npm start -- nim-models --filter qwen  # filter models
 npm start -- chutes-models   # list available Chutes API models
@@ -235,6 +304,12 @@ The default tournament uses 6 models that are available through NVIDIA NIM:
 | 4 | `mistralai/mistral-small-4-119b-2603` |
 | 5 | `z-ai/glm5` |
 | 6 | `moonshotai/kimi-k2.5` |
+
+Optional local comparison baseline:
+
+| Model | Description |
+|-------|-------------|
+| `baseline/scripted` | Deterministic heuristic player that tells the truth when possible, makes minimal legal bluffs when forced, and challenges mathematically impossible or high-risk closing claims |
 
 ## Experiments
 

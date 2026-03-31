@@ -131,14 +131,12 @@ def summarize_experiment(player_games: pd.DataFrame, experiment_id: int) -> Dict
     if exp_df.empty:
         return {}
 
-    win_rate = bootstrap_mean_ci(exp_df["won"].astype(float).values)
     lie_frequency = bootstrap_mean_ci(exp_df["lie_frequency"].astype(float).values)
     paranoia = bootstrap_mean_ci(exp_df["paranoia_frequency"].astype(float).values)
 
     summary = {
         "player_games": str(len(exp_df)),
         "models": str(exp_df["model_id"].nunique()),
-        "win_rate": format_ci(*win_rate, pct=True),
         "lie_frequency": format_ci(*lie_frequency, pct=True),
         "paranoia_frequency": format_ci(*paranoia, pct=True),
     }
@@ -213,9 +211,10 @@ def print_statistical_report(player_games: pd.DataFrame) -> None:
         print("-" * 60)
         print(f"  Player-game rows: {summary['player_games']}")
         print(f"  Models: {summary['models']}")
-        print(f"  Mean win rate: {summary['win_rate']}")
         print(f"  Mean lie frequency: {summary['lie_frequency']}")
         print(f"  Mean paranoia frequency: {summary['paranoia_frequency']}")
+        print("  Experiment-level win rate is omitted here because one winner is guaranteed per four-player game;")
+        print("  use the per-model leaderboard below for meaningful win-rate comparisons.")
         if "instruction_violation_rate" in summary:
             print(f"  Mean instruction violation rate: {summary['instruction_violation_rate']}")
         print()

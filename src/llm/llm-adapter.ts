@@ -1,4 +1,4 @@
-import { PlayTurnResponse, ChallengeResponse, Card, Turn, Rank, TokenUsage } from '../types/game.js';
+import { PlayTurnResponse, ChallengeResponse, Card, Turn, Rank, TokenUsage, RANKS } from '../types/game.js';
 import { FeatherlessClient } from './featherless-api.js';
 import { ChutesClient } from './chutes-api.js';
 import { NimClient } from './nim-api.js';
@@ -13,6 +13,7 @@ import {
   parseChallengeResponse,
 } from './response-parser.js';
 import { LLMAdapter } from '../engine/turn-manager.js';
+import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
 
 interface VisibleState {
   hand: Card[];
@@ -293,6 +294,112 @@ export class MockLLMAdapter implements LLMAdapter {
       reasoning,
       challenge: shouldChallenge,
       responseTimeMs,
+    };
+  }
+}
+
+const RANK_ORDER = new Map(RANKS.map((rank, index) => [rank, index]));
+const SUIT_ORDER = new Map(['C', 'D', 'H', 'S'].map((suit, index) => [suit, index]));
+
+function sortCards(cards: Card[]): Card[] {
+  return [...cards].sort((a, b) => {
+    const rankDelta = (RANK_ORDER.get(a.rank) ?? 0) - (RANK_ORDER.get(b.rank) ?? 0);
+    if (rankDelta !== 0) {
+      return rankDelta;
+    }
+    return (SUIT_ORDER.get(a.suit) ?? 0) - (SUIT_ORDER.get(b.suit) ?? 0);
+  });
+}
+
+function cardToString(card: Card): string {
+  return `${card.rank}${card.suit}`;
+}
+
+function countRankInHand(hand: Card[], rank: string): number {
+  return hand.filter((card) => card.rank === rank).length;
+}
+
+export class ScriptedBaselineAdapter implements LLMAdapter {
+  async getPlayDecision(
+    _playerId: string,
+    _modelId: string,
+    visibleState: VisibleState,
+    _experimentId: number
+  ): Promise<PlayTurnResponse> {
+    const hand = sortCards(visibleState.hand);
+    const truthfulCards = hand.filter((card) => card.rank === visibleState.currentRank);
+
+    if (truthfulCards.length > 0) {
+      const cardsToPlay =
+        hand.length <= MAX_CARDS_PER_PLAY
+          ? truthfulCards.slice(0, Math.min(truthfulCards.length, MAX_CARDS_PER_PLAY))
+          : truthfulCards.slice(0, Math.min(truthfulCards.length, 2));
+
+      return {
+        reasoning:
+          `I have ${truthfulCards.length} ${visibleState.currentRank}(s), so I play truthfully ` +
+          `with ${cardsToPlay.length} card${cardsToPlay.length === 1 ? '' : 's'}.`,
+        cards_to_play: cardsToPlay.map(cardToString),
+        claim_count: cardsToPlay.length,
+      };
+    }
+
+    const rankCounts = new Map<string, number>();
+    for (const card of hand) {
+      rankCounts.set(card.rank, (rankCounts.get(card.rank) ?? 0) + 1);
+    }
+
+    const bluffCard = [...hand].sort((a, b) => {
+      const countDelta = (rankCounts.get(a.rank) ?? 0) - (rankCounts.get(b.rank) ?? 0);
+      if (countDelta !== 0) {
+        return countDelta;
+      }
+      const rankDelta = (RANK_ORDER.get(a.rank) ?? 0) - (RANK_ORDER.get(b.rank) ?? 0);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+      return (SUIT_ORDER.get(a.suit) ?? 0) - (SUIT_ORDER.get(b.suit) ?? 0);
+    })[0];
+
+    return {
+      reasoning:
+        `I have no ${visibleState.currentRank}s, so I make the smallest legal bluff: one face-down card ` +
+        `claimed as ${visibleState.currentRank}.`,
+      cards_to_play: [cardToString(bluffCard)],
+      claim_count: 1,
+    };
+  }
+
+  async getChallengeDecision(
+    _challengerId: string,
+    _modelId: string,
+    visibleState: VisibleState,
+    lastPlay: { playerId: string; claimedCount: number; claimedRank: string },
+    _experimentId: number
+  ): Promise<ChallengeResponse> {
+    const heldCount = countRankInHand(visibleState.hand, lastPlay.claimedRank);
+    const accusedHandCount = visibleState.otherPlayersCounts[lastPlay.playerId];
+    const mathematicallyImpossible = heldCount + lastPlay.claimedCount > 4;
+    const aboutToWin = accusedHandCount !== undefined && accusedHandCount <= lastPlay.claimedCount;
+    const largeClaim = lastPlay.claimedCount >= 3 && heldCount > 0;
+    const riskyCloseout = aboutToWin && heldCount > 0;
+
+    const shouldChallenge = mathematicallyImpossible || riskyCloseout || largeClaim;
+
+    if (shouldChallenge) {
+      return {
+        reasoning:
+          mathematicallyImpossible
+            ? `I hold ${heldCount} ${lastPlay.claimedRank}(s), so a claim of ${lastPlay.claimedCount} is impossible.`
+            : `The player is close to going out and the ${lastPlay.claimedCount}-card ${lastPlay.claimedRank} claim is risky enough to challenge.`,
+        challenge: true,
+      };
+    }
+
+    return {
+      reasoning:
+        `I cannot prove the ${lastPlay.claimedCount}-card ${lastPlay.claimedRank} claim is false, so I pass.`,
+      challenge: false,
     };
   }
 }

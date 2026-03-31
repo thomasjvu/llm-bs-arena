@@ -2,6 +2,8 @@
 
 This file is a staging area for the paper's references section. The goal is not to be a perfect bibliography manager; the goal is to keep a verified list of high-value references and their primary links so they can be converted into BibTeX cleanly before submission.
 
+The working BibTeX starter now lives in `references.bib`. Use this file for deciding what belongs in the paper; use `references.bib` for the actual submission bibliography.
+
 ## Priority References
 
 ### Honesty, Truthfulness, and Behavioral Evaluation
@@ -60,7 +62,7 @@ This file is a staging area for the paper's references section. The goal is not 
 
 ## How To Use This File
 
-1. Convert each verified item into BibTeX.
+1. Convert each verified item into `references.bib`.
 2. Keep the paper's references section aligned with only the references actually cited in the main text.
 3. Prefer primary links (`arXiv`, official lab pages, or publisher pages) over blog summaries.
 4. Do not cite project pages when a proper paper exists.

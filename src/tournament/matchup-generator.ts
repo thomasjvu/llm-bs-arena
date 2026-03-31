@@ -72,7 +72,8 @@ export function createTournamentConfig(
   outputDir: string = 'logs',
   maxTurns?: number,
   matchupStart?: number,
-  matchupEnd?: number
+  matchupEnd?: number,
+  models: readonly string[] = MODELS
 ): TournamentConfig {
   if (maxTurns !== undefined && (!Number.isInteger(maxTurns) || maxTurns <= 0)) {
     throw new Error(`maxTurns must be a positive integer, got: ${maxTurns}`);
@@ -86,15 +87,40 @@ export function createTournamentConfig(
     throw new Error(`matchupEnd must be a non-negative integer, got: ${matchupEnd}`);
   }
 
+  if (models.length < 4) {
+    throw new Error(`Tournament model roster must include at least 4 unique models, got: ${models.length}`);
+  }
+
+  const uniqueModels = [...new Set(models)];
+  if (uniqueModels.length !== models.length) {
+    throw new Error('Tournament model roster must not contain duplicate model IDs');
+  }
+
   return {
     experimentId,
-    models: [...MODELS],
+    models: [...uniqueModels],
     gamesPerMatchup,
     outputDir,
     maxTurns,
     matchupStart,
     matchupEnd,
+    gameRetryDelayMs: parsePositiveIntegerEnv('TOURNAMENT_GAME_RETRY_DELAY_MS', 30_000),
+    maxGameFailuresPerSlot: parsePositiveIntegerEnv('TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT', 10),
   };
+}
+
+function parsePositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
 }
 
 export function resolveMatchupShard(

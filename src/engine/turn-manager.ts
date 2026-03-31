@@ -59,10 +59,21 @@ export class TurnManager {
    * Runs a complete game until someone wins or an optional safety cap is reached.
    */
   async runGame(state: GameState, llm: LLMAdapter): Promise<GameState> {
+    return this.runGameWithCallback(state, llm);
+  }
+
+  async runGameWithCallback(
+    state: GameState,
+    llm: LLMAdapter,
+    onTurnComplete?: (state: GameState) => void | Promise<void>
+  ): Promise<GameState> {
     state.maxTurns = this.config.maxTurns;
 
     while (!state.winner && (this.config.maxTurns === undefined || state.turns.length < this.config.maxTurns)) {
       await this.executeTurn(state, llm);
+      if (onTurnComplete) {
+        await onTurnComplete(state);
+      }
 
       const winner = checkWinner(state);
       if (winner) {
@@ -92,7 +103,6 @@ export class TurnManager {
     const currentPlayer = getCurrentPlayer(state);
     const visibleState = getVisibleState(state, currentPlayer.id);
 
-    // Get play decision from LLM
     const playResponse = await llm.getPlayDecision(
       currentPlayer.id,
       currentPlayer.modelId,
@@ -100,7 +110,6 @@ export class TurnManager {
       state.experimentId
     );
 
-    // Parse cards from response
     const normalizedPlay = normalizePlaySelection(
       playResponse.cards_to_play,
       currentPlayer.hand,
@@ -110,7 +119,6 @@ export class TurnManager {
       console.warn(`[turn] ${currentPlayer.modelId}: ${note}`);
     }
 
-    // Create turn
     const turn = processPlay(
       state,
       currentPlayer.id,
@@ -119,7 +127,6 @@ export class TurnManager {
       playResponse.reasoning
     );
 
-    // Challenge window - each other player gets a chance
     const otherPlayers = getOtherPlayers(state);
     const challengeOrder =
       this.config.challengeOrder === 'random' ? this.shuffleArray(otherPlayers) : otherPlayers;

@@ -4,6 +4,7 @@ import {
   ChutesLLMAdapter,
   NimLLMAdapter,
   MockLLMAdapter,
+  ScriptedBaselineAdapter,
 } from './llm-adapter.js';
 import { createFeatherlessClient } from './featherless-api.js';
 import { createChutesClient } from './chutes-api.js';
@@ -16,6 +17,7 @@ import { APIConnectionError as NimAPIConnectionError } from './nim-api.js';
 
 export type Provider = 'nim' | 'chutes' | 'featherless' | 'mock';
 export const LOG_SCHEMA_VERSION = 2;
+export const SCRIPTED_BASELINE_PREFIX = 'baseline/';
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -51,6 +53,40 @@ function createBaseAdapter(provider: Provider = 'nim'): LLMAdapter {
       return new FeatherlessLLMAdapter(createFeatherlessClient());
     default:
       throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
+function usesScriptedBaseline(modelIds: readonly string[] = []): boolean {
+  return modelIds.some((modelId) => modelId.startsWith(SCRIPTED_BASELINE_PREFIX));
+}
+
+class RoutedLLMAdapter implements LLMAdapter {
+  constructor(
+    private readonly remoteAdapter: LLMAdapter,
+    private readonly scriptedBaselineAdapter: LLMAdapter = new ScriptedBaselineAdapter()
+  ) {}
+
+  async getPlayDecision(
+    playerId: string,
+    modelId: string,
+    visibleState: Parameters<LLMAdapter['getPlayDecision']>[2],
+    experimentId: number,
+    onToken?: (text: string) => void
+  ) {
+    const adapter = modelId.startsWith(SCRIPTED_BASELINE_PREFIX) ? this.scriptedBaselineAdapter : this.remoteAdapter;
+    return adapter.getPlayDecision(playerId, modelId, visibleState, experimentId, onToken);
+  }
+
+  async getChallengeDecision(
+    challengerId: string,
+    modelId: string,
+    visibleState: Parameters<LLMAdapter['getChallengeDecision']>[2],
+    lastPlay: Parameters<LLMAdapter['getChallengeDecision']>[3],
+    experimentId: number,
+    onToken?: (text: string) => void
+  ) {
+    const adapter = modelId.startsWith(SCRIPTED_BASELINE_PREFIX) ? this.scriptedBaselineAdapter : this.remoteAdapter;
+    return adapter.getChallengeDecision(challengerId, modelId, visibleState, lastPlay, experimentId, onToken);
   }
 }
 
@@ -133,12 +169,18 @@ export class ResilientLLMAdapter implements LLMAdapter {
   }
 }
 
-export function createAdapter(provider: Provider = 'nim'): LLMAdapter {
-  if (provider === 'mock') {
-    return createBaseAdapter(provider);
+export function createAdapter(provider: Provider = 'nim', modelIds: readonly string[] = []): LLMAdapter {
+  const baseAdapter =
+    provider === 'mock'
+      ? createBaseAdapter(provider)
+      : new ResilientLLMAdapter(() => createBaseAdapter(provider), provider.toUpperCase());
+
+  if (!usesScriptedBaseline(modelIds)) {
+    return baseAdapter;
   }
 
-  return new ResilientLLMAdapter(() => createBaseAdapter(provider), provider.toUpperCase());
+  console.log('Enabling local scripted baseline routing for baseline/* model IDs');
+  return new RoutedLLMAdapter(baseAdapter);
 }
 
 export function detectProvider(): Provider {
@@ -167,10 +209,10 @@ export function getProviderDisplayName(provider: Provider): string {
   }
 }
 
-export function buildRunMetadata(provider: Provider): RunMetadata {
+export function buildRunMetadata(provider: Provider, modelIds: readonly string[] = []): RunMetadata {
   return {
     logSchemaVersion: LOG_SCHEMA_VERSION,
-    provider,
+    provider: usesScriptedBaseline(modelIds) ? `${provider}+scripted` : provider,
     providerBaseUrl: getProviderBaseUrl(provider),
     promptVersion: PROMPT_VERSION,
     promptHash: getPromptHash(),

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
+import * as fs from 'fs';
 import { Command, InvalidArgumentError } from 'commander';
 import { TournamentRunner } from './tournament/tournament-runner.js';
 import { createTournamentConfig, generateMatchups, combinations } from './tournament/matchup-generator.js';
 import { createChutesClient } from './llm/chutes-api.js';
 import { createNimClient } from './llm/nim-api.js';
-import { GameLogger, formatGameSummary, selectComparableGameCohort } from './logging/game-logger.js';
+import { GameLogger, formatGameSummary, selectComparableGameCohort, buildCohortManifest } from './logging/game-logger.js';
 import { CSVExporter } from './logging/csv-exporter.js';
 import { calculateAllStats, generateSummaryReport } from './metrics/player-stats.js';
-import { MODELS, ExperimentId } from './types/game.js';
+import { MODELS, BASELINE_MODELS, ExperimentId } from './types/game.js';
 import { createGameState } from './engine/game-state.js';
 import { TurnManager } from './engine/turn-manager.js';
 import { buildRunMetadata, createAdapter, detectProvider, Provider } from './llm/provider.js';
@@ -45,12 +46,34 @@ function parseMaxTurnsOption(value: string): number | undefined {
   return parsed;
 }
 
+function resolveModelSelection(models?: string[], expectedCount?: number): string[] {
+  if (!models || models.length === 0) {
+    return [...MODELS];
+  }
+
+  const uniqueModels = [...new Set(models)];
+  if (uniqueModels.length !== models.length) {
+    throw new InvalidArgumentError('Model roster must not contain duplicate model IDs');
+  }
+
+  if (expectedCount !== undefined && uniqueModels.length !== expectedCount) {
+    throw new InvalidArgumentError(`Expected exactly ${expectedCount} model IDs, got ${uniqueModels.length}`);
+  }
+
+  if (uniqueModels.length < 4) {
+    throw new InvalidArgumentError(`Expected at least 4 model IDs, got ${uniqueModels.length}`);
+  }
+
+  return uniqueModels;
+}
+
 // Run tournament command
 program
   .command('tournament')
   .description('Run a tournament experiment')
   .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseIntegerOption)
   .option('-g, --games <number>', 'Games per matchup', parseIntegerOption, 10)
+  .option('-m, --models <models...>', 'Optional custom model roster (4+ model IDs)')
   .option('-t, --max-turns <number>', 'Optional safety cap; omit or pass "none" for uncapped play', parseMaxTurnsOption)
   .option('--matchup-start <number>', 'First matchup index to run (inclusive)', parseIntegerOption)
   .option('--matchup-end <number>', 'Last matchup index to run (inclusive)', parseIntegerOption)
@@ -63,9 +86,12 @@ program
       process.exit(1);
     }
 
+    const models = resolveModelSelection(options.models);
+
     console.log(`Starting Experiment ${experimentId}`);
     console.log(`Games per matchup: ${options.games}`);
     console.log(`Max turns per game: ${options.maxTurns ?? 'none'}`);
+    console.log(`Models: ${models.join(', ')}`);
     if (options.matchupStart !== undefined || options.matchupEnd !== undefined) {
       console.log(`Matchup shard: ${options.matchupStart ?? 0}-${options.matchupEnd ?? 'end'}`);
     }
@@ -77,13 +103,14 @@ program
       options.output,
       options.maxTurns,
       options.matchupStart,
-      options.matchupEnd
+      options.matchupEnd,
+      models
     );
 
     const provider = options.provider || detectProvider();
-    const adapter = createAdapter(provider as Provider);
+    const adapter = createAdapter(provider as Provider, config.models);
 
-    const runner = new TournamentRunner(config, adapter, buildRunMetadata(provider as Provider));
+    const runner = new TournamentRunner(config, adapter, buildRunMetadata(provider as Provider, config.models));
 
     await runner.run((progress) => {
       process.stdout.write(
@@ -111,8 +138,7 @@ program
       process.exit(1);
     }
 
-    // Default to first 4 models if not specified
-    const models = options.models?.length === 4 ? options.models : MODELS.slice(0, 4);
+    const models = options.models ? resolveModelSelection(options.models, 4) : MODELS.slice(0, 4);
     console.log(`Running single game with: ${models.join(', ')}`);
 
     const seed = Number.isFinite(options.seed) ? options.seed : Date.now();
@@ -120,11 +146,11 @@ program
     console.log(`Max turns: ${options.maxTurns ?? 'none'}`);
 
     const provider = options.provider || detectProvider();
-    const adapter = createAdapter(provider as Provider);
+    const adapter = createAdapter(provider as Provider, models);
 
     const gameId = `single_${Date.now()}`;
     const state = createGameState(gameId, experimentId, [...models], seed);
-    state.metadata = buildRunMetadata(provider as Provider);
+    state.metadata = buildRunMetadata(provider as Provider, models);
     const turnManager = new TurnManager({ maxTurns: options.maxTurns });
 
     const finalState = await turnManager.runGame(state, adapter);
@@ -279,12 +305,16 @@ program
   .command('models')
   .description('List all models in the tournament')
   .action(() => {
-    console.log('Models in tournament:');
+    console.log('Default tournament models:');
     MODELS.forEach((model, i) => {
       console.log(`  ${i + 1}. ${model}`);
     });
     console.log(`\nTotal: ${MODELS.length} models`);
     console.log(`Total matchups (C(${MODELS.length}, 4)): ${combinations([...MODELS], 4).length}`);
+    console.log('\nOptional local baseline models:');
+    BASELINE_MODELS.forEach((model, i) => {
+      console.log(`  ${i + 1}. ${model}`);
+    });
   });
 
 // List NVIDIA NIM models command
@@ -394,6 +424,26 @@ program
     const totalExpected = gamesPerExp * 4;
     console.log('-'.repeat(50));
     console.log(`Total: ${total}/${totalExpected} games (${((total / totalExpected) * 100).toFixed(1)}%)`);
+  });
+
+program
+  .command('manifest')
+  .description('Write a cohort manifest for the current logs')
+  .option('-o, --output <dir>', 'Output directory', 'logs')
+  .option('--include-mixed', 'Build the manifest from all logs instead of the dominant comparable cohort')
+  .option('--manifest <path>', 'Manifest output path')
+  .action(async (options) => {
+    const logger = new GameLogger(`${options.output}/games`);
+    const logs = logger.loadAllLogs();
+    const manifest = buildCohortManifest(logs, { includeMixed: options.includeMixed });
+    const manifestPath = options.manifest || `${options.output}/cohort_manifest.json`;
+
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    console.log(`Wrote cohort manifest to: ${manifestPath}`);
+    console.log(`Included games: ${manifest.includedGames.length}`);
+    console.log(`Excluded for mixed cohort: ${manifest.excludedGamesByReason.mixedCohort.length}`);
+    console.log(`Excluded for turn cap: ${manifest.excludedGamesByReason.turnCap.length}`);
   });
 
 program.parse();

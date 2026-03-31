@@ -1,4 +1,3 @@
-// Card types
 export type Rank = 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K';
 export type Suit = 'H' | 'D' | 'C' | 'S';
 
@@ -7,7 +6,6 @@ export interface Card {
   suit: Suit;
 }
 
-// Player types
 export interface Player {
   id: string;
   modelId: string;
@@ -15,7 +13,6 @@ export interface Player {
   isEliminated: boolean;
 }
 
-// Turn types
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
@@ -51,7 +48,6 @@ export interface Turn {
   challengeTokenUsage?: TokenUsage;
 }
 
-// Game state types
 export type ExperimentId = 0 | 1 | 2 | 3;
 
 export const EXPERIMENT_NAMES: Record<ExperimentId, string> = {
@@ -79,7 +75,6 @@ export interface GameState {
   endTime?: Date;
 }
 
-// LLM response types
 export interface PlayTurnResponse {
   reasoning: string;
   cards_to_play: string[]; // e.g., ["AS", "2H"]
@@ -95,7 +90,6 @@ export interface ChallengeResponse {
   tokenUsage?: TokenUsage;
 }
 
-// Metrics types
 export interface PlayerStats {
   modelId: string;
   gamesPlayed: number;
@@ -115,7 +109,6 @@ export interface PlayerStats {
   instructionViolationRate?: number;
 }
 
-// Tournament types
 export interface Matchup {
   players: string[]; // 4 model IDs
   games: number;
@@ -129,6 +122,8 @@ export interface TournamentConfig {
   maxTurns?: number;
   matchupStart?: number;
   matchupEnd?: number;
+  gameRetryDelayMs?: number;
+  maxGameFailuresPerSlot?: number;
 }
 
 export interface GameLog {
@@ -148,7 +143,6 @@ export interface GameLog {
   durationMs: number;
 }
 
-// Configuration
 export interface FeatherlessConfig {
   apiKey: string;
   baseUrl: string;
@@ -172,3 +166,9 @@ export const MODELS = [
 ] as const;
 
 export type ModelId = typeof MODELS[number];
+
+export const BASELINE_MODELS = [
+  'baseline/scripted',
+] as const;
+
+export type BaselineModelId = typeof BASELINE_MODELS[number];
