@@ -43,8 +43,9 @@ The working BibTeX starter now lives in `references.bib`. Use this file for deci
    - arXiv / paper hub: `https://arxiv.org/abs/2309.04658`
    - Why it matters here: strong nearby precedent for using communication-heavy incomplete-information games as an LLM research environment.
 
-7. Shuang Wu et al. *Enhance Reasoning for Large Language Models in the Game Werewolf*. 2024.
-   - arXiv search title verified; add DOI/BibTeX from the paper page before submission.
+7. Shuang Wu, Liwen Zhu, Tao Yang, Shiwei Xu, Qiang Fu, Yang Wei, and Haobo Fu. *Enhance Reasoning for Large Language Models in the Game Werewolf*. 2024.
+   - DOI: `10.48550/arXiv.2402.02330`
+   - arXiv / paper hub: `https://arxiv.org/abs/2402.02330`
    - Why it matters here: another directly adjacent paper on strategic reasoning in a deception-relevant social game.
 
 ### Instruction Following and Alignment

@@ -2,8 +2,18 @@
   "name": "llm-bullshit",
   "version": "1.0.0",
   "description": "LLM Bullshit Research Framework - Study LLM deception, moral restraint, and instruction compliance",
-  "main": "dist/index.js",
+  "main": "dist/lib.js",
+  "types": "dist/lib.d.ts",
   "type": "module",
+  "bin": {
+    "llm-bullshit": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
+    }
+  },
   "scripts": {
     "clean": "node -e \"const fs=require('node:fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
     "prebuild": "npm run clean",
@@ -21,7 +31,8 @@
     "stats": ".venv/bin/python analysis/stats.py --csv-dir logs/csv",
     "plots": ".venv/bin/python analysis/plots.py --csv-dir logs/csv --output-dir results/figures",
     "report": ".venv/bin/python analysis/report.py --csv-dir logs/csv --output results/research_summary.md --figures-dir results/figures",
-    "research:brief": "npm start -- analyze --csv && npm run stats && npm run plots && npm run report"
+    "research:brief": "npm start -- analyze --csv && npm run stats && npm run plots && npm run report",
+    "benchmark:release": "node --env-file=.env dist/index.js release"
   },
   "keywords": [
     "llm",

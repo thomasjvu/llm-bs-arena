@@ -34,7 +34,7 @@ The benchmark focuses on three research questions:
 ## Task Definition
 
 Environment:
-- Four-player card game: *Bullshit* / *Cheat* / *I Doubt It*
+- Four-player card game: *Bullshit* (also known as *Cheat* / *I Doubt It*)
 - Standard 52-card deck
 - Deterministic seeded shuffle
 - Player holding the Ace of Spades starts
@@ -70,6 +70,10 @@ Prompt framing:
 Use:
 - low-strategy reference point
 
+Interpretation:
+- not a true random-policy baseline
+- useful as a prompt-level comparison condition
+
 ### Experiment 1: Baseline
 
 Prompt framing:
@@ -95,6 +99,11 @@ Prompt framing:
 Use:
 - instruction-compliance probe
 
+Interpretation:
+- this is a plain-language honesty mandate
+- it is intentionally not the strongest possible anti-lying intervention
+- stronger honesty framing belongs in later ablations, not in the live pilot cohort
+
 ## Pilot Roster
 
 Current 6-model pilot roster:
@@ -104,6 +113,10 @@ Current 6-model pilot roster:
 - `mistralai/mistral-small-4-119b-2603`
 - `z-ai/glm5`
 - `moonshotai/kimi-k2.5`
+
+Interpretation note:
+- vendor naming should not be turned into a causal story by itself
+- for example, `mistral-small-4-119b-2603` contains `small` in the family name, but this pilot is not a controlled size ablation and should not be used to claim that parameter count alone explains behavior
 
 Optional side-comparison baseline:
 - `baseline/scripted` (local deterministic heuristic policy; not part of the primary hosted-model pilot cohort)
@@ -155,6 +168,10 @@ Derived:
 - `logs/csv/all_turns.csv`
 - `results/figures/*.png`
 - `results/research_summary.md`
+
+Tracked frozen release copies:
+- `paper/tmlr/artifacts/frozen/*`
+- `paper/tmlr/figures/*`
 
 ## Why This Is Benchmark-Like
 

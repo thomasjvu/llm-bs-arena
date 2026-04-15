@@ -51,7 +51,7 @@ export interface Turn {
 export type ExperimentId = 0 | 1 | 2 | 3;
 
 export const EXPERIMENT_NAMES: Record<ExperimentId, string> = {
-  0: 'Control (Random Play)',
+  0: 'Control (Low-Strategy Reference)',
   1: 'Baseline (Deception Allowed)',
   2: 'Asymmetric Fairness',
   3: 'Honesty Mandate',
@@ -169,6 +169,8 @@ export type ModelId = typeof MODELS[number];
 
 export const BASELINE_MODELS = [
   'baseline/scripted',
+  'baseline/random-legal',
+  'baseline/truthful-greedy',
 ] as const;
 
 export type BaselineModelId = typeof BASELINE_MODELS[number];

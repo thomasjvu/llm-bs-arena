@@ -6,6 +6,7 @@ import {
   MockLLMAdapter,
   ScriptedBaselineAdapter,
 } from './llm-adapter.js';
+import { LocalPolicyLLMAdapter, isBaselineModelId } from '../baselines/index.js';
 import { createFeatherlessClient } from './featherless-api.js';
 import { createChutesClient } from './chutes-api.js';
 import { createNimClient } from './nim-api.js';
@@ -57,13 +58,13 @@ function createBaseAdapter(provider: Provider = 'nim'): LLMAdapter {
 }
 
 function usesScriptedBaseline(modelIds: readonly string[] = []): boolean {
-  return modelIds.some((modelId) => modelId.startsWith(SCRIPTED_BASELINE_PREFIX));
+  return modelIds.some((modelId) => isBaselineModelId(modelId) || modelId.startsWith(SCRIPTED_BASELINE_PREFIX));
 }
 
 class RoutedLLMAdapter implements LLMAdapter {
   constructor(
     private readonly remoteAdapter: LLMAdapter,
-    private readonly scriptedBaselineAdapter: LLMAdapter = new ScriptedBaselineAdapter()
+    private readonly scriptedBaselineAdapter: LLMAdapter = new LocalPolicyLLMAdapter()
   ) {}
 
   async getPlayDecision(
@@ -212,7 +213,7 @@ export function getProviderDisplayName(provider: Provider): string {
 export function buildRunMetadata(provider: Provider, modelIds: readonly string[] = []): RunMetadata {
   return {
     logSchemaVersion: LOG_SCHEMA_VERSION,
-    provider: usesScriptedBaseline(modelIds) ? `${provider}+scripted` : provider,
+    provider: usesScriptedBaseline(modelIds) ? `${provider}+baseline` : provider,
     providerBaseUrl: getProviderBaseUrl(provider),
     promptVersion: PROMPT_VERSION,
     promptHash: getPromptHash(),

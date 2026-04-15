@@ -101,3 +101,4 @@ Any public release should include:
 - prompt version/hash
 - quarantine policy
 - generation date range
+- a frozen manifest plus summary-level CSV and figure copies under `paper/tmlr/artifacts/frozen/` and `paper/tmlr/figures/`

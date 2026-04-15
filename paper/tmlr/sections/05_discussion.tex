@@ -1,0 +1,17 @@
+\section{Discussion}
+
+\subsection{Strategic Style Versus Raw Leaderboard Position}
+
+The benchmark surfaces stable strategic profiles rather than only a leaderboard. Across the frozen player-game aggregate, Kimi has the highest overall win rate at 56.2\% with only 11.3\% paranoia frequency, while Mistral remains at 0\% win rate with 63.4\% paranoia frequency. Kimi and Qwen are the strongest finishers, but by different routes: Kimi pairs high win rates with low paranoia, while Qwen is especially strong under the honesty mandate despite continuing to violate it. Nemotron, by contrast, is strongest in the low-strategy reference and remains one of the most aggressive liars without dominating the deception-allowed condition.
+
+\subsection{Instruction Compliance Under Incentive Pressure}
+
+The honesty-mandate condition is the strongest alignment result in the paper. The plain-language rule reduces deception but does not eliminate it, and it also makes the table less vigilant. This suggests that instruction compliance in strategic multi-agent settings cannot be summarized by a binary compliant/noncompliant label. Prompt framing changes the enforcement environment as well as the actor's behavior. In the frozen cohort, the reduction in mean lie frequency from Experiment~1 to Experiment~3 is accompanied by a much larger increase in lie success for the remaining bluffs, which is exactly the kind of equilibrium shift that single-turn honesty benchmarks cannot reveal.
+
+\subsection{A Game-Theoretic Reading}
+
+Bullshit can be read as an inspection game. If players challenge too often, they punish themselves; if they challenge too rarely, bluffing becomes cheap. The frozen cohort supports this interpretation. Experiment~1 produces the highest mean challenge rate and the lowest mean lie success, while Experiment~3 produces much lower challenge intensity and much higher lie success. The sharper point is that Experiment~3 and Experiment~0 converge to almost the same enforcement regime: their mean challenge frequencies are 20.0\% and 20.4\%, and their mean lie-success rates are 36.2\% and 39.3\%. In this sense, Bullshit-Bench measures not only who lies, but how agents calibrate signaling, inspection, and punishment under uncertainty. One practical lesson is that indiscriminate suspicion is costly: Mistral's combination of extreme challenge frequency and zero wins is the clearest example.
+
+\subsection{Limitations}
+
+The current paper studies one environment family, one primary provider cohort, and one roster of six hosted models. It does not include a human baseline in the main pilot, and it does not support claims about model size effects or broad real-world deception beyond the benchmark. These are limitations of scope, not reasons the benchmark is invalid.

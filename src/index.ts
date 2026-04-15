@@ -13,6 +13,8 @@ import { MODELS, BASELINE_MODELS, ExperimentId } from './types/game.js';
 import { createGameState } from './engine/game-state.js';
 import { TurnManager } from './engine/turn-manager.js';
 import { buildRunMetadata, createAdapter, detectProvider, Provider } from './llm/provider.js';
+import { buildBenchmarkRelease } from './release/build-release.js';
+import { BENCHMARK_NAME, BENCHMARK_VERSION, DATASET_VERSION, DEFAULT_RELEASE_DIR } from './release/version.js';
 
 const program = new Command();
 
@@ -444,6 +446,27 @@ program
     console.log(`Included games: ${manifest.includedGames.length}`);
     console.log(`Excluded for mixed cohort: ${manifest.excludedGamesByReason.mixedCohort.length}`);
     console.log(`Excluded for turn cap: ${manifest.excludedGamesByReason.turnCap.length}`);
+  });
+
+program
+  .command('release')
+  .description('Build versioned benchmark release metadata and the official raw-log archive')
+  .option('-o, --output <dir>', 'Release output directory', DEFAULT_RELEASE_DIR)
+  .option('--logs <dir>', 'Logs directory containing games/ and csv/', 'logs')
+  .option('--include-mixed', 'Build the release from all logs instead of the dominant comparable cohort')
+  .action(async (options) => {
+    const release = buildBenchmarkRelease({
+      releaseDir: options.output,
+      logsDir: options.logs,
+      includeMixed: options.includeMixed,
+    });
+
+    console.log(`Built ${BENCHMARK_NAME} v${BENCHMARK_VERSION} / dataset v${DATASET_VERSION}`);
+    console.log(`Release manifest: ${release.datasetManifest}`);
+    console.log(`Evaluation manifest: ${release.evaluationManifest}`);
+    console.log(`Checksums: ${release.checksums}`);
+    console.log(`Raw log archive: ${release.rawLogArchive.path}`);
+    console.log(`Included games: ${release.rawLogArchive.path ? release.comparableCohort?.size ?? 'n/a' : 'n/a'}`);
   });
 
 program.parse();

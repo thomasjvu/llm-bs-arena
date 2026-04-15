@@ -1,0 +1,7 @@
+model_id,games_played,wins,win_rate,total_plays,total_lies,lie_frequency,successful_lies,lie_success_rate,challenges_made,challenge_opportunities,paranoia_frequency,correct_challenges,challenge_accuracy,instruction_violations,instruction_violation_rate
+minimaxai/minimax-m2.5,100,9,0.0900,2503,796,0.3180,162,0.2035,1852,4855,0.3815,699,0.3774,,
+mistralai/mistral-small-4-119b-2603,100,0,0.0000,2349,335,0.1426,154,0.4597,3717,5215,0.7128,1409,0.3791,,
+moonshotai/kimi-k2.5,100,66,0.6600,2256,1194,0.5293,141,0.1181,199,4250,0.0468,159,0.7990,,
+nvidia/nemotron-3-super-120b-a12b,100,28,0.2800,2571,1266,0.4924,140,0.1106,1017,5537,0.1837,466,0.4582,,
+qwen/qwen3.5-397b-a17b,100,27,0.2700,2411,970,0.4023,188,0.1938,1376,5306,0.2593,669,0.4862,,
+z-ai/glm5,100,20,0.2000,2604,738,0.2834,201,0.2724,1979,5469,0.3619,911,0.4603,,

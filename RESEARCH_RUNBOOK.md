@@ -9,7 +9,7 @@ By the end of this process, you want:
 - exported analysis tables in `logs/csv/`
 - figures in `results/figures/`
 - a markdown summary in `results/research_summary.md`
-- filled-in results in `PAPER_DRAFT.md`
+- filled-in results in `paper/tmlr/sections/*.tex` and `paper/tmlr/supplement_sections/*.tex`
 - 2-3 resume bullets based on the real run
 
 ## Ground Rules
@@ -275,7 +275,7 @@ What success looks like:
 
 Open:
 - `results/research_summary.md`
-- `PAPER_DRAFT.md`
+- `paper/tmlr/main.tex`
 
 Use the report to answer:
 - who won most in Experiment 1
@@ -300,9 +300,9 @@ Good bullet shape:
 ## Step 12: Turn It Into a Paper Fast
 
 Use this order:
-1. Fill `PAPER_DRAFT.md` methods from the actual run settings
-2. Fill results from `results/research_summary.md`
-3. Add the generated figures
+1. Fill `paper/tmlr/sections/*.tex` methods from the actual run settings
+2. Fill results from `paper/tmlr/artifacts/frozen/research_summary.md`
+3. Add the tracked figures from `paper/tmlr/figures/`
 4. Write the abstract last
 5. Publish a polished repo and preprint first
 

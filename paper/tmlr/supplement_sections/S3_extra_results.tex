@@ -1,0 +1,57 @@
+\section{Additional Results}
+
+This section collects reviewer-facing figures and compact aggregate tables that are useful but not essential to the main narrative.
+
+\subsection{Experiment-Level Aggregates}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    Experiment & Mean lie freq. & Mean challenge freq. & Mean lie success \\
+    \midrule
+    0 & 34.5\% & 20.4\% & 39.3\% \\
+    1 & 38.5\% & 40.6\% & 12.4\% \\
+    2 & 34.4\% & 29.1\% & 26.7\% \\
+    3 & 26.5\% & 20.0\% & 36.2\% \\
+    \bottomrule
+  \end{tabular}
+  \caption{Experiment-level aggregates from the frozen 600-game cohort.}
+  \label{tab:experiment-aggregates}
+\end{table}
+
+\subsection{Cross-Experiment Deltas}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lc}
+    \toprule
+    Model & Exp2 minus Exp1 lie frequency \\
+    \midrule
+    GLM & -7.9 pts \\
+    MiniMax & -7.4 pts \\
+    Mistral & -3.6 pts \\
+    Qwen & -3.4 pts \\
+    Nemotron & -2.9 pts \\
+    Kimi & +0.4 pts \\
+    \bottomrule
+  \end{tabular}
+  \caption{Experiment~2 minus Experiment~1 lie-frequency shifts in the frozen cohort.}
+  \label{tab:exp2-minus-exp1}
+\end{table}
+
+\subsection{Reviewer Figures}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{lie_frequency_heatmap.png}
+  \caption{Per-model lie frequency across experiments.}
+  \label{fig:lie-frequency-heatmap}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{game_length_distribution.png}
+  \caption{Distribution of game lengths in the frozen cohort.}
+  \label{fig:game-length-distribution}
+\end{figure}

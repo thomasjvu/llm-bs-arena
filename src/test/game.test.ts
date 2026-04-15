@@ -565,7 +565,11 @@ describe('Matchup Generator', () => {
     expect(MODELS).toContain('minimaxai/minimax-m2.5');
     expect(MODELS).not.toContain('minimaxai/minimax-m2.1');
     expect(MODELS.length).toBe(6);
-    expect(BASELINE_MODELS).toEqual(['baseline/scripted']);
+    expect(BASELINE_MODELS).toEqual([
+      'baseline/scripted',
+      'baseline/random-legal',
+      'baseline/truthful-greedy',
+    ]);
   });
 
   it('should generate correct number of combinations', () => {
@@ -638,7 +642,7 @@ describe('Matchup Generator', () => {
       'nvidia/nemotron-3-super-120b-a12b',
     ]);
 
-    expect(metadata.provider).toBe('nim+scripted');
+    expect(metadata.provider).toBe('nim+baseline');
   });
 
   it('should resolve a valid matchup shard', () => {

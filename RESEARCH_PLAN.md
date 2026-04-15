@@ -137,9 +137,9 @@ Each game log includes:
 - generate the markdown brief with `npm run report`
 
 ### Phase 4: Packaging
-- fill `PAPER_DRAFT.md` from the generated summary
+- fill `paper/tmlr/sections/*.tex` and `paper/tmlr/supplement_sections/*.tex` from the generated summary
 - publish the cleaned repo and screenshots
-- extract resume bullets from `results/research_summary.md`
+- extract resume bullets from `paper/tmlr/artifacts/frozen/research_summary.md`
 - decide whether to stop at a strong hiring artifact or run a larger confirmatory dataset
 
 ## Recommended Outcome Path
