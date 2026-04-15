@@ -17,6 +17,8 @@ Use this as the operational checklist before creating the TMLR submission.
 - author order is final before submission
 - funding and competing-interest notes are ready
 - any broader-impact text is ready if needed
+- repo remains private during the blind submission window
+- blog remains unpublished during the blind submission window
 
 ## Action Editors and Reviewers
 
@@ -48,3 +50,10 @@ Use this as the operational checklist before creating the TMLR submission.
 
 - do not casually update the public story in a way that conflicts with the blinded submission
 - if new pilot data arrives after submission, keep it as potential revision material rather than silently changing the submission narrative
+
+## Preview Before Upload
+
+- build `paper/tmlr/build/main.pdf`
+- build `paper/tmlr/build/supplement.pdf`
+- read both once as if you were a reviewer, not the author
+- check that the blinded PDFs stand on their own without repo context
