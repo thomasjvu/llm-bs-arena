@@ -2,9 +2,9 @@
 """
 Statistical summaries for LLM Bullshit research.
 
-This script intentionally uses player-game rows as the primary unit of analysis
-and reports bootstrap confidence intervals instead of fragile significance tests
-on turn-level or per-model aggregates.
+This script reports experiment-level dynamics using mean model-level rates and
+uses bootstrap confidence intervals instead of fragile significance tests on
+turn-level aggregates.
 """
 
 from pathlib import Path
@@ -22,6 +22,17 @@ def load_csv(path: Path) -> Optional[pd.DataFrame]:
     if path.exists():
         return pd.read_csv(path)
     return None
+
+
+def load_experiment_stats_tables(csv_dir: Path) -> Dict[int, pd.DataFrame]:
+    tables: Dict[int, pd.DataFrame] = {}
+    for path in sorted(csv_dir.glob("player_stats_exp*.csv")):
+        try:
+            exp_id = int(path.stem.replace("player_stats_exp", ""))
+        except ValueError:
+            continue
+        tables[exp_id] = pd.read_csv(path)
+    return tables
 
 
 def bootstrap_mean_ci(
@@ -45,6 +56,18 @@ def bootstrap_mean_ci(
     lower = np.percentile(means, 100 * (alpha / 2))
     upper = np.percentile(means, 100 * (1 - alpha / 2))
     return float(arr.mean()), float(lower), float(upper)
+
+
+def bootstrap_group_mean_ci(
+    df: pd.DataFrame,
+    metric: str,
+    group_col: str = "model_id",
+    iterations: int = BOOTSTRAP_ITERATIONS,
+    confidence: float = 0.95,
+    seed: int = BOOTSTRAP_SEED,
+) -> Tuple[float, float, float]:
+    grouped = df.groupby(group_col)[metric].mean()
+    return bootstrap_mean_ci(grouped.values, iterations=iterations, confidence=confidence, seed=seed)
 
 
 def bootstrap_mean_diff_ci(
@@ -126,23 +149,33 @@ def compare_experiments_by_model(player_games: pd.DataFrame, metric: str, exp_a:
     return pd.DataFrame(rows).sort_values("delta")
 
 
-def summarize_experiment(player_games: pd.DataFrame, experiment_id: int) -> Dict[str, str]:
+def summarize_experiment(player_games: pd.DataFrame, experiment_id: int, experiment_stats: Optional[pd.DataFrame] = None) -> Dict[str, str]:
     exp_df = player_games[player_games["experiment_id"] == experiment_id]
     if exp_df.empty:
         return {}
 
-    lie_frequency = bootstrap_mean_ci(exp_df["lie_frequency"].astype(float).values)
-    paranoia = bootstrap_mean_ci(exp_df["paranoia_frequency"].astype(float).values)
+    source_df = experiment_stats if experiment_stats is not None and not experiment_stats.empty else None
+    if source_df is not None:
+        lie_frequency = bootstrap_mean_ci(source_df["lie_frequency"].astype(float).values)
+        paranoia = bootstrap_mean_ci(source_df["paranoia_frequency"].astype(float).values)
+        model_count = len(source_df)
+    else:
+        lie_frequency = bootstrap_group_mean_ci(exp_df, "lie_frequency")
+        paranoia = bootstrap_group_mean_ci(exp_df, "paranoia_frequency")
+        model_count = exp_df["model_id"].nunique()
 
     summary = {
         "player_games": str(len(exp_df)),
-        "models": str(exp_df["model_id"].nunique()),
+        "models": str(model_count),
         "lie_frequency": format_ci(*lie_frequency, pct=True),
         "paranoia_frequency": format_ci(*paranoia, pct=True),
     }
 
     if experiment_id == 3:
-        violations = bootstrap_mean_ci(exp_df["instruction_violation_rate"].fillna(0).astype(float).values)
+        if source_df is not None:
+            violations = bootstrap_mean_ci(source_df["instruction_violation_rate"].fillna(0).astype(float).values)
+        else:
+            violations = bootstrap_group_mean_ci(exp_df.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate")
         summary["instruction_violation_rate"] = format_ci(*violations, pct=True)
 
     return summary
@@ -183,7 +216,29 @@ def print_comparison_table(df: pd.DataFrame, exp_a: int, exp_b: int, pct: bool =
         )
 
 
-def print_statistical_report(player_games: pd.DataFrame) -> None:
+def print_exact_metric_table(df: pd.DataFrame, metric: str) -> None:
+    if df.empty:
+        print("  No data")
+        return
+
+    ranked = df.sort_values(metric, ascending=False)
+    for _, row in ranked.iterrows():
+        print(f"  {row['model_id']}: {float(row[metric]):.1%} (n={int(row['games_played'])})")
+
+
+def print_exact_delta_table(exp1_stats: pd.DataFrame, exp2_stats: pd.DataFrame) -> None:
+    exp1 = exp1_stats.set_index("model_id")
+    exp2 = exp2_stats.set_index("model_id")
+    rows = []
+    for model_id in sorted(set(exp1.index).intersection(set(exp2.index))):
+        lie1 = float(exp1.loc[model_id, "lie_frequency"])
+        lie2 = float(exp2.loc[model_id, "lie_frequency"])
+        rows.append((model_id, lie1, lie2, lie2 - lie1))
+    for model_id, lie1, lie2, delta in sorted(rows, key=lambda row: row[3]):
+        print(f"  {model_id}: exp1={lie1:.1%}, exp2={lie2:.1%}, delta={delta:+.1%}")
+
+
+def print_statistical_report(player_games: pd.DataFrame, experiment_stats: Dict[int, pd.DataFrame]) -> None:
     print("=" * 80)
     print("STATISTICAL SUMMARY REPORT")
     print("=" * 80)
@@ -204,7 +259,7 @@ def print_statistical_report(player_games: pd.DataFrame) -> None:
     print()
 
     for experiment_id in sorted(player_games["experiment_id"].dropna().unique()):
-        summary = summarize_experiment(player_games, int(experiment_id))
+        summary = summarize_experiment(player_games, int(experiment_id), experiment_stats.get(int(experiment_id)))
         if not summary:
             continue
         print(f"Experiment {int(experiment_id)}")
@@ -224,23 +279,37 @@ def print_statistical_report(player_games: pd.DataFrame) -> None:
         print("RQ1: Baseline deception effectiveness by model")
         print("-" * 60)
         print("  Lie frequency:")
-        print_model_table(summarize_metric_by_model(exp1, "lie_frequency"))
+        if 1 in experiment_stats:
+            print_exact_metric_table(experiment_stats[1], "lie_frequency")
+        else:
+            print_model_table(summarize_metric_by_model(exp1, "lie_frequency"))
         print()
         print("  Win rate:")
-        print_model_table(summarize_metric_by_model(exp1, "won"))
+        if 1 in experiment_stats:
+            print_exact_metric_table(experiment_stats[1], "win_rate")
+        else:
+            print_model_table(summarize_metric_by_model(exp1, "won"))
         print()
 
     if not player_games[player_games["experiment_id"] == 1].empty and not player_games[player_games["experiment_id"] == 2].empty:
         print("RQ2: Moral restraint (Exp 1 vs Exp 2 lie frequency)")
         print("-" * 60)
-        print_comparison_table(compare_experiments_by_model(player_games, "lie_frequency", 1, 2), 1, 2)
+        if 1 in experiment_stats and 2 in experiment_stats:
+            print_exact_delta_table(experiment_stats[1], experiment_stats[2])
+        else:
+            print_comparison_table(compare_experiments_by_model(player_games, "lie_frequency", 1, 2), 1, 2)
         print()
 
     exp3 = player_games[player_games["experiment_id"] == 3]
     if not exp3.empty:
         print("RQ3: Instruction compliance in Experiment 3")
         print("-" * 60)
-        print_model_table(summarize_metric_by_model(exp3.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate"))
+        if 3 in experiment_stats:
+            exp3_stats = experiment_stats[3].copy()
+            exp3_stats["instruction_violation_rate"] = exp3_stats["instruction_violation_rate"].fillna(0).astype(float)
+            print_exact_metric_table(exp3_stats, "instruction_violation_rate")
+        else:
+            print_model_table(summarize_metric_by_model(exp3.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate"))
         print()
 
     exp1_or_all = exp1 if not exp1.empty else player_games
@@ -263,6 +332,7 @@ if __name__ == "__main__":
 
     csv_dir = Path(args.csv_dir)
     player_games = load_csv(csv_dir / "player_game_stats.csv")
+    experiment_stats = load_experiment_stats_tables(csv_dir)
 
     if player_games is None:
         print("No player_game_stats.csv found. Run the analyze/export step first.")
@@ -275,4 +345,4 @@ if __name__ == "__main__":
         if excluded_games > 0:
             print(f"Excluded {excluded_games} turn-cap games from statistical summaries.")
 
-    print_statistical_report(player_games)
+    print_statistical_report(player_games, experiment_stats)

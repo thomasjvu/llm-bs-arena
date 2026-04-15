@@ -6,8 +6,6 @@ import { GameState, ExperimentId, MODELS, Card, Turn } from './types/game.js';
 import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame, getNextRank } from './engine/game-state.js';
 import { TurnManager, LLMAdapter } from './engine/turn-manager.js';
 import { MockLLMAdapter } from './llm/llm-adapter.js';
-import { APIConnectionError as FeatherlessAPIConnectionError } from './llm/featherless-api.js';
-import { APIConnectionError as ChutesAPIConnectionError } from './llm/chutes-api.js';
 import { APIConnectionError as NimAPIConnectionError } from './llm/nim-api.js';
 import { buildRunMetadata, detectProvider, createAdapter as createProviderAdapter, getProviderDisplayName, Provider } from './llm/provider.js';
 import { GameLogger, selectComparableGameCohort } from './logging/game-logger.js';
@@ -440,9 +438,7 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     
     // Check if this is a connection error that requires adapter reset
     const errorStr = String(error);
-    const isConnectionError = error instanceof FeatherlessAPIConnectionError ||
-                              error instanceof ChutesAPIConnectionError ||
-                              error instanceof NimAPIConnectionError ||
+    const isConnectionError = error instanceof NimAPIConnectionError ||
                               errorStr.includes('API connection unstable') ||
                               errorStr.includes('TimeoutError') ||
                               errorStr.includes('terminated');

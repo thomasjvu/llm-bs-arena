@@ -1,6 +1,4 @@
-import { PlayTurnResponse, ChallengeResponse, Card, Turn, Rank, TokenUsage, RANKS } from '../types/game.js';
-import { FeatherlessClient } from './featherless-api.js';
-import { ChutesClient } from './chutes-api.js';
+import { PlayTurnResponse, ChallengeResponse, Card, Turn, Rank, TokenUsage } from '../types/game.js';
 import { NimClient } from './nim-api.js';
 import {
   buildSystemPrompt,
@@ -13,7 +11,6 @@ import {
   parseChallengeResponse,
 } from './response-parser.js';
 import { LLMAdapter } from '../engine/turn-manager.js';
-import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
 import { LocalPolicyLLMAdapter } from '../baselines/index.js';
 
 interface VisibleState {
@@ -182,18 +179,6 @@ class BaseLLMAdapter implements LLMAdapter {
   }
 }
 
-export class FeatherlessLLMAdapter extends BaseLLMAdapter {
-  constructor(client: FeatherlessClient, maxRetries: number = 4) {
-    super(client, maxRetries);
-  }
-}
-
-export class ChutesLLMAdapter extends BaseLLMAdapter {
-  constructor(client: ChutesClient, maxRetries: number = 4) {
-    super(client, maxRetries);
-  }
-}
-
 export class NimLLMAdapter extends BaseLLMAdapter {
   constructor(client: NimClient, maxRetries: number = 4) {
     super(client, maxRetries);
@@ -297,27 +282,6 @@ export class MockLLMAdapter implements LLMAdapter {
       responseTimeMs,
     };
   }
-}
-
-const RANK_ORDER = new Map(RANKS.map((rank, index) => [rank, index]));
-const SUIT_ORDER = new Map(['C', 'D', 'H', 'S'].map((suit, index) => [suit, index]));
-
-function sortCards(cards: Card[]): Card[] {
-  return [...cards].sort((a, b) => {
-    const rankDelta = (RANK_ORDER.get(a.rank) ?? 0) - (RANK_ORDER.get(b.rank) ?? 0);
-    if (rankDelta !== 0) {
-      return rankDelta;
-    }
-    return (SUIT_ORDER.get(a.suit) ?? 0) - (SUIT_ORDER.get(b.suit) ?? 0);
-  });
-}
-
-function cardToString(card: Card): string {
-  return `${card.rank}${card.suit}`;
-}
-
-function countRankInHand(hand: Card[], rank: string): number {
-  return hand.filter((card) => card.rank === rank).length;
 }
 
 export class ScriptedBaselineAdapter extends LocalPolicyLLMAdapter {}

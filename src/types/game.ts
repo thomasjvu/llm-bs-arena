@@ -143,16 +143,6 @@ export interface GameLog {
   durationMs: number;
 }
 
-export interface FeatherlessConfig {
-  apiKey: string;
-  baseUrl: string;
-  temperature: number;
-  seed: number;
-  maxRetries: number;
-  retryDelayMs: number;
-  rateLimitDelayMs: number;
-}
-
 export const RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 export const SUITS: Suit[] = ['H', 'D', 'C', 'S'];
 

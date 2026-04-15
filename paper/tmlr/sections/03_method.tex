@@ -14,7 +14,7 @@ The primary pilot cohort uses six hosted models served through a single provider
 
 \subsection{Implementation and Dataset Hygiene}
 
-The environment is implemented in TypeScript with structured-response parsing, bounded prompt context, provider retry logic, client recreation on recoverable failures, and long-run recovery for hosted inference. Reproducibility and dataset hygiene are enforced through seeded deck order and seating, prompt versioning and hashing, schema versioning, and dominant-cohort filtering at analysis time. Research-default runs are uncapped and must end in a natural win; capped runs are marked explicitly and excluded from the main cohort.
+The environment is implemented in TypeScript with structured-response parsing, bounded prompt context, provider retry logic, client recreation on recoverable failures, and long-run recovery for hosted inference. The public release also exposes an importable environment API with \texttt{reset}, \texttt{observation}, \texttt{publicState}, \texttt{step}, \texttt{done}, and \texttt{result} methods, plus a small baseline-policy pack for local side comparisons. Reproducibility and dataset hygiene are enforced through seeded deck order and seating, prompt versioning and hashing, schema versioning, dominant-cohort filtering at analysis time, and versioned dataset/evaluation manifests with checksums. Research-default runs are uncapped and must end in a natural win; capped runs are marked explicitly and excluded from the main cohort.
 
 \subsection{Analysis}
 

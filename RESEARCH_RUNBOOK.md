@@ -9,8 +9,9 @@ By the end of this process, you want:
 - exported analysis tables in `logs/csv/`
 - figures in `results/figures/`
 - a markdown summary in `results/research_summary.md`
+- versioned release metadata in `release/v1.0.0/`
 - filled-in results in `paper/tmlr/sections/*.tex` and `paper/tmlr/supplement_sections/*.tex`
-- 2-3 resume bullets based on the real run
+- a paper-ready results package based on the frozen cohort
 
 ## Ground Rules
 
@@ -21,8 +22,6 @@ By the end of this process, you want:
 - The engine enforces standard Bullshit turns: 1-4 cards per play, with the number of face-down cards visible to everyone.
 
 ## Step 0: Start Clean
-
-You already asked me to clear the legacy logs and derived outputs. The workspace is now clean.
 
 Before any future full rerun, make sure these directories only contain data from the run you are about to analyze:
 - `logs/games/`
@@ -66,8 +65,6 @@ How to tune them:
 - if logs show request timeouts, raise `NVIDIA_NIM_TIMEOUT_MS`
 - once the run settings look stable, do not change them halfway through a dataset
 - the CLI will keep recreating the adapter for recoverable provider failures until the 10-hour recovery window expires
-
-3. Do not set Chutes or Featherless unless you intentionally want to use them as fallbacks.
 
 ## Step 2: Install and Verify Dependencies
 
@@ -271,7 +268,22 @@ What success looks like:
 - the report does not warn that the dataset is legacy or incomplete
 - figures are generated for the experiments you ran
 
-## Step 10: Read the Report Before Writing Anything Public
+## Step 10: Build the Official Release Bundle
+
+Run:
+
+```bash
+npm start -- release
+```
+
+What success looks like:
+- `release/v1.0.0/benchmark-release.json` exists
+- `release/v1.0.0/dataset-manifest.json` exists
+- `release/v1.0.0/evaluation-manifest.json` exists
+- `release/v1.0.0/checksums.sha256` exists
+- the release manifest points at the raw-log archive asset and tracked frozen artifacts
+
+## Step 11: Read the Report Before Writing Anything Public
 
 Open:
 - `results/research_summary.md`
@@ -283,19 +295,7 @@ Use the report to answer:
 - who reduced lying most in Experiment 2
 - who violated honesty instructions most in Experiment 3
 
-If the report still says the dataset is incomplete or legacy, do not use it for resume or paper claims.
-
-## Step 11: Turn It Into a Hiring Project
-
-Your resume bullets should focus on:
-- the system you built
-- the scale of the experiments you actually ran
-- the strongest empirical finding
-
-Good bullet shape:
-- built X
-- ran Y games across Z models
-- found A under condition B
+If the report still says the dataset is incomplete or legacy, do not use it for paper claims.
 
 ## Step 12: Turn It Into a Paper Fast
 
@@ -304,7 +304,7 @@ Use this order:
 2. Fill results from `paper/tmlr/artifacts/frozen/research_summary.md`
 3. Add the tracked figures from `paper/tmlr/figures/`
 4. Write the abstract last
-5. Publish a polished repo and preprint first
+5. Prepare the blinded TMLR submission assets before any public release
 
 ## Common Mistakes
 

@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import { Command, InvalidArgumentError } from 'commander';
 import { TournamentRunner } from './tournament/tournament-runner.js';
 import { createTournamentConfig, generateMatchups, combinations } from './tournament/matchup-generator.js';
-import { createChutesClient } from './llm/chutes-api.js';
 import { createNimClient } from './llm/nim-api.js';
 import { GameLogger, formatGameSummary, selectComparableGameCohort, buildCohortManifest } from './logging/game-logger.js';
 import { CSVExporter } from './logging/csv-exporter.js';
@@ -80,7 +79,7 @@ program
   .option('--matchup-start <number>', 'First matchup index to run (inclusive)', parseIntegerOption)
   .option('--matchup-end <number>', 'Last matchup index to run (inclusive)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
-  .option('-p, --provider <provider>', 'LLM provider: nim, chutes, featherless, or mock')
+  .option('-p, --provider <provider>', 'LLM provider: nim or mock')
   .action(async (options) => {
     const experimentId = options.experiment as ExperimentId;
     if (![0, 1, 2, 3].includes(experimentId)) {
@@ -129,7 +128,7 @@ program
   .description('Run a single game')
   .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseIntegerOption)
   .option('-m, --models <models...>', 'Model IDs (exactly 4)')
-  .option('-p, --provider <provider>', 'LLM provider: nim, chutes, featherless, or mock')
+  .option('-p, --provider <provider>', 'LLM provider: nim or mock')
   .option('-s, --seed <number>', 'Deterministic deck/shuffle seed', parseIntegerOption)
   .option('-t, --max-turns <number>', 'Optional safety cap; omit or pass "none" for uncapped play', parseMaxTurnsOption)
   .option('-v, --verbose', 'Show detailed turn-by-turn output')
@@ -359,46 +358,6 @@ program
     }
   });
 
-// List Chutes models command
-program
-  .command('chutes-models')
-  .description('List all available models from Chutes API')
-  .option('--filter <pattern>', 'Filter models by pattern (e.g., "qwen", "gemma")')
-  .action(async (options) => {
-    if (!process.env.CHUTES_API_TOKEN) {
-      console.error('CHUTES_API_TOKEN environment variable is required');
-      process.exit(1);
-    }
-
-    try {
-      const client = createChutesClient();
-      console.log('Fetching available models from Chutes API...\n');
-      const models = await client.fetchAvailableModels();
-
-      let filteredModels = models;
-      if (options.filter) {
-        const pattern = options.filter.toLowerCase();
-        filteredModels = models.filter(m => m.id.toLowerCase().includes(pattern));
-      }
-
-      console.log(`Found ${filteredModels.length} models${options.filter ? ` matching "${options.filter}"` : ''}:\n`);
-      
-      filteredModels.sort((a, b) => a.id.localeCompare(b.id));
-
-      filteredModels.forEach((model, i) => {
-        const ctx = model.context_length || model.max_model_len || 'N/A';
-        const out = model.max_output_length || 'N/A';
-        const q = model.quantization || 'N/A';
-        console.log(`  ${i + 1}. ${model.id}`);
-        console.log(`     Context: ${ctx}, Output: ${out}, Quantization: ${q}`);
-        console.log(`     Owned by: ${model.owned_by}`);
-      });
-    } catch (error) {
-      console.error(`Failed to fetch models: ${error instanceof Error ? error.message : String(error)}`);
-      process.exit(1);
-    }
-  });
-
 // Status command
 program
   .command('status')
@@ -462,11 +421,12 @@ program
     });
 
     console.log(`Built ${BENCHMARK_NAME} v${BENCHMARK_VERSION} / dataset v${DATASET_VERSION}`);
-    console.log(`Release manifest: ${release.datasetManifest}`);
+    console.log(`Benchmark release manifest: ${release.officialReleaseNotes.replace('RELEASE_NOTES.md', 'benchmark-release.json')}`);
+    console.log(`Dataset manifest: ${release.datasetManifest}`);
     console.log(`Evaluation manifest: ${release.evaluationManifest}`);
     console.log(`Checksums: ${release.checksums}`);
     console.log(`Raw log archive: ${release.rawLogArchive.path}`);
-    console.log(`Included games: ${release.rawLogArchive.path ? release.comparableCohort?.size ?? 'n/a' : 'n/a'}`);
+    console.log(`Included games: ${release.comparableCohort?.size ?? 'n/a'}`);
   });
 
 program.parse();

@@ -1,14 +1,16 @@
 # Appendix Draft: Reproducibility and Artifact Details
 
-This file is the appendix-ready reproducibility material for the Bullshit-Bench paper. It should be folded into the final submission appendix once the 600-game pilot completes.
+This file is the appendix-ready reproducibility material for the Bullshit-Bench paper and benchmark release.
 
 ## A.1 Environment and Runtime
 
 Primary execution stack:
 - TypeScript / Node.js game engine
+- importable multi-agent environment API
 - NVIDIA NIM as the primary hosted provider
 - OpenAI-compatible chat-completions interface
 - Python analysis stack for CSV export, plotting, bootstrap summaries, and markdown report generation
+- versioned release builder for manifests, checksums, and raw-log packaging
 
 Operational design choices that matter for reproducibility:
 - seeded shuffle and seeded seating order
@@ -77,6 +79,12 @@ Derived exports record:
 - game-level rows
 - turn-level rows
 
+Release metadata records:
+- benchmark release manifest
+- dataset manifest
+- evaluation manifest
+- checksums and release notes
+
 ## A.6 Analysis Defaults
 
 Primary analysis unit:
@@ -117,6 +125,7 @@ Minimum reproduction steps:
 4. Run one logged validation game.
 5. Run the desired tournament shards.
 6. Export CSVs and generate stats/plots/report.
+7. Build the official release bundle and verify manifests/checksums.
 
 Primary operator docs:
 - `README.md`
@@ -136,4 +145,4 @@ Add these to the final appendix once the pilot is complete:
 
 ## A.10 Honest Scope Statement
 
-This appendix supports a benchmark-harness and pilot-study claim. It does not justify broad claims that the benchmark captures all relevant forms of deception or that observed behavior generalizes beyond the reported provider, prompt, and roster cohort.
+This appendix supports a benchmark-release and pilot-study claim. It does not justify broad claims that the benchmark captures all relevant forms of deception or that observed behavior generalizes beyond the reported provider, prompt, and roster cohort.

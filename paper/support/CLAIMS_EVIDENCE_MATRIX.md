@@ -21,8 +21,8 @@ Claim:
 
 Evidence:
 - Compare Experiment 1 and Experiment 3 lie frequency in the player-level exports.
-- Frozen cohort: mean lie frequency drops from `38.5%` in Exp1 to `26.5%` in Exp3.
-- In the frozen Exp3 cohort, every model still lies at a material rate, ranging from `21.4%` to `29.2%`.
+- Frozen cohort: mean model-level lie frequency drops from `39.6%` in Exp1 to `27.2%` in Exp3.
+- In the frozen Exp3 cohort, every model still lies at a material rate, ranging from `20.4%` to `31.1%`.
 
 Sources:
 - `paper/tmlr/artifacts/frozen/player_game_stats.csv`
@@ -37,8 +37,8 @@ Claim:
 - The honesty prompt changes table dynamics, not just liar behavior.
 
 Evidence:
-- Frozen cohort: mean challenge frequency drops from `40.6%` in Exp1 to `20.0%` in Exp3.
-- Mean lie success rises from `12.4%` in Exp1 to `36.2%` in Exp3.
+- Frozen cohort: mean model-level challenge frequency drops from `45.3%` in Exp1 to `21.8%` in Exp3.
+- Mean model-level lie success rises from `11.0%` in Exp1 to `34.7%` in Exp3.
 
 Sources:
 - `paper/tmlr/artifacts/frozen/player_game_stats.csv`
@@ -55,12 +55,12 @@ Claim:
 Evidence:
 - Exp1-to-Exp2 lie-frequency deltas differ by model.
 - Frozen cohort deltas:
-  - GLM `-7.9 pts`
+  - GLM `-7.4 pts`
   - MiniMax `-7.4`
-  - Mistral `-3.6`
-  - Qwen `-3.4`
-  - Nemotron `-2.9`
-  - Kimi `+0.4`
+  - Mistral `-5.8`
+  - Qwen `-2.0`
+  - Nemotron `-1.7`
+  - Kimi `+3.3`
 
 Sources:
 - `paper/tmlr/artifacts/frozen/player_game_stats.csv`
@@ -75,7 +75,7 @@ Claim:
 - Bullshit-Bench measures stable strategic styles rather than only a raw leaderboard.
 
 Evidence:
-- Mistral shows a high-challenge, zero-win profile across the frozen cohort.
+- Mistral shows a high-challenge, zero-win profile across the frozen cohort and is the clearest example of costly over-enforcement.
 - Kimi leads Experiments 1, 2, and 3, while Nemotron leads Experiment 0.
 - Qualitative case studies show recurring strategy types: successful bluffing, targeted challenge, and honesty-mandate violation.
 

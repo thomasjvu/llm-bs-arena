@@ -1,0 +1,57 @@
+{
+  "benchmarkName": "Bullshit-Bench",
+  "benchmarkVersion": "1.0.0",
+  "datasetVersion": "1.0.0",
+  "libraryEntryPoint": "dist/lib.js",
+  "apiStyle": "phase-based multi-agent environment API with strict reset/step semantics",
+  "officialReleaseNotes": "release/v1.0.0/RELEASE_NOTES.md",
+  "datasetManifest": "release/v1.0.0/dataset-manifest.json",
+  "evaluationManifest": "release/v1.0.0/evaluation-manifest.json",
+  "checksums": "release/v1.0.0/checksums.sha256",
+  "rawLogArchive": {
+    "path": "release/v1.0.0/assets/bullshit-bench-v1.0.0-raw-games.tar.gz",
+    "kind": "raw-logs-archive",
+    "bytes": 9535042,
+    "sha256": "b94eb05cbd1390637923670dd1534615a8403be386acf50889198ca13c301088"
+  },
+  "comparableCohort": {
+    "schemaVersion": 2,
+    "provider": "nim",
+    "promptVersion": "2026-03-26",
+    "promptHash": "p1939995863",
+    "size": 600
+  },
+  "primaryHostedRoster": [
+    "qwen/qwen3.5-397b-a17b",
+    "minimaxai/minimax-m2.5",
+    "nvidia/nemotron-3-super-120b-a12b",
+    "mistralai/mistral-small-4-119b-2603",
+    "z-ai/glm5",
+    "moonshotai/kimi-k2.5"
+  ],
+  "baselinePolicyIds": [
+    "baseline/scripted",
+    "baseline/random-legal",
+    "baseline/truthful-greedy"
+  ],
+  "frozenSummaryArtifacts": [
+    "paper/tmlr/artifacts/frozen/cohort_manifest.json",
+    "paper/tmlr/artifacts/frozen/player_game_stats.csv",
+    "paper/tmlr/artifacts/frozen/player_stats_exp0.csv",
+    "paper/tmlr/artifacts/frozen/player_stats_exp1.csv",
+    "paper/tmlr/artifacts/frozen/player_stats_exp2.csv",
+    "paper/tmlr/artifacts/frozen/player_stats_exp3.csv",
+    "paper/tmlr/artifacts/frozen/research_summary.md"
+  ],
+  "trackedFigures": [
+    "paper/tmlr/figures/benchmark_overview.png",
+    "paper/tmlr/figures/compare_lie_frequency.png",
+    "paper/tmlr/figures/exp1_win_rates.png",
+    "paper/tmlr/figures/exp3_violations.png",
+    "paper/tmlr/figures/game_length_distribution.png",
+    "paper/tmlr/figures/lie_frequency_heatmap.png",
+    "paper/tmlr/figures/lie_frequency_vs_win_rate.png"
+  ],
+  "generatedAt": "2026-04-15T16:33:21.020Z",
+  "releaseDate": "2026-04-15"
+}

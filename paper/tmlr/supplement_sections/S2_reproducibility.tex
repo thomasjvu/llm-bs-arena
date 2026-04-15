@@ -8,6 +8,15 @@ The frozen comparable cohort contains 600 winner-terminated games with no mixed-
   \item \texttt{artifacts/frozen/research\_summary.md}
 \end{itemize}
 
+The versioned release metadata for this cohort additionally contains:
+\begin{itemize}[leftmargin=1.25em]
+  \item \texttt{release/v1.0.0/benchmark-release.json}
+  \item \texttt{release/v1.0.0/dataset-manifest.json}
+  \item \texttt{release/v1.0.0/evaluation-manifest.json}
+  \item \texttt{release/v1.0.0/checksums.sha256}
+  \item \texttt{release/v1.0.0/RELEASE\_NOTES.md}
+\end{itemize}
+
 \subsection{Execution}
 
 \begin{itemize}[leftmargin=1.25em]
@@ -26,6 +35,7 @@ The frozen comparable cohort contains 600 winner-terminated games with no mixed-
   \item provider client recreation on recoverable failures
   \item shard checkpoints and active snapshots
   \item exclusion of capped and mixed-cohort runs from the main analysis
+  \item versioned release manifests and checksums for the frozen comparable cohort
 \end{itemize}
 
 \subsection{Analysis Cohort}
@@ -51,4 +61,5 @@ Minimum reproduction steps:
   \item Run one logged validation game.
   \item Run the desired tournament shards.
   \item Export CSVs and generate stats, plots, and the markdown research brief.
+  \item Build the official release bundle and verify the generated manifests and checksums.
 \end{enumerate}

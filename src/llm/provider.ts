@@ -1,22 +1,15 @@
 import { LLMAdapter } from '../engine/turn-manager.js';
 import {
-  FeatherlessLLMAdapter,
-  ChutesLLMAdapter,
   NimLLMAdapter,
   MockLLMAdapter,
-  ScriptedBaselineAdapter,
 } from './llm-adapter.js';
 import { LocalPolicyLLMAdapter, isBaselineModelId } from '../baselines/index.js';
-import { createFeatherlessClient } from './featherless-api.js';
-import { createChutesClient } from './chutes-api.js';
 import { createNimClient } from './nim-api.js';
 import { RunMetadata } from '../types/game.js';
 import { getPromptHash, PROMPT_VERSION } from './prompt-builder.js';
-import { APIConnectionError as FeatherlessAPIConnectionError } from './featherless-api.js';
-import { APIConnectionError as ChutesAPIConnectionError } from './chutes-api.js';
 import { APIConnectionError as NimAPIConnectionError } from './nim-api.js';
 
-export type Provider = 'nim' | 'chutes' | 'featherless' | 'mock';
+export type Provider = 'nim' | 'mock';
 export const LOG_SCHEMA_VERSION = 2;
 export const SCRIPTED_BASELINE_PREFIX = 'baseline/';
 
@@ -40,18 +33,6 @@ function createBaseAdapter(provider: Provider = 'nim'): LLMAdapter {
       }
       console.log('Using NVIDIA NIM provider');
       return new NimLLMAdapter(createNimClient());
-    case 'chutes':
-      if (!process.env.CHUTES_API_TOKEN) {
-        throw new Error('CHUTES_API_TOKEN environment variable is required for chutes provider');
-      }
-      console.log('Using Chutes API provider');
-      return new ChutesLLMAdapter(createChutesClient());
-    case 'featherless':
-      if (!process.env.FEATHERLESS_API_KEY) {
-        throw new Error('FEATHERLESS_API_KEY environment variable is required for featherless provider');
-      }
-      console.log('Using Featherless API provider');
-      return new FeatherlessLLMAdapter(createFeatherlessClient());
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
@@ -93,9 +74,7 @@ class RoutedLLMAdapter implements LLMAdapter {
 
 export function isRecoverableAdapterError(error: unknown): boolean {
   const errorStr = String(error);
-  return error instanceof FeatherlessAPIConnectionError ||
-    error instanceof ChutesAPIConnectionError ||
-    error instanceof NimAPIConnectionError ||
+  return error instanceof NimAPIConnectionError ||
     errorStr.includes('API connection unstable') ||
     errorStr.includes('TimeoutError') ||
     errorStr.includes('terminated');
@@ -188,12 +167,8 @@ export function detectProvider(): Provider {
   const requestedProvider = process.env.LLM_PROVIDER as Provider | undefined;
   if (requestedProvider === 'mock') return 'mock';
   if (requestedProvider === 'nim' && hasNimConfig()) return 'nim';
-  if (requestedProvider === 'chutes' && process.env.CHUTES_API_TOKEN) return 'chutes';
-  if (requestedProvider === 'featherless' && process.env.FEATHERLESS_API_KEY) return 'featherless';
 
   if (hasNimConfig()) return 'nim';
-  if (process.env.CHUTES_API_TOKEN) return 'chutes';
-  if (process.env.FEATHERLESS_API_KEY) return 'featherless';
   return 'mock';
 }
 
@@ -201,10 +176,6 @@ export function getProviderDisplayName(provider: Provider): string {
   switch (provider) {
     case 'nim':
       return 'NVIDIA NIM';
-    case 'chutes':
-      return 'Chutes API';
-    case 'featherless':
-      return 'Featherless API';
     case 'mock':
       return 'Mock LLM';
   }
@@ -228,10 +199,6 @@ function getProviderBaseUrl(provider: Provider): string | undefined {
   switch (provider) {
     case 'nim':
       return process.env.NVIDIA_NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
-    case 'chutes':
-      return 'https://llm.chutes.ai/v1';
-    case 'featherless':
-      return 'https://api.featherless.ai/v1';
     case 'mock':
       return undefined;
   }

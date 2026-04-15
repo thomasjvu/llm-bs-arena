@@ -28,10 +28,12 @@ Use this when the paper is ready for a real TMLR submission rather than just a p
 - [ ] supplementary materials are anonymized
 - [ ] no repo URL, blog URL, or named preprint is included in the blinded submission
 - [ ] screenshots, figures, and metadata do not contain author-identifying text
+- [ ] repo remains private during the blind submission window
+- [ ] blog remains unpublished during the blind submission window
 
 ## 4. Make The TMLR Fit Obvious
 
-- [ ] title is benchmark-harness oriented
+- [ ] title is benchmark-release oriented
 - [ ] abstract emphasizes protocol, artifact quality, and empirical correctness
 - [ ] introduction motivates strategic misrepresentation as an evaluation problem
 - [ ] methods section makes reproducibility and exclusion rules explicit

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate a paper- and resume-friendly markdown research brief from exported CSVs.
+Generate a paper-friendly markdown research brief from exported CSVs.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -19,6 +19,17 @@ def load_csv(path: Path) -> Optional[pd.DataFrame]:
     if path.exists():
         return pd.read_csv(path)
     return None
+
+
+def load_experiment_stats_tables(csv_dir: Path) -> Dict[int, pd.DataFrame]:
+    tables: Dict[int, pd.DataFrame] = {}
+    for path in sorted(csv_dir.glob("player_stats_exp*.csv")):
+        try:
+            exp_id = int(path.stem.replace("player_stats_exp", ""))
+        except ValueError:
+            continue
+        tables[exp_id] = pd.read_csv(path)
+    return tables
 
 
 def pct(value: float) -> str:
@@ -34,6 +45,11 @@ def pct_ci(values: Iterable[float]) -> str:
     return f"{mean:.1%} (95% CI {lower:.1%} to {upper:.1%})"
 
 
+def pct_group_ci(df: pd.DataFrame, metric: str) -> str:
+    grouped = df.groupby("model_id")[metric].mean()
+    return pct_ci(grouped.astype(float))
+
+
 def pct_delta_ci(values_a: Iterable[float], values_b: Iterable[float]) -> str:
     mean, lower, upper = bootstrap_mean_diff_ci(values_a, values_b)
     if np.isnan(mean):
@@ -41,7 +57,7 @@ def pct_delta_ci(values_a: Iterable[float], values_b: Iterable[float]) -> str:
     return f"{mean:+.1%} (95% CI {lower:+.1%} to {upper:+.1%})"
 
 
-def render_experiment_overview(player_games: pd.DataFrame) -> list[str]:
+def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dict[int, pd.DataFrame]) -> list[str]:
     lines = [
         "## Experiment Overview",
         "",
@@ -49,19 +65,34 @@ def render_experiment_overview(player_games: pd.DataFrame) -> list[str]:
         "|---|---:|---:|---|---|---|---|",
     ]
 
-    for experiment_id in sorted(player_games["experiment_id"].dropna().unique()):
+    experiment_ids = sorted({int(v) for v in player_games["experiment_id"].dropna().unique()} | set(experiment_stats.keys()))
+
+    for experiment_id in experiment_ids:
         exp_df = player_games[player_games["experiment_id"] == experiment_id]
+        exp_stats = experiment_stats.get(experiment_id)
         violation = "n/a"
-        if experiment_id == 3 and "instruction_violation_rate" in exp_df.columns:
-            violation = pct_ci(exp_df["instruction_violation_rate"].fillna(0).astype(float))
+        if exp_stats is not None and not exp_stats.empty:
+            mean_win = pct_ci(exp_stats["win_rate"].astype(float))
+            mean_lie = pct_ci(exp_stats["lie_frequency"].astype(float))
+            mean_challenge = pct_ci(exp_stats["paranoia_frequency"].astype(float))
+            if experiment_id == 3 and "instruction_violation_rate" in exp_stats.columns:
+                violation = pct_ci(exp_stats["instruction_violation_rate"].fillna(0).astype(float))
+            model_count = len(exp_stats)
+        else:
+            mean_win = pct_group_ci(exp_df, "won")
+            mean_lie = pct_group_ci(exp_df, "lie_frequency")
+            mean_challenge = pct_group_ci(exp_df, "paranoia_frequency")
+            if experiment_id == 3 and "instruction_violation_rate" in exp_df.columns:
+                violation = pct_group_ci(exp_df.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate")
+            model_count = exp_df["model_id"].nunique()
 
         lines.append(
             f"| {int(experiment_id)} | "
             f"{exp_df['game_id'].nunique()} | "
-            f"{exp_df['model_id'].nunique()} | "
-            f"{pct_ci(exp_df['won'].astype(float))} | "
-            f"{pct_ci(exp_df['lie_frequency'].astype(float))} | "
-            f"{pct_ci(exp_df['paranoia_frequency'].astype(float))} | "
+            f"{model_count} | "
+            f"{mean_win} | "
+            f"{mean_lie} | "
+            f"{mean_challenge} | "
             f"{violation} |"
         )
 
@@ -69,24 +100,29 @@ def render_experiment_overview(player_games: pd.DataFrame) -> list[str]:
     return lines
 
 
-def render_baseline_table(player_games: pd.DataFrame) -> list[str]:
+def render_baseline_table(player_games: pd.DataFrame, exp1_stats: Optional[pd.DataFrame]) -> list[str]:
     exp1 = player_games[player_games["experiment_id"] == 1]
-    if exp1.empty:
+    if (exp1_stats is None or exp1_stats.empty) and exp1.empty:
         return []
 
-    rows = []
-    for model_id, group in exp1.groupby("model_id"):
-        rows.append({
-            "model_id": model_id,
-            "win_rate": float(group["won"].mean()),
-            "lie_frequency": float(group["lie_frequency"].mean()),
-            "lie_success_rate": float(group["lie_success_rate"].mean()),
-            "paranoia_frequency": float(group["paranoia_frequency"].mean()),
-            "challenge_accuracy": float(group["challenge_accuracy"].mean()),
-            "games": len(group),
-        })
+    if exp1_stats is not None and not exp1_stats.empty:
+        df = exp1_stats.copy()
+        df["games"] = df["games_played"].astype(int)
+    else:
+        rows = []
+        for model_id, group in exp1.groupby("model_id"):
+            rows.append({
+                "model_id": model_id,
+                "win_rate": float(group["won"].mean()),
+                "lie_frequency": float(group["lie_frequency"].mean()),
+                "lie_success_rate": float(group["lie_success_rate"].mean()),
+                "paranoia_frequency": float(group["paranoia_frequency"].mean()),
+                "challenge_accuracy": float(group["challenge_accuracy"].mean()),
+                "games": len(group),
+            })
+        df = pd.DataFrame(rows)
 
-    df = pd.DataFrame(rows).sort_values(["win_rate", "lie_frequency"], ascending=[False, False])
+    df = df.sort_values(["win_rate", "lie_frequency"], ascending=[False, False])
     lines = [
         "## RQ1: Baseline Deception (Experiment 1)",
         "",
@@ -112,23 +148,37 @@ def render_baseline_table(player_games: pd.DataFrame) -> list[str]:
     return lines
 
 
-def render_moral_restraint(player_games: pd.DataFrame) -> list[str]:
+def render_moral_restraint(player_games: pd.DataFrame, exp1_stats: Optional[pd.DataFrame], exp2_stats: Optional[pd.DataFrame]) -> list[str]:
     exp1 = player_games[player_games["experiment_id"] == 1]
     exp2 = player_games[player_games["experiment_id"] == 2]
-    if exp1.empty or exp2.empty:
+    if ((exp1_stats is None or exp1_stats.empty) and exp1.empty) or ((exp2_stats is None or exp2_stats.empty) and exp2.empty):
         return []
 
     rows = []
-    for model_id in sorted(set(exp1["model_id"]).intersection(set(exp2["model_id"]))):
-        group1 = exp1[exp1["model_id"] == model_id]
-        group2 = exp2[exp2["model_id"] == model_id]
-        rows.append({
-            "model_id": model_id,
-            "exp1_lie_frequency": float(group1["lie_frequency"].mean()),
-            "exp2_lie_frequency": float(group2["lie_frequency"].mean()),
-            "delta": float(group2["lie_frequency"].mean() - group1["lie_frequency"].mean()),
-            "delta_ci": pct_delta_ci(group1["lie_frequency"].astype(float), group2["lie_frequency"].astype(float)),
-        })
+    if exp1_stats is not None and not exp1_stats.empty and exp2_stats is not None and not exp2_stats.empty:
+        exp1_map = exp1_stats.set_index("model_id")
+        exp2_map = exp2_stats.set_index("model_id")
+        for model_id in sorted(set(exp1_map.index).intersection(set(exp2_map.index))):
+            lie1 = float(exp1_map.loc[model_id, "lie_frequency"])
+            lie2 = float(exp2_map.loc[model_id, "lie_frequency"])
+            rows.append({
+                "model_id": model_id,
+                "exp1_lie_frequency": lie1,
+                "exp2_lie_frequency": lie2,
+                "delta": lie2 - lie1,
+                "delta_text": f"{lie2 - lie1:+.1%}",
+            })
+    else:
+        for model_id in sorted(set(exp1["model_id"]).intersection(set(exp2["model_id"]))):
+            group1 = exp1[exp1["model_id"] == model_id]
+            group2 = exp2[exp2["model_id"] == model_id]
+            rows.append({
+                "model_id": model_id,
+                "exp1_lie_frequency": float(group1["lie_frequency"].mean()),
+                "exp2_lie_frequency": float(group2["lie_frequency"].mean()),
+                "delta": float(group2["lie_frequency"].mean() - group1["lie_frequency"].mean()),
+                "delta_text": pct_delta_ci(group1["lie_frequency"].astype(float), group2["lie_frequency"].astype(float)),
+            })
 
     df = pd.DataFrame(rows).sort_values("delta")
     lines = [
@@ -141,36 +191,42 @@ def render_moral_restraint(player_games: pd.DataFrame) -> list[str]:
     for _, row in df.iterrows():
         lines.append(
             f"| {row['model_id']} | {pct(row['exp1_lie_frequency'])} | "
-            f"{pct(row['exp2_lie_frequency'])} | {row['delta_ci']} |"
+            f"{pct(row['exp2_lie_frequency'])} | {row['delta_text']} |"
         )
 
     biggest_drop = df.iloc[0]
     biggest_increase = df.sort_values("delta", ascending=False).iloc[0]
     lines.extend([
         "",
-        f"Largest lie-frequency reduction: `{biggest_drop['model_id']}` with {biggest_drop['delta_ci']}.",
-        f"Largest lie-frequency increase: `{biggest_increase['model_id']}` with {biggest_increase['delta_ci']}.",
+        f"Largest lie-frequency reduction: `{biggest_drop['model_id']}` with {biggest_drop['delta_text']}.",
+        f"Largest lie-frequency increase: `{biggest_increase['model_id']}` with {biggest_increase['delta_text']}.",
         "",
     ])
     return lines
 
 
-def render_instruction_compliance(player_games: pd.DataFrame) -> list[str]:
+def render_instruction_compliance(player_games: pd.DataFrame, exp3_stats: Optional[pd.DataFrame]) -> list[str]:
     exp3 = player_games[player_games["experiment_id"] == 3].copy()
-    if exp3.empty:
+    if (exp3_stats is None or exp3_stats.empty) and exp3.empty:
         return []
 
-    exp3["instruction_violation_rate"] = exp3["instruction_violation_rate"].fillna(0).astype(float)
-    rows = []
-    for model_id, group in exp3.groupby("model_id"):
-        rows.append({
-            "model_id": model_id,
-            "violation_rate": float(group["instruction_violation_rate"].mean()),
-            "win_rate": float(group["won"].mean()),
-            "games": len(group),
-        })
+    if exp3_stats is not None and not exp3_stats.empty:
+        df = exp3_stats.copy()
+        df["violation_rate"] = df["instruction_violation_rate"].fillna(0).astype(float)
+        df["games"] = df["games_played"].astype(int)
+    else:
+        exp3["instruction_violation_rate"] = exp3["instruction_violation_rate"].fillna(0).astype(float)
+        rows = []
+        for model_id, group in exp3.groupby("model_id"):
+            rows.append({
+                "model_id": model_id,
+                "violation_rate": float(group["instruction_violation_rate"].mean()),
+                "win_rate": float(group["won"].mean()),
+                "games": len(group),
+            })
+        df = pd.DataFrame(rows)
 
-    df = pd.DataFrame(rows).sort_values(["violation_rate", "win_rate"], ascending=[False, False])
+    df = df.sort_values(["violation_rate", "win_rate"], ascending=[False, False])
     lines = [
         "## RQ3: Instruction Compliance (Experiment 3)",
         "",
@@ -190,29 +246,6 @@ def render_instruction_compliance(player_games: pd.DataFrame) -> list[str]:
         "",
     ])
     return lines
-
-
-def render_resume_bullets(player_games: pd.DataFrame, game_summary: Optional[pd.DataFrame]) -> list[str]:
-    providers = sorted(str(v) for v in player_games["provider"].dropna().unique() if str(v))
-    provider_label = providers[0] if len(providers) == 1 else ("multi-provider" if providers else "legacy/unknown")
-    experiments = sorted(int(v) for v in player_games["experiment_id"].dropna().unique())
-    experiment_label = ", ".join(str(v) for v in experiments)
-    total_games = player_games["game_id"].nunique()
-    total_rows = len(player_games)
-    total_models = player_games["model_id"].nunique()
-
-    bullets = [
-        f"- Built a reproducible TypeScript + Python multi-agent LLM research harness for deception and instruction-following experiments, with seeded tournaments, provenance-aware logs, and cohort-safe analysis.",
-        f"- Ran {total_games} four-player games ({total_rows} player-game observations) across {total_models} models and experiments {experiment_label} using the `{provider_label}` provider stack.",
-        "- Shipped an interactive browser visualizer plus automated CSV, plotting, and markdown reporting so experimental results can be turned into paper figures and resume bullets quickly.",
-    ]
-
-    if game_summary is not None and "total_tokens" in game_summary.columns and not game_summary.empty:
-        total_tokens = int(game_summary["total_tokens"].fillna(0).sum())
-        if total_tokens > 0:
-            bullets.insert(2, f"- Logged token usage and runtime metadata across the full run, covering {total_tokens:,} total tokens for downstream cost and efficiency analysis.")
-
-    return ["## Resume Bullets", "", *bullets, ""]
 
 
 def render_paper_fill_ins(player_games: pd.DataFrame) -> list[str]:
@@ -282,6 +315,7 @@ def build_report(
     player_games: pd.DataFrame,
     game_summary: Optional[pd.DataFrame],
     figures_dir: Path,
+    experiment_stats: Dict[int, pd.DataFrame],
 ) -> str:
     schema_versions = sorted(str(v) for v in player_games["log_schema_version"].dropna().unique())
     providers = sorted(str(v) for v in player_games["provider"].dropna().unique() if str(v))
@@ -318,11 +352,10 @@ def build_report(
         lines.append("")
 
     lines.extend(render_data_quality_notes(player_games, game_summary))
-    lines.extend(render_experiment_overview(player_games))
-    lines.extend(render_baseline_table(player_games))
-    lines.extend(render_moral_restraint(player_games))
-    lines.extend(render_instruction_compliance(player_games))
-    lines.extend(render_resume_bullets(player_games, game_summary))
+    lines.extend(render_experiment_overview(player_games, experiment_stats))
+    lines.extend(render_baseline_table(player_games, experiment_stats.get(1)))
+    lines.extend(render_moral_restraint(player_games, experiment_stats.get(1), experiment_stats.get(2)))
+    lines.extend(render_instruction_compliance(player_games, experiment_stats.get(3)))
     lines.extend(render_paper_fill_ins(player_games))
     lines.extend(render_figures(figures_dir))
 
@@ -341,6 +374,7 @@ if __name__ == "__main__":
     csv_dir = Path(args.csv_dir)
     output_path = Path(args.output)
     figures_dir = Path(args.figures_dir)
+    experiment_stats = load_experiment_stats_tables(csv_dir)
 
     player_games = load_csv(csv_dir / "player_game_stats.csv")
     if player_games is None or player_games.empty:
@@ -352,6 +386,6 @@ if __name__ == "__main__":
     if game_summary is not None and "termination_reason" in game_summary.columns:
         game_summary = game_summary[game_summary["termination_reason"].fillna("") != "turn_cap"].copy()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(build_report(player_games, game_summary, figures_dir), encoding="utf-8")
+    output_path.write_text(build_report(player_games, game_summary, figures_dir, experiment_stats), encoding="utf-8")
 
     print(f"Wrote research summary to {output_path}")

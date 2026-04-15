@@ -1,13 +1,19 @@
-# Dataset Card: Bullshit-Bench Pilot
+# Dataset Card: Bullshit-Bench v1.0.0
 
 ## Summary
 
 This dataset consists of game logs produced by large language models playing the card game *Bullshit* under controlled prompt conditions. It is intended to support research on deception, challenge behavior, moral restraint, and instruction compliance in multi-agent LLM interaction.
 
-The current target release is a **600-game pilot dataset**:
+The official release is a **600-game benchmark dataset**:
 - 4 experiments
 - 15 unique four-model matchups per experiment
 - 10 games per matchup
+
+Release identifiers:
+- benchmark version: `1.0.0`
+- dataset version: `1.0.0`
+- primary provider cohort: `nim`
+- frozen prompt version/hash: documented in `release/v1.0.0/evaluation-manifest.json`
 
 ## Motivation
 
@@ -47,7 +53,7 @@ Generation process:
 - seeded deck order and seating
 - uncapped play until natural winner for research-default runs
 
-The current dataset is produced through tournament shards run in parallel across disjoint matchup ranges.
+The released dataset was produced through tournament shards run in parallel across disjoint matchup ranges and then frozen into a versioned comparable cohort.
 
 ## Recommended Inclusion Rules
 
@@ -92,13 +98,15 @@ Bad uses:
 - mixing incompatible log cohorts without disclosure
 - treating capped/debug runs as equal to natural completed games
 
-## Maintenance
+## Release Surfaces
 
-Any public release should include:
-- benchmark version
-- schema version
-- provider cohort
-- prompt version/hash
-- quarantine policy
-- generation date range
-- a frozen manifest plus summary-level CSV and figure copies under `paper/tmlr/artifacts/frozen/` and `paper/tmlr/figures/`
+This release includes:
+- `release/v1.0.0/benchmark-release.json`
+- `release/v1.0.0/dataset-manifest.json`
+- `release/v1.0.0/evaluation-manifest.json`
+- `release/v1.0.0/checksums.sha256`
+- `release/v1.0.0/RELEASE_NOTES.md`
+- tracked frozen summary artifacts under `paper/tmlr/artifacts/frozen/`
+- tracked paper figures under `paper/tmlr/figures/`
+
+The full raw game logs are packaged as a versioned archive asset referenced by the release manifest rather than being committed into normal repo history.

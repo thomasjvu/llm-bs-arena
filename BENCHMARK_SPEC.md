@@ -2,17 +2,17 @@
 
 ## Status
 
-Working benchmark specification for the current NVIDIA NIM-backed pilot.
+Bullshit-Bench v1.0.0 is a released benchmark specification for the current NVIDIA NIM-backed primary cohort.
 
-This project is best described today as a **benchmark harness / evaluation framework**, not yet a polished packaged "Gym" environment. It already has the core pieces that make it benchmark-like:
+The current release includes:
 - fixed task definition
 - fixed prompt conditions
-- fixed model roster for the pilot
+- fixed model roster for the primary hosted-model cohort
 - fixed metrics
 - reproducible seeding and logging
-- leaderboard and analysis outputs
-
-What it does **not** yet have is a formal standalone environment API with package-level `reset/step` semantics, versioned benchmark releases, or an official dataset release. Those can be added after the pilot.
+- importable environment API with package-level `reset/step` semantics
+- baseline-policy pack for local side comparisons
+- official dataset and evaluation manifests with checksums
 
 ## Benchmark Goal
 
@@ -118,8 +118,30 @@ Interpretation note:
 - vendor naming should not be turned into a causal story by itself
 - for example, `mistral-small-4-119b-2603` contains `small` in the family name, but this pilot is not a controlled size ablation and should not be used to claim that parameter count alone explains behavior
 
-Optional side-comparison baseline:
-- `baseline/scripted` (local deterministic heuristic policy; not part of the primary hosted-model pilot cohort)
+Optional side-comparison baselines:
+- `baseline/scripted`
+- `baseline/random-legal`
+- `baseline/truthful-greedy`
+
+These baseline policies are local comparison policies and are not part of the primary hosted-model cohort reported in the main paper tables.
+
+## Public Environment API
+
+Bullshit-Bench ships a multi-agent, phase-based environment API:
+- `createBullshitEnv(config)`
+- `env.reset(resetOptions?)`
+- `env.observation(playerId)`
+- `env.publicState()`
+- `env.step(action)`
+- `env.done()`
+- `env.result()`
+
+Execution semantics:
+- multi-agent rather than single-agent reward-wrapped
+- explicit `play` and `challenge` phases
+- sequential challenge handling that matches the benchmark protocol
+- strict action validation for actor, phase, card ownership, and claim count
+- no silent normalization in the public API; output repair remains in hosted-model adapters only
 
 ## Matchup Protocol
 
@@ -173,32 +195,48 @@ Tracked frozen release copies:
 - `paper/tmlr/artifacts/frozen/*`
 - `paper/tmlr/figures/*`
 
-## Why This Is Benchmark-Like
+Versioned release metadata:
+- `release/v1.0.0/benchmark-release.json`
+- `release/v1.0.0/dataset-manifest.json`
+- `release/v1.0.0/evaluation-manifest.json`
+- `release/v1.0.0/checksums.sha256`
+- `release/v1.0.0/RELEASE_NOTES.md`
 
-The project already qualifies as a meaningful benchmark harness because it defines:
+## Why This Is A Benchmark Release
+
+The current release qualifies as a benchmark release because it defines and ships:
 - a clear task
 - a fixed evaluation protocol
 - fixed prompt conditions
 - fixed metrics
 - replayable logs
 - comparable model cohorts
+- a stable importable environment API
+- a baseline-policy pack
+- versioned release manifests and checksums
 
 The strongest paper framing is:
 
-"We introduce a reproducible benchmark harness for strategic deception and instruction compliance in multi-agent LLM play, and we report a 600-game pilot."
+"We introduce a reproducible benchmark release for strategic deception and instruction compliance in multi-agent LLM play, and we report a 600-game pilot."
 
-That is stronger and more defensible than claiming this is already a final polished benchmark release.
+That is stronger and more defensible than claiming the benchmark proves broad real-world deception behavior.
 
 ## Scope Boundary
 
 This benchmark should be framed as evidence about strategic behavior in a controlled hidden-information game, not as a universal claim about model honesty. Its value comes from isolating one measurable slice of the broader problem: when local incentives favor misrepresentation and peers can contest suspicious claims.
 
-## What Would Make It A Fuller Benchmark Release
+## Current Release Boundary
 
-After the pilot, the next step up would be:
-- versioned benchmark release tags
-- official dataset release with manifest and checksums
-- standalone environment API (`reset`, `step`, `done`, `observation`, `action`)
+Bullshit-Bench v1.0.0 now ships:
+- versioned benchmark and dataset metadata
+- official dataset and evaluation manifests with inclusion/exclusion rules
+- standalone environment API (`reset`, `step`, `done`, `observation`, `publicState`, `action`)
 - baseline-policy pack
-- evaluation manifest with official inclusion/exclusion rules
+- tracked frozen summary artifacts and paper figures
+- raw-log archive packaging for the official 600-game cohort
+
+Reasonable next extensions are:
+- second-environment replication
+- human-baseline collection
+- prompt or roster ablations
 - public leaderboard snapshot or static results site

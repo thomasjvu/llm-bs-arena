@@ -24,8 +24,13 @@ Use this once the pilot is sufficiently complete and you are getting ready to pu
 - [ ] `npm run stats`
 - [ ] `npm run plots`
 - [ ] `npm run report`
+- [ ] `npm start -- release`
 - [ ] refresh `paper/tmlr/artifacts/frozen/` from the regenerated outputs
 - [ ] refresh `paper/tmlr/figures/` from the selected final figures
+- [ ] verify `release/v1.0.0/benchmark-release.json`
+- [ ] verify `release/v1.0.0/dataset-manifest.json`
+- [ ] verify `release/v1.0.0/evaluation-manifest.json`
+- [ ] verify `release/v1.0.0/checksums.sha256`
 - [ ] save the exact commit hash used for the release
 
 ## 4. Final Writing Pass
@@ -50,6 +55,7 @@ Use this once the pilot is sufficiently complete and you are getting ready to pu
 - [ ] if submitting to TMLR, blinded submission assets are kept separate from public release assets
 - [ ] arXiv or technical report PDF generated
 - [ ] final tracked manuscript figures and frozen artifacts are present under `paper/tmlr/`
+- [ ] release metadata under `release/v1.0.0/` matches the public artifact story
 
 ## 7. Final Sanity Check
 

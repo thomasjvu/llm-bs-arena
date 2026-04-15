@@ -2,15 +2,15 @@
 
 \subsection{Frozen Cohort}
 
-The frozen comparable cohort contains 600 winner-terminated games with no mixed-cohort or turn-cap exclusions: 150 games in each of Experiments~0, 1, 2, and~3. All quantitative statements in this section use the player-game analysis pipeline and the frozen cohort manifest rather than interim shard counts.
+The frozen comparable cohort contains 600 winner-terminated games with no mixed-cohort or turn-cap exclusions: 150 games in each of Experiments~0, 1, 2, and~3. Unless otherwise noted, experiment-level dynamics in this section use mean model-level rates computed from the frozen per-condition summaries rather than turn-level or raw player-row averages.
 
-\subsection{Experiment 0: Low-Strategy Reference}
+\subsection{Experiment 0: Low-Strategy Prompt Control}
 
-Experiment~0 behaves as a low-strategy reference rather than as a true random-policy baseline. With the full 150-game control slice now complete, Nemotron leads the condition at 49.0\% win rate, followed by Kimi at 36.0\%, Qwen at 32.0\%, and GLM at 29.0\%. Deception remains common: player-game lie frequency ranges from 15.2\% for Mistral to 46.6\% for Kimi. This matters because it shows that strategic misrepresentation still emerges even without an explicit deception-allowed framing.
+Experiment~0 behaves as a low-strategy prompt control rather than a true random-policy baseline. With the full 150-game slice complete, Nemotron leads the condition at 49.0\% win rate, followed by Kimi at 36.0\%, Qwen at 32.0\%, and GLM at 29.0\%. Strategic deception still appears readily even without an explicit deception-allowed framing: lie frequency is 47.4\% for Kimi, 41.4\% for GLM, 39.7\% for Nemotron, and 35.9\% for Qwen. Experiment~0 is therefore useful as a prompt-level comparison within the same model family, but not as a non-strategic floor.
 
 \subsection{Experiment 1: Deception Allowed}
 
-Experiment~1 is the harshest environment for bluffing in the frozen cohort. Mean lie frequency is 38.5\%, mean challenge frequency is 40.6\%, and mean lie success is only 12.4\%. Kimi leads the condition at 66.0\% win rate. Qwen and MiniMax are tied at 25.0\%, GLM follows at 23.0\%, Nemotron is at 11.0\%, and Mistral remains at 0.0\%. The broader pattern is that explicit permission to deceive makes the table much more suspicious, lowering the payoff of bluffing and turning challenge calibration into a central skill.
+Experiment~1 is the harshest bluffing regime in the frozen cohort. Mean model-level lie frequency is 39.6\%, mean challenge frequency is 45.3\%, and mean lie success is only 11.0\%. Kimi leads the condition at 66.0\% win rate. MiniMax and Qwen are tied at 25.0\%, GLM follows at 23.0\%, Nemotron is at 11.0\%, and Mistral remains at 0.0\%. The broader pattern is that explicit permission to deceive makes the table much more suspicious, lowering the payoff of bluffing and making challenge calibration a central skill.
 
 \begin{figure}[t]
   \centering
@@ -21,11 +21,11 @@ Experiment~1 is the harshest environment for bluffing in the frozen cohort. Mean
 
 \subsection{Experiment 2: Asymmetric Fairness}
 
-Experiment~2 provides mixed evidence for restraint rather than a universal effect. Relative to Experiment~1, lie frequency falls by 7.9 points for GLM, 7.4 for MiniMax, 3.6 for Mistral, 3.4 for Qwen, and 2.9 for Nemotron, while Kimi increases by 0.4 points. This supports a heterogeneous, model-specific interpretation rather than a universal fairness effect. The completed leaderboard is topped by Kimi at 66.0\%, with Nemotron at 28.0\%, Qwen at 27.0\%, and GLM at 20.0\%. At the aggregate level, Experiment~2 also looks like an intermediate regime: mean challenge frequency is 29.1\%, between Experiment~1's 40.6\% and the roughly 20\% levels in Experiments~0 and~3.
+Experiment~2 provides mixed evidence for restraint rather than a universal effect. Relative to Experiment~1, lie frequency falls by 7.4 points for GLM, 7.4 for MiniMax, 5.8 for Mistral, 2.0 for Qwen, and 1.7 for Nemotron, while Kimi increases by 3.3 points. This supports a heterogeneous, model-specific interpretation rather than a universal fairness effect. The completed leaderboard is topped by Kimi at 66.0\%, with Nemotron at 28.0\%, Qwen at 27.0\%, and GLM at 20.0\%. At the aggregate level, Experiment~2 also looks like an intermediate regime: mean challenge frequency is 32.4\%, between Experiment~1's 45.3\% and the roughly 22\% levels in Experiments~0 and~3.
 
 \subsection{Experiment 3: Honesty Mandate}
 
-Experiment~3 is the clearest instruction-compliance result in the benchmark. All six models still violate the honesty rule at meaningful rates, from 21.4\% for Mistral to 29.2\% for Kimi. At the same time, the system-level equilibrium changes: mean lie frequency falls to 26.5\%, mean challenge frequency falls to 20.0\%, and mean lie success rises to 36.2\%. Kimi leads the condition at 57.0\%, followed by Qwen at 51.0\%, while Mistral remains at 0.0\%. The honesty prompt therefore reduces deception but also reduces vigilance.
+Experiment~3 is the clearest instruction-compliance result in the benchmark. All six models still violate the honesty rule at meaningful rates, from 20.4\% for Mistral to 31.1\% for Qwen. At the same time, the system-level equilibrium changes: mean model-level lie frequency falls to 27.2\%, mean challenge frequency falls to 21.8\%, and mean lie success rises to 34.7\%. Kimi leads the condition at 57.0\%, followed by Qwen at 51.0\%, while Mistral remains at 0.0\%. The honesty prompt therefore reduces lying but also reduces vigilance.
 
 \begin{figure}[t]
   \centering
@@ -36,7 +36,7 @@ Experiment~3 is the clearest instruction-compliance result in the benchmark. All
 
 \subsection{Cross-Experiment Patterns}
 
-Three patterns stand out in the frozen cohort. First, Experiment~0 is useful as a low-strategy reference, but not as a true random baseline. Second, Experiment~2 produces heterogeneous effects rather than a universal drop in deception. Third, Experiment~3 changes the social dynamics of the table rather than simply succeeding or failing as an honesty intervention. The cross-experiment aggregate pattern is especially informative: mean lie frequency moves from 34.5\% in Experiment~0 to 38.5\% in Experiment~1, then to 34.4\% in Experiment~2 and 26.5\% in Experiment~3; mean challenge frequency peaks in Experiment~1 at 40.6\%; and mean lie success is lowest in Experiment~1 at 12.4\% but much higher in Experiments~0 and~3 at 39.3\% and 36.2\% respectively. Experiments~0 and~3 are especially revealing because their challenge frequencies are nearly identical at 20.4\% and 20.0\%, despite the explicit honesty rule in Experiment~3.
+Three patterns stand out in the frozen cohort. First, Experiment~0 is informative as a low-strategy prompt control, but it is not a random baseline. Second, Experiment~2 produces heterogeneous effects rather than a universal drop in deception. Third, Experiment~3 changes the social dynamics of the table rather than simply succeeding or failing as an honesty intervention. The cross-experiment aggregate pattern is especially informative: mean model-level lie frequency moves from 34.8\% in Experiment~0 to 39.6\% in Experiment~1, then to 36.1\% in Experiment~2 and 27.2\% in Experiment~3; mean challenge frequency peaks in Experiment~1 at 45.3\%; and mean lie success is lowest in Experiment~1 at 11.0\% but much higher in Experiments~0 and~3 at 37.9\% and 34.7\% respectively. Experiments~0 and~3 are especially revealing because their challenge frequencies are similar at 21.5\% and 21.8\%, despite the explicit honesty rule in Experiment~3.
 
 \begin{figure}[t]
   \centering

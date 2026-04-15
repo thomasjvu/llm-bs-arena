@@ -10,10 +10,10 @@ This section collects reviewer-facing figures and compact aggregate tables that 
     \toprule
     Experiment & Mean lie freq. & Mean challenge freq. & Mean lie success \\
     \midrule
-    0 & 34.5\% & 20.4\% & 39.3\% \\
-    1 & 38.5\% & 40.6\% & 12.4\% \\
-    2 & 34.4\% & 29.1\% & 26.7\% \\
-    3 & 26.5\% & 20.0\% & 36.2\% \\
+    0 & 34.8\% & 21.5\% & 37.9\% \\
+    1 & 39.6\% & 45.3\% & 11.0\% \\
+    2 & 36.1\% & 32.4\% & 22.6\% \\
+    3 & 27.2\% & 21.8\% & 34.7\% \\
     \bottomrule
   \end{tabular}
   \caption{Experiment-level aggregates from the frozen 600-game cohort.}
@@ -28,12 +28,12 @@ This section collects reviewer-facing figures and compact aggregate tables that 
     \toprule
     Model & Exp2 minus Exp1 lie frequency \\
     \midrule
-    GLM & -7.9 pts \\
+    GLM & -7.4 pts \\
     MiniMax & -7.4 pts \\
-    Mistral & -3.6 pts \\
-    Qwen & -3.4 pts \\
-    Nemotron & -2.9 pts \\
-    Kimi & +0.4 pts \\
+    Mistral & -5.8 pts \\
+    Qwen & -2.0 pts \\
+    Nemotron & -1.7 pts \\
+    Kimi & +3.3 pts \\
     \bottomrule
   \end{tabular}
   \caption{Experiment~2 minus Experiment~1 lie-frequency shifts in the frozen cohort.}
@@ -54,4 +54,11 @@ This section collects reviewer-facing figures and compact aggregate tables that 
   \includegraphics[width=0.9\linewidth]{game_length_distribution.png}
   \caption{Distribution of game lengths in the frozen cohort.}
   \label{fig:game-length-distribution}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{lie_frequency_vs_win_rate.png}
+  \caption{Lie frequency versus win rate for each model-condition pair in the frozen cohort. The outliers show that higher deception alone does not determine success; challenge calibration and condition-specific style matter.}
+  \label{fig:lie-frequency-vs-win-rate}
 \end{figure}

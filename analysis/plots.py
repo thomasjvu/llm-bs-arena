@@ -22,6 +22,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 import seaborn as sns
 
 
@@ -261,6 +262,68 @@ def plot_game_length_distribution(summary_df: pd.DataFrame, output_path: str):
     plt.close()
 
 
+def plot_lie_frequency_vs_win_rate(exp_stats: list[tuple[int, pd.DataFrame]], output_path: str):
+    """Scatter plot of lie frequency vs win rate across model-condition pairs."""
+    frames = []
+    for experiment_id, stats_df in exp_stats:
+        df = stats_df.copy()
+        df["experiment_id"] = experiment_id
+        df["short_name"] = df["model_id"].apply(shorten_model_name)
+        frames.append(df)
+
+    if not frames:
+        return
+
+    combined = pd.concat(frames, ignore_index=True)
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    palette = {
+        0: "#4C78A8",
+        1: "#F58518",
+        2: "#54A24B",
+        3: "#E45756",
+    }
+
+    for experiment_id, group in combined.groupby("experiment_id"):
+        ax.scatter(
+            group["lie_frequency"],
+            group["win_rate"],
+            s=95,
+            alpha=0.85,
+            color=palette.get(int(experiment_id), "#666666"),
+            edgecolors="white",
+            linewidths=0.8,
+            label=f"Exp {int(experiment_id)}",
+        )
+
+    label_models = {
+        "moonshotai/kimi-k2.5": "Kimi",
+        "mistralai/mistral-small-4-119b-2603": "Mistral",
+        "nvidia/nemotron-3-super-120b-a12b": "Nemotron",
+    }
+    for _, row in combined.iterrows():
+        if row["model_id"] not in label_models:
+            continue
+        ax.annotate(
+            f"{label_models[row['model_id']]} E{int(row['experiment_id'])}",
+            (row["lie_frequency"], row["win_rate"]),
+            xytext=(5, 5),
+            textcoords="offset points",
+            fontsize=8,
+        )
+
+    ax.set_xlabel("Lie Frequency")
+    ax.set_ylabel("Win Rate")
+    ax.set_title("Lie Frequency vs Win Rate by Model and Condition")
+    ax.xaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.legend(title="Condition")
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+
+
 def generate_all_plots(csv_dir: str, output_dir: str):
     """Generate all plots from CSV data."""
     csv_path = Path(csv_dir)
@@ -272,6 +335,7 @@ def generate_all_plots(csv_dir: str, output_dir: str):
     # Load data
     turns_df = None
     summary_df = None
+    exp0_stats = None
     exp1_stats = None
     exp2_stats = None
     exp3_stats = None
@@ -281,6 +345,9 @@ def generate_all_plots(csv_dir: str, output_dir: str):
 
     if (csv_path / "game_summary.csv").exists():
         summary_df = pd.read_csv(csv_path / "game_summary.csv")
+
+    if (csv_path / "player_stats_exp0.csv").exists():
+        exp0_stats = pd.read_csv(csv_path / "player_stats_exp0.csv")
 
     if (csv_path / "player_stats_exp1.csv").exists():
         exp1_stats = pd.read_csv(csv_path / "player_stats_exp1.csv")
@@ -309,6 +376,19 @@ def generate_all_plots(csv_dir: str, output_dir: str):
             output_path / "compare_lie_frequency.png",
             "RQ2: Lie Frequency - Exp1 vs Exp2 (Asymmetric)"
         )
+
+    scatter_inputs = [
+        (experiment_id, stats_df)
+        for experiment_id, stats_df in [
+            (0, exp0_stats),
+            (1, exp1_stats),
+            (2, exp2_stats),
+            (3, exp3_stats),
+        ]
+        if stats_df is not None
+    ]
+    if scatter_inputs:
+        plot_lie_frequency_vs_win_rate(scatter_inputs, output_path / "lie_frequency_vs_win_rate.png")
 
     if turns_df is not None:
         plot_lie_frequency_heatmap(turns_df, output_path / "lie_frequency_heatmap.png")

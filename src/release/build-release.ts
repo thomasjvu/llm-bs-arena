@@ -117,6 +117,7 @@ export const DEFAULT_TRACKED_FIGURES = [
   'paper/tmlr/figures/exp3_violations.png',
   'paper/tmlr/figures/game_length_distribution.png',
   'paper/tmlr/figures/lie_frequency_heatmap.png',
+  'paper/tmlr/figures/lie_frequency_vs_win_rate.png',
 ] as const;
 
 function normalizeRelativePath(repoRoot: string, absolutePath: string): string {
