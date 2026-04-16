@@ -25,9 +25,9 @@ This is the active paper-ops checklist for the current preprint path.
 
 ## 4. Source Packaging
 
-- [ ] package the arXiv source from the repository root or otherwise include `paper/arxiv/` and `references.bib`
-- [ ] include the section files, tracked figures, and frozen artifacts needed to reproduce the paper story
-- [ ] verify the packaged source still compiles cleanly
+- [ ] run `npm run arxiv:bundle`
+- [ ] verify `paper/arxiv/submission/bs-bench-arxiv.tar.gz` exists
+- [ ] verify the packaged source compiles cleanly
 
 ## 5. Final Upload Hygiene
 

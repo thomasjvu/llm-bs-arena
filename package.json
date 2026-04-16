@@ -32,7 +32,8 @@
     "plots": ".venv/bin/python analysis/plots.py --csv-dir logs/csv --output-dir results/figures",
     "report": ".venv/bin/python analysis/report.py --csv-dir logs/csv --output results/research_summary.md --figures-dir results/figures",
     "research:brief": "npm start -- analyze --csv && npm run stats && npm run plots && npm run report",
-    "benchmark:release": "node --env-file=.env dist/index.js release"
+    "benchmark:release": "node --env-file=.env dist/index.js release",
+    "arxiv:bundle": "node scripts/prepare-arxiv-bundle.mjs"
   },
   "keywords": [
     "llm",
