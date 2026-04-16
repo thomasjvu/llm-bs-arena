@@ -1,6 +1,20 @@
-import { Card, GameState, Player, Rank, Turn, ExperimentId, RANKS } from '../types/game.js';
+import { Card, GameState, Player, Rank, Turn, ExperimentId, RANKS, PlayerSeatConfig } from '../types/game.js';
 import { createDeck, shuffleDeck, dealCards } from './deck.js';
 import { MAX_CARDS_PER_PLAY, MIN_CARDS_PER_PLAY } from './play-rules.js';
+
+type PlayerSeatInput = string | PlayerSeatConfig;
+
+function normalizePlayerSeat(seat: PlayerSeatInput): PlayerSeatConfig {
+  if (typeof seat === 'string') {
+    return { modelId: seat, role: 'model' };
+  }
+
+  return {
+    modelId: seat.modelId,
+    displayName: seat.displayName,
+    role: seat.role ?? 'model',
+  };
+}
 
 /**
  * Creates a new game state with dealt hands
@@ -8,19 +22,22 @@ import { MAX_CARDS_PER_PLAY, MIN_CARDS_PER_PLAY } from './play-rules.js';
 export function createGameState(
   gameId: string,
   experimentId: ExperimentId,
-  modelIds: string[],
+  seats: PlayerSeatInput[],
   seed?: number
 ): GameState {
-  if (modelIds.length !== 4) {
+  if (seats.length !== 4) {
     throw new Error('Bullshit requires exactly 4 players');
   }
 
   const deck = shuffleDeck(createDeck(), seed);
   const hands = dealCards(deck, 4);
+  const normalizedSeats = seats.map(normalizePlayerSeat);
 
-  const players: Player[] = modelIds.map((modelId, index) => ({
+  const players: Player[] = normalizedSeats.map((seat, index) => ({
     id: `player_${index}`,
-    modelId,
+    modelId: seat.modelId,
+    displayName: seat.displayName,
+    role: seat.role ?? 'model',
     hand: hands[index],
     isEliminated: false,
   }));
@@ -33,7 +50,7 @@ export function createGameState(
     gameId,
     experimentId,
     players,
-    seatingOrder: [...modelIds],
+    seatingOrder: normalizedSeats.map((seat) => seat.modelId),
     seed,
     currentPlayerIndex: startingPlayerIndex >= 0 ? startingPlayerIndex : 0,
     currentRank: 'A',

@@ -87,6 +87,21 @@ describe('GameState', () => {
     expect(state.winner).toBeNull();
   });
 
+  it('should preserve seat metadata for human and model players', () => {
+    const state = createGameState('interactive-game', 1, [
+      { modelId: 'human/player', displayName: 'you', role: 'human' },
+      { modelId: 'model-a' },
+      { modelId: 'model-b', displayName: 'model bee' },
+      { modelId: 'model-c' },
+    ], 7);
+
+    const humanPlayer = state.players.find((player) => player.modelId === 'human/player');
+    expect(humanPlayer?.role).toBe('human');
+    expect(humanPlayer?.displayName).toBe('you');
+    expect(state.players.find((player) => player.modelId === 'model-b')?.displayName).toBe('model bee');
+    expect(state.seatingOrder).toEqual(['human/player', 'model-a', 'model-b', 'model-c']);
+  });
+
   it('should start with the player holding the Ace of Spades', () => {
     const models = ['model1', 'model2', 'model3', 'model4'];
     const state = createGameState('test-game', 1, models, 42);

@@ -2,12 +2,18 @@ import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as url from 'url';
-import { GameState, ExperimentId, MODELS, Card, Turn } from './types/game.js';
-import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame, getNextRank } from './engine/game-state.js';
-import { TurnManager, LLMAdapter } from './engine/turn-manager.js';
-import { MockLLMAdapter } from './llm/llm-adapter.js';
+import { GameState, ExperimentId, MODELS, Card, Turn, PlayerSeatConfig } from './types/game.js';
+import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame } from './engine/game-state.js';
+import { LLMAdapter } from './engine/turn-manager.js';
 import { APIConnectionError as NimAPIConnectionError } from './llm/nim-api.js';
-import { buildRunMetadata, detectProvider, createAdapter as createProviderAdapter, getProviderDisplayName, Provider } from './llm/provider.js';
+import {
+  buildRunMetadata,
+  detectProvider,
+  createAdapter as createProviderAdapter,
+  getProviderDisplayName,
+  Provider,
+  ProviderRuntimeConfig,
+} from './llm/provider.js';
 import { GameLogger, selectComparableGameCohort } from './logging/game-logger.js';
 import { calculateAllStats } from './metrics/player-stats.js';
 import { normalizePlaySelection } from './engine/play-rules.js';
@@ -15,11 +21,16 @@ import { normalizePlaySelection } from './engine/play-rules.js';
 const PORT = 3001;
 const UI_DIR = path.join(process.cwd(), 'ui');
 const LOGS_DIR = path.join(process.cwd(), 'logs/games');
+const HUMAN_MODEL_ID = 'human/player';
+const DEFAULT_HUMAN_NAME = 'you';
+const MODEL_SET = new Set<string>(MODELS as readonly string[]);
 
 // Active games with step-by-step execution
 interface ActiveGame {
   state: GameState;
   adapter: LLMAdapter;
+  provider: Provider;
+  providerConfig: ProviderRuntimeConfig;
   pendingTurn: Turn | null;
   challengeQueue: string[]; // Player IDs who can still challenge
   phase: 'waiting' | 'playing' | 'challenging' | 'finished';
@@ -27,6 +38,23 @@ interface ActiveGame {
   stepInProgress: boolean; // Lock to prevent concurrent step calls
   errorCount: number; // Track consecutive errors for this game
   lastErrorTime: number; // Time of last error
+  humanPlayerId: string | null;
+  hidePrivateState: boolean;
+  persistLog: boolean;
+}
+
+interface AwaitingHumanAction {
+  type: 'play' | 'challenge';
+  playerId: string;
+  playerName: string;
+  currentRank?: string;
+  pendingPlay?: {
+    playerId: string;
+    modelId: string;
+    displayName?: string;
+    claimedCount: number;
+    claimedRank: string;
+  };
 }
 
 const activeGames = new Map<string, ActiveGame>();
@@ -39,20 +67,75 @@ const mimeTypes: Record<string, string> = {
   '.json': 'application/json',
 };
 
-function getProvider(): Provider {
-  return detectProvider();
+function isHumanPlayer(player: { modelId: string; role?: string }): boolean {
+  return player.role === 'human' || player.modelId === HUMAN_MODEL_ID;
 }
 
-// Create LLM adapter
-function createAdapter(): LLMAdapter {
-  const provider = getProvider();
+function shuffleArray<T>(items: readonly T[]): T[] {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
 
-  if (provider === 'mock') {
-    console.log('[server] Using mock LLM adapter');
-    return new MockLLMAdapter(0.4, 0.25);
+function getPlayerLabel(player: { displayName?: string; modelId: string }): string {
+  return player.displayName || player.modelId;
+}
+
+function getRequestedProvider(body: any, runtimeConfig: ProviderRuntimeConfig): Provider | null {
+  const requested = body.provider as Provider | undefined;
+  if (requested === 'mock') {
+    return 'mock';
   }
 
-  return createProviderAdapter(provider);
+  if (requested === 'nim') {
+    return detectProvider(runtimeConfig) === 'nim' ? 'nim' : null;
+  }
+
+  return detectProvider(runtimeConfig);
+}
+
+function pickOpponentModels(body: any): string[] {
+  const requestedOpponentIds: string[] = Array.isArray(body.opponentModelIds)
+    ? body.opponentModelIds.filter((modelId: unknown): modelId is string => typeof modelId === 'string' && MODEL_SET.has(modelId))
+    : [];
+  const uniqueRequested: string[] = [...new Set(requestedOpponentIds)];
+  if (uniqueRequested.length >= 3) {
+    return uniqueRequested.slice(0, 3);
+  }
+
+  const remainingPool = shuffleArray(MODELS.filter((modelId) => !uniqueRequested.includes(modelId)));
+  return [...uniqueRequested, ...remainingPool.slice(0, 3 - uniqueRequested.length)];
+}
+
+function buildPlayerSeats(body: any): PlayerSeatConfig[] {
+  const interactive = body.interactive === true;
+
+  if (!interactive) {
+    const requestedModelIds: string[] = Array.isArray(body.modelIds)
+      ? body.modelIds.filter((modelId: unknown): modelId is string => typeof modelId === 'string' && MODEL_SET.has(modelId))
+      : [];
+    const uniqueRequested: string[] = [...new Set(requestedModelIds)];
+    const chosenModels: string[] = uniqueRequested.length === 4 ? uniqueRequested : shuffleArray(MODELS).slice(0, 4);
+    return chosenModels.map((modelId) => ({ modelId, role: 'model' }));
+  }
+
+  const humanName = typeof body.humanName === 'string' && body.humanName.trim().length > 0
+    ? body.humanName.trim().slice(0, 40)
+    : DEFAULT_HUMAN_NAME;
+
+  const seats: PlayerSeatConfig[] = [
+    { modelId: HUMAN_MODEL_ID, displayName: humanName, role: 'human' },
+    ...pickOpponentModels(body).map((modelId) => ({ modelId, role: 'model' as const })),
+  ];
+
+  return shuffleArray(seats);
+}
+
+function createAdapterForGame(provider: Provider, modelIds: readonly string[], runtimeConfig: ProviderRuntimeConfig): LLMAdapter {
+  return createProviderAdapter(provider, modelIds, runtimeConfig);
 }
 
 const logger = new GameLogger(LOGS_DIR);
@@ -120,6 +203,117 @@ function formatCard(card: Card): string {
   return `${card.rank}${card.suit}`;
 }
 
+function getAwaitingHumanAction(game: ActiveGame): AwaitingHumanAction | null {
+  if (!game.humanPlayerId) {
+    return null;
+  }
+
+  const humanPlayer = game.state.players.find((player) => player.id === game.humanPlayerId);
+  if (!humanPlayer) {
+    return null;
+  }
+
+  if (game.phase === 'waiting' && getCurrentPlayer(game.state).id === humanPlayer.id) {
+    return {
+      type: 'play',
+      playerId: humanPlayer.id,
+      playerName: getPlayerLabel(humanPlayer),
+      currentRank: game.state.currentRank,
+    };
+  }
+
+  if (game.phase === 'challenging' && game.pendingTurn && game.challengeQueue[0] === humanPlayer.id) {
+    const pendingPlayer = game.state.players.find((player) => player.id === game.pendingTurn?.playerId);
+    return {
+      type: 'challenge',
+      playerId: humanPlayer.id,
+      playerName: getPlayerLabel(humanPlayer),
+      pendingPlay: {
+        playerId: game.pendingTurn.playerId,
+        modelId: pendingPlayer?.modelId || game.pendingTurn.playerId,
+        displayName: pendingPlayer?.displayName,
+        claimedCount: game.pendingTurn.claimedCount,
+        claimedRank: game.pendingTurn.claimedRank,
+      },
+    };
+  }
+
+  return null;
+}
+
+function getVisibleHand(game: ActiveGame, playerId: string, hand: Card[]): string[] {
+  if (!game.hidePrivateState || game.humanPlayerId === playerId) {
+    return hand.map(formatCard);
+  }
+
+  return [];
+}
+
+function sanitizeReasoning(game: ActiveGame, actorId: string | undefined, reasoning: string | undefined): string {
+  if (!reasoning) {
+    return '';
+  }
+
+  if (!game.hidePrivateState || !actorId || actorId === game.humanPlayerId) {
+    return reasoning;
+  }
+
+  return '';
+}
+
+function sanitizeTurnForClient(game: ActiveGame, turn: Turn, allowPrivateCards: boolean): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {
+    turnNumber: turn.turnNumber,
+    playerId: turn.playerId,
+    claimedRank: turn.claimedRank,
+    claimedCount: turn.claimedCount,
+    challenged: turn.challenged,
+    challengerId: turn.challengerId,
+    challengeCorrect: turn.challengeCorrect,
+    reasoning: sanitizeReasoning(game, turn.playerId, turn.reasoning),
+    challengeReasoning: sanitizeReasoning(game, turn.challengerId, turn.challengeReasoning),
+    pileAfterTurn: turn.pileAfterTurn,
+    handSizesAfterTurn: turn.handSizesAfterTurn,
+    playResponseTimeMs: turn.playResponseTimeMs,
+    playTokenUsage: turn.playTokenUsage,
+    challengeResponseTimeMs: turn.challengeResponseTimeMs,
+    challengeTokenUsage: turn.challengeTokenUsage,
+    challengeOfferedTo: turn.challengeOfferedTo,
+  };
+
+  if (!game.hidePrivateState || turn.challenged || allowPrivateCards) {
+    sanitized.actualCards = turn.actualCards;
+    sanitized.wasLie = turn.wasLie;
+  } else {
+    sanitized.actualCards = [];
+  }
+
+  return sanitized;
+}
+
+function saveGameLogIfEnabled(game: ActiveGame) {
+  if (!game.persistLog) {
+    return;
+  }
+
+  const log = logger.stateToLog(game.state);
+  logger.saveGameLog(log);
+}
+
+function completeGameIfWon(game: ActiveGame): boolean {
+  const winner = checkWinner(game.state);
+  if (!winner) {
+    return false;
+  }
+
+  const winnerPlayer = game.state.players.find((player) => player.id === winner);
+  console.log(`[game] 🏆 WINNER: ${getPlayerLabel(winnerPlayer || { modelId: winner })} after ${game.state.turns.length} turns`);
+  finalizeGame(game.state, winner);
+  game.phase = 'finished';
+  saveGameLogIfEnabled(game);
+  return true;
+}
+
 // Validate game state before processing steps
 function validateGameState(game: ActiveGame): { valid: boolean; error?: string } {
   // Check for required state properties
@@ -156,13 +350,16 @@ function validateGameState(game: ActiveGame): { valid: boolean; error?: string }
 // Maximum turns to send to client to prevent performance issues in long games
 const MAX_CLIENT_TURNS = 100;
 
-// Get visible state for UI (shows all hands for spectator view)
+// Get visible state for UI
 function getFullGameState(game: ActiveGame) {
   const state = game.state;
+  const awaitingHumanAction = getAwaitingHumanAction(game);
 
   // Determine who is currently "thinking" (next to be queried by the server)
   let thinkingPlayerId: string | null = null;
-  if (game.phase === 'waiting') {
+  if (awaitingHumanAction) {
+    thinkingPlayerId = null;
+  } else if (game.phase === 'waiting') {
     thinkingPlayerId = getCurrentPlayer(state).id;
   } else if (game.phase === 'challenging' && game.challengeQueue.length > 0) {
     thinkingPlayerId = game.challengeQueue[0];
@@ -182,7 +379,10 @@ function getFullGameState(game: ActiveGame) {
     players: state.players.map((p, i) => ({
       id: p.id,
       modelId: p.modelId,
-      hand: p.hand.map(formatCard),
+      displayName: p.displayName,
+      role: p.role ?? 'model',
+      hand: getVisibleHand(game, p.id, p.hand),
+      handVisible: !game.hidePrivateState || game.humanPlayerId === p.id,
       handSize: p.hand.length,
       isActive: i === state.currentPlayerIndex,
       isEliminated: p.isEliminated,
@@ -191,11 +391,18 @@ function getFullGameState(game: ActiveGame) {
     currentRank: state.currentRank,
     pile: state.pile.map(formatCard),
     pileSize: state.pile.length,
-    turns: recentTurns,
+    turns: recentTurns.map((turn) => sanitizeTurnForClient(game, turn, false)),
     totalTurns: totalTurns, // Send actual count for display purposes
-    pendingTurn: game.pendingTurn,
+    pendingTurn: game.pendingTurn
+      ? sanitizeTurnForClient(game, game.pendingTurn, game.pendingTurn.playerId === game.humanPlayerId)
+      : null,
     winner: state.winner,
+    winnerName: state.winner ? getPlayerLabel(state.players.find((player) => player.id === state.winner) || { modelId: state.winner }) : null,
     winnerModel: state.winner ? state.players.find(p => p.id === state.winner)?.modelId : null,
+    provider: game.provider,
+    interactive: game.hidePrivateState,
+    humanPlayerId: game.humanPlayerId,
+    awaitingHumanAction,
     thinkingPlayerId,
   };
 }
@@ -204,23 +411,34 @@ function getFullGameState(game: ActiveGame) {
 async function handleStartGame(req: http.IncomingMessage, res: http.ServerResponse) {
   const body = await parseBody(req);
   const experimentId = (body.experimentId || 1) as ExperimentId;
+  const providerConfig: ProviderRuntimeConfig = {
+    apiKey: typeof body.apiKey === 'string' && body.apiKey.trim().length > 0 ? body.apiKey.trim() : undefined,
+    baseUrl: typeof body.baseUrl === 'string' && body.baseUrl.trim().length > 0 ? body.baseUrl.trim() : undefined,
+  };
+  const provider = getRequestedProvider(body, providerConfig);
+  if (!provider) {
+    sendJSON(res, { error: 'NVIDIA API key required for live model play' }, 400);
+    return;
+  }
 
-  // Pick 4 random models
-  const shuffled = [...MODELS].sort(() => Math.random() - 0.5);
-  const players = shuffled.slice(0, 4);
+  const seats = buildPlayerSeats(body);
 
   const gameId = `game_${Date.now()}`;
-  const state = createGameState(gameId, experimentId, players);
-  const adapter = createAdapter();
+  const state = createGameState(gameId, experimentId, seats);
+  const adapter = createAdapterForGame(provider, state.players.map((player) => player.modelId), providerConfig);
+  const humanPlayerId = state.players.find((player) => isHumanPlayer(player))?.id ?? null;
+  const hidePrivateState = humanPlayerId !== null;
+  const persistLog = body.persistLogs === true || (!hidePrivateState && !providerConfig.apiKey && body.persistLogs !== false);
 
-  const provider = getProvider();
-  state.metadata = buildRunMetadata(provider);
-  console.log(`\n[game] New game ${gameId} (experiment ${experimentId}, adapter: ${provider.toUpperCase()})`);
-  console.log(`[game] Players: ${players.join(', ')}`);
+  state.metadata = buildRunMetadata(provider, state.players.map((player) => player.modelId), providerConfig);
+  console.log(`\n[game] New game ${gameId} (experiment ${experimentId}, adapter: ${provider.toUpperCase()}, interactive: ${hidePrivateState ? 'yes' : 'no'})`);
+  console.log(`[game] Players: ${state.players.map((player) => getPlayerLabel(player)).join(', ')}`);
 
   const game: ActiveGame = {
     state,
     adapter,
+    provider,
+    providerConfig,
     pendingTurn: null,
     challengeQueue: [],
     phase: 'waiting',
@@ -228,11 +446,60 @@ async function handleStartGame(req: http.IncomingMessage, res: http.ServerRespon
     stepInProgress: false,
     errorCount: 0,
     lastErrorTime: 0,
+    humanPlayerId,
+    hidePrivateState,
+    persistLog,
   };
 
   activeGames.set(gameId, game);
 
   sendJSON(res, getFullGameState(game));
+}
+
+function buildVisibleStateForPlayer(game: ActiveGame, playerId: string, pileSize: number = game.state.pile.length) {
+  const player = game.state.players.find((entry) => entry.id === playerId);
+  if (!player) {
+    throw new Error(`Player ${playerId} not found`);
+  }
+
+  return {
+    hand: player.hand,
+    currentRank: game.state.currentRank,
+    pileSize,
+    otherPlayersCounts: Object.fromEntries(
+      game.state.players
+        .filter((entry) => entry.id !== player.id && !entry.isEliminated)
+        .map((entry) => [entry.modelId, entry.hand.length])
+    ),
+    recentTurns: game.state.turns.slice(-5),
+  };
+}
+
+function acceptPendingTurn(game: ActiveGame, logPrefix: string) {
+  if (!game.pendingTurn) {
+    return;
+  }
+
+  console.log(`${logPrefix}   No challenge — turn accepted`);
+  advanceTurn(game.state, game.pendingTurn);
+  game.pendingTurn = null;
+  game.phase = 'waiting';
+  completeGameIfWon(game);
+}
+
+function resolveChallenge(game: ActiveGame, challengerId: string, reasoning: string, logPrefix: string) {
+  if (!game.pendingTurn) {
+    return;
+  }
+
+  const correct = game.pendingTurn.wasLie;
+  console.log(`${logPrefix}   Challenge ${correct ? 'CORRECT (was a lie)' : 'WRONG (was truthful)'}`);
+  processChallenge(game.state, game.pendingTurn, challengerId, reasoning);
+  advanceTurn(game.state, game.pendingTurn);
+  game.pendingTurn = null;
+  game.challengeQueue = [];
+  game.phase = 'waiting';
+  completeGameIfWon(game);
 }
 
 // Advance the game by one step
@@ -263,6 +530,12 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     return;
   }
 
+  if (getAwaitingHumanAction(game)) {
+    if (stream) { startSSE(res); sendSSE(res, 'complete', getFullGameState(game)); res.end(); }
+    else sendJSON(res, getFullGameState(game));
+    return;
+  }
+
   if (game.stepInProgress) {
     console.log(`[step] BLOCKED — step already in progress for ${gameId}`);
     if (stream) { startSSE(res); sendSSE(res, 'blocked', { stepInProgress: true }); res.end(); }
@@ -277,25 +550,15 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     // Phase: waiting -> playing (get play decision)
     if (game.phase === 'waiting') {
       const currentPlayer = getCurrentPlayer(game.state);
-      console.log(`[step] Turn ${game.state.turns.length + 1} — ${currentPlayer.modelId} is playing (rank: ${game.state.currentRank}, hand: ${currentPlayer.hand.length} cards)`);
+      console.log(`[step] Turn ${game.state.turns.length + 1} — ${getPlayerLabel(currentPlayer)} is playing (rank: ${game.state.currentRank}, hand: ${currentPlayer.hand.length} cards)`);
 
-      const visibleState = {
-        hand: currentPlayer.hand,
-        currentRank: game.state.currentRank,
-        pileSize: game.state.pile.length,
-        otherPlayersCounts: Object.fromEntries(
-          game.state.players
-            .filter(p => p.id !== currentPlayer.id && !p.isEliminated)
-            .map(p => [p.modelId, p.hand.length])
-        ),
-        recentTurns: game.state.turns.slice(-5),
-      };
+      const visibleState = buildVisibleStateForPlayer(game, currentPlayer.id);
 
       if (stream) sendSSE(res, 'thinking', { playerId: currentPlayer.id, modelId: currentPlayer.modelId, type: 'play' });
 
       console.log(`[step]   Calling ${currentPlayer.modelId} for play decision...`);
       const startTime = Date.now();
-      const onToken = stream ? (text: string) => sendSSE(res, 'token', { text }) : undefined;
+      const onToken = stream && !game.hidePrivateState ? (text: string) => sendSSE(res, 'token', { text }) : undefined;
       const playResponse = await game.adapter.getPlayDecision(
         currentPlayer.id,
         currentPlayer.modelId,
@@ -338,24 +601,7 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     // Phase: challenging -> check each challenger
     else if (game.phase === 'challenging' && game.pendingTurn) {
       if (game.challengeQueue.length === 0) {
-        // No one challenged, advance turn
-        console.log(`[step]   No challenge — turn accepted`);
-        advanceTurn(game.state, game.pendingTurn);
-        game.pendingTurn = null;
-        game.phase = 'waiting';
-
-        // Check for winner
-        const winner = checkWinner(game.state);
-        if (winner) {
-          const winnerPlayer = game.state.players.find(p => p.id === winner);
-          console.log(`[step] 🏆 WINNER: ${winnerPlayer?.modelId} after ${game.state.turns.length} turns`);
-          finalizeGame(game.state, winner);
-          game.phase = 'finished';
-
-          // Save game log
-          const log = logger.stateToLog(game.state);
-          logger.saveGameLog(log);
-        }
+        acceptPendingTurn(game, '[step]');
       } else {
         // Get next challenger's decision
         const challengerId = game.challengeQueue.shift()!;
@@ -367,20 +613,14 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
         console.log(`[step]   Asking ${challenger.modelId} whether to challenge...`);
         if (stream) sendSSE(res, 'thinking', { playerId: challenger.id, modelId: challenger.modelId, type: 'challenge' });
 
-        const visibleState = {
-          hand: challenger.hand,
-          currentRank: game.state.currentRank,
-          pileSize: game.state.pile.length - game.pendingTurn.actualCards.length,
-          otherPlayersCounts: Object.fromEntries(
-            game.state.players
-              .filter(p => p.id !== challenger.id && !p.isEliminated)
-              .map(p => [p.modelId, p.hand.length])
-          ),
-          recentTurns: game.state.turns.slice(-5),
-        };
+        const visibleState = buildVisibleStateForPlayer(
+          game,
+          challenger.id,
+          game.state.pile.length - game.pendingTurn.actualCards.length
+        );
 
         const startTime = Date.now();
-        const onToken = stream ? (text: string) => sendSSE(res, 'token', { text }) : undefined;
+        const onToken = stream && !game.hidePrivateState ? (text: string) => sendSSE(res, 'token', { text }) : undefined;
         const challengeResponse = await game.adapter.getChallengeDecision(
           challenger.id,
           challenger.modelId,
@@ -396,28 +636,9 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
         console.log(`[step]   Response in ${Date.now() - startTime}ms — ${challengeResponse.challenge ? 'CHALLENGE!' : 'pass'}`);
 
         if (challengeResponse.challenge) {
-          // Challenge happened!
-          const correct = game.pendingTurn.wasLie;
-          console.log(`[step]   Challenge ${correct ? 'CORRECT (was a lie)' : 'WRONG (was truthful)'}`);
-          // Attach challenge token usage
           game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
           game.pendingTurn.challengeTokenUsage = challengeResponse.tokenUsage;
-          processChallenge(game.state, game.pendingTurn, challenger.id, challengeResponse.reasoning);
-          advanceTurn(game.state, game.pendingTurn);
-          game.pendingTurn = null;
-          game.challengeQueue = [];
-          game.phase = 'waiting';
-
-          // Check for winner
-          const winner = checkWinner(game.state);
-          if (winner) {
-            const winnerPlayer = game.state.players.find(p => p.id === winner);
-            console.log(`[step] 🏆 WINNER: ${winnerPlayer?.modelId} after ${game.state.turns.length} turns`);
-            finalizeGame(game.state, winner);
-            game.phase = 'finished';
-            const log = logger.stateToLog(game.state);
-            logger.saveGameLog(log);
-          }
+          resolveChallenge(game, challenger.id, challengeResponse.reasoning, '[step]');
         }
         // If no challenge, continue to next potential challenger (loop continues)
       }
@@ -446,7 +667,11 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     if (isConnectionError) {
       console.log('[step] Connection issue detected, resetting adapter...');
       // Create a new adapter with fresh connection
-      game.adapter = createAdapter();
+      game.adapter = createAdapterForGame(
+        game.provider,
+        game.state.players.map((player) => player.modelId),
+        game.providerConfig
+      );
       game.errorCount = 0; // Reset error count after adapter reset
       console.log('[step] Adapter reset complete. Client can retry the step.');
     }
@@ -483,6 +708,91 @@ function handleGetGameState(res: http.ServerResponse, gameId: string) {
   sendJSON(res, getFullGameState(game));
 }
 
+async function handleHumanPlay(req: http.IncomingMessage, res: http.ServerResponse, gameId: string) {
+  const game = activeGames.get(gameId);
+  if (!game) {
+    sendJSON(res, { error: 'Game not found' }, 404);
+    return;
+  }
+
+  const awaitingHumanAction = getAwaitingHumanAction(game);
+  if (!awaitingHumanAction || awaitingHumanAction.type !== 'play') {
+    sendJSON(res, { error: 'Human play is not expected right now' }, 409);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const cardsToPlay = Array.isArray(body.cardsToPlay)
+    ? body.cardsToPlay.filter((card: unknown): card is string => typeof card === 'string')
+    : [];
+  const reasoning = typeof body.reasoning === 'string' && body.reasoning.trim().length > 0
+    ? body.reasoning.trim().slice(0, 280)
+    : 'Human player';
+
+  const currentPlayer = getCurrentPlayer(game.state);
+  const normalizedPlay = normalizePlaySelection(cardsToPlay, currentPlayer.hand, cardsToPlay.length);
+  for (const note of normalizedPlay.notes) {
+    console.log(`[human] ${getPlayerLabel(currentPlayer)}: ${note}`);
+  }
+
+  const turn = processPlay(
+    game.state,
+    currentPlayer.id,
+    normalizedPlay.actualCards,
+    normalizedPlay.claimedCount,
+    reasoning
+  );
+
+  turn.playResponseTimeMs = 0;
+  console.log(`[human] ${getPlayerLabel(currentPlayer)} played ${turn.claimedCount}× ${turn.claimedRank}`);
+
+  game.pendingTurn = turn;
+  game.challengeQueue = getOtherPlayers(game.state).map((player) => player.id);
+  game.phase = 'challenging';
+  game.lastUpdate = Date.now();
+
+  sendJSON(res, getFullGameState(game));
+}
+
+async function handleHumanChallenge(req: http.IncomingMessage, res: http.ServerResponse, gameId: string) {
+  const game = activeGames.get(gameId);
+  if (!game) {
+    sendJSON(res, { error: 'Game not found' }, 404);
+    return;
+  }
+
+  const awaitingHumanAction = getAwaitingHumanAction(game);
+  if (!awaitingHumanAction || awaitingHumanAction.type !== 'challenge' || !game.pendingTurn) {
+    sendJSON(res, { error: 'Human challenge is not expected right now' }, 409);
+    return;
+  }
+
+  const body = await parseBody(req);
+  const shouldChallenge = body.challenge === true;
+  const reasoning = typeof body.reasoning === 'string' && body.reasoning.trim().length > 0
+    ? body.reasoning.trim().slice(0, 280)
+    : shouldChallenge ? 'Human player called Bullshit.' : 'Human player passed.';
+
+  const challengerId = game.challengeQueue.shift();
+  if (!challengerId || challengerId !== awaitingHumanAction.playerId) {
+    sendJSON(res, { error: 'Human challenge order is out of sync' }, 409);
+    return;
+  }
+
+  game.pendingTurn.challengeOfferedTo ??= [];
+  game.pendingTurn.challengeOfferedTo.push(challengerId);
+
+  if (shouldChallenge) {
+    game.pendingTurn.challengeResponseTimeMs = 0;
+    resolveChallenge(game, challengerId, reasoning, '[human]');
+  } else if (game.challengeQueue.length === 0) {
+    acceptPendingTurn(game, '[human]');
+  }
+
+  game.lastUpdate = Date.now();
+  sendJSON(res, getFullGameState(game));
+}
+
 // Auto-play: run until game ends or N steps
 async function handleAutoPlay(res: http.ServerResponse, gameId: string, steps: number = 1) {
   const game = activeGames.get(gameId);
@@ -492,30 +802,24 @@ async function handleAutoPlay(res: http.ServerResponse, gameId: string, steps: n
   }
 
   for (let i = 0; i < steps && game.phase !== 'finished'; i++) {
-    await handleNextStepInternal(game);
+    const progressed = await handleNextStepInternal(game);
+    if (!progressed) {
+      break;
+    }
   }
 
   sendJSON(res, getFullGameState(game));
 }
 
-async function handleNextStepInternal(game: ActiveGame) {
-  if (game.phase === 'finished') return;
+async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
+  if (game.phase === 'finished') return false;
+  if (getAwaitingHumanAction(game)) return false;
 
   if (game.phase === 'waiting') {
     const currentPlayer = getCurrentPlayer(game.state);
     console.log(`[auto] Turn ${game.state.turns.length + 1} — ${currentPlayer.modelId} playing (rank: ${game.state.currentRank})`);
 
-    const visibleState = {
-      hand: currentPlayer.hand,
-      currentRank: game.state.currentRank,
-      pileSize: game.state.pile.length,
-      otherPlayersCounts: Object.fromEntries(
-        game.state.players
-          .filter(p => p.id !== currentPlayer.id && !p.isEliminated)
-          .map(p => [p.modelId, p.hand.length])
-      ),
-      recentTurns: game.state.turns.slice(-5),
-    };
+    const visibleState = buildVisibleStateForPlayer(game, currentPlayer.id);
 
     const startTime = Date.now();
     const playResponse = await game.adapter.getPlayDecision(
@@ -553,6 +857,10 @@ async function handleNextStepInternal(game: ActiveGame) {
 
   // Process all challenges
   while (game.phase === 'challenging' && game.pendingTurn && game.challengeQueue.length > 0) {
+    if (getAwaitingHumanAction(game)) {
+      break;
+    }
+
     const challengerId = game.challengeQueue.shift()!;
     const challenger = game.state.players.find(p => p.id === challengerId)!;
     const currentPlayer = getCurrentPlayer(game.state);
@@ -561,17 +869,11 @@ async function handleNextStepInternal(game: ActiveGame) {
 
     console.log(`[auto]   Asking ${challenger.modelId} to challenge...`);
 
-    const visibleState = {
-      hand: challenger.hand,
-      currentRank: game.state.currentRank,
-      pileSize: game.state.pile.length - game.pendingTurn.actualCards.length,
-      otherPlayersCounts: Object.fromEntries(
-        game.state.players
-          .filter(p => p.id !== challenger.id && !p.isEliminated)
-          .map(p => [p.modelId, p.hand.length])
-      ),
-      recentTurns: game.state.turns.slice(-5),
-    };
+    const visibleState = buildVisibleStateForPlayer(
+      game,
+      challenger.id,
+      game.state.pile.length - game.pendingTurn.actualCards.length
+    );
 
     const startTime = Date.now();
     const challengeResponse = await game.adapter.getChallengeDecision(
@@ -588,34 +890,19 @@ async function handleNextStepInternal(game: ActiveGame) {
     console.log(`[auto]   Response in ${Date.now() - startTime}ms — ${challengeResponse.challenge ? 'CHALLENGE!' : 'pass'}`);
 
     if (challengeResponse.challenge) {
-      const correct = game.pendingTurn.wasLie;
-      console.log(`[auto]   Challenge ${correct ? 'CORRECT' : 'WRONG'}`);
       game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
       game.pendingTurn.challengeTokenUsage = challengeResponse.tokenUsage;
-      processChallenge(game.state, game.pendingTurn, challenger.id, challengeResponse.reasoning);
-      game.challengeQueue = [];
+      resolveChallenge(game, challenger.id, challengeResponse.reasoning, '[auto]');
       break;
     }
   }
 
-  if (game.phase === 'challenging' && game.pendingTurn) {
-    console.log(`[auto]   No challenge — accepted`);
-    advanceTurn(game.state, game.pendingTurn);
-    game.pendingTurn = null;
-    game.phase = 'waiting';
-
-    const winner = checkWinner(game.state);
-    if (winner) {
-      const winnerPlayer = game.state.players.find(p => p.id === winner);
-      console.log(`[auto] 🏆 WINNER: ${winnerPlayer?.modelId} after ${game.state.turns.length} turns`);
-      finalizeGame(game.state, winner);
-      game.phase = 'finished';
-      const log = logger.stateToLog(game.state);
-      logger.saveGameLog(log);
-    }
+  if (game.phase === 'challenging' && game.pendingTurn && game.challengeQueue.length === 0) {
+    acceptPendingTurn(game, '[auto]');
   }
 
   game.lastUpdate = Date.now();
+  return true;
 }
 
 function handleGetGames(res: http.ServerResponse) {
@@ -703,6 +990,12 @@ const server = http.createServer(async (req, res) => {
       } else if (apiPath.match(/^\/game\/[^/]+\/state$/) && req.method === 'GET') {
         const gameId = apiPath.split('/')[2];
         handleGetGameState(res, gameId);
+      } else if (apiPath.match(/^\/game\/[^/]+\/human\/play$/) && req.method === 'POST') {
+        const gameId = apiPath.split('/')[2];
+        await handleHumanPlay(req, res, gameId);
+      } else if (apiPath.match(/^\/game\/[^/]+\/human\/challenge$/) && req.method === 'POST') {
+        const gameId = apiPath.split('/')[2];
+        await handleHumanChallenge(req, res, gameId);
       } else if (apiPath.match(/^\/game\/[^/]+\/step$/) && req.method === 'POST') {
         const gameId = apiPath.split('/')[2];
         const stream = parsedUrl.query.stream === '1';
@@ -742,17 +1035,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  const provider = getProvider();
+  const provider = detectProvider();
   const modeDisplay = getProviderDisplayName(provider);
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
-║         🃏 LLM Bullshit - Game Visualizer 🃏          ║
+║      🃏 LLM Bullshit - Interactive Frontend 🃏        ║
 ╠═══════════════════════════════════════════════════════╣
 ║  Server running at http://localhost:${PORT}              ║
 ║                                                       ║
-║  • Watch games play out turn by turn                  ║
-║  • See each player's cards                            ║
-║  • Read the LLMs' thoughts as they decide             ║
+║  • Play against the model cohort                      ║
+║  • Or watch full AI tables in spectator mode          ║
+║  • Supports session-scoped NVIDIA API keys            ║
 ║                                                       ║
 ║  Mode: ${modeDisplay}
 ╚═══════════════════════════════════════════════════════╝

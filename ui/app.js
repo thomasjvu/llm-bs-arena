@@ -447,13 +447,14 @@ function showChallengeCallout(challengerEl, isCorrect) {
 
 // ─── App State & Constants ───────────────────────────────────────────
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = '/api';
 
 let currentGameId = null;
 let autoPlayAbort = null;
 let isAutoPlaying = false;
 let previousState = null;
 let _activeVoiceIndex = 0;
+let selectedHumanCards = new Set();
 
 // DOM Elements
 const newGameBtn = document.getElementById('new-game-btn');
@@ -480,6 +481,23 @@ const statsEmpty = document.getElementById('stats-empty');
 const statsTableWrap = document.getElementById('stats-table-wrap');
 const roundNumberDisplay = document.getElementById('round-number');
 const turnQueueDisplay = document.getElementById('turn-queue');
+const setupModal = document.getElementById('setup-modal');
+const setupToggleBtn = document.getElementById('setup-toggle-btn');
+const setupCloseBtn = document.getElementById('setup-close-btn');
+const playModeSelect = document.getElementById('play-mode-select');
+const providerSelect = document.getElementById('provider-select');
+const humanNameInput = document.getElementById('human-name-input');
+const apiKeyInput = document.getElementById('api-key-input');
+const setupStatus = document.getElementById('setup-status');
+const humanActionPanel = document.getElementById('human-action-panel');
+const humanActionTitle = document.getElementById('human-action-title');
+const humanActionRank = document.getElementById('human-action-rank');
+const humanActionCopy = document.getElementById('human-action-copy');
+const selectedCardsDisplay = document.getElementById('selected-cards');
+const submitPlayBtn = document.getElementById('submit-play-btn');
+const clearPlayBtn = document.getElementById('clear-play-btn');
+const challengeBtn = document.getElementById('challenge-btn');
+const passBtn = document.getElementById('pass-btn');
 let statsRefreshTimer = null;
 
 // ─── Theme Application ──────────────────────────────────────────────
@@ -572,7 +590,7 @@ function swapActivePlayer(state) {
     
     // Copy player info
     if (activeInfoEl) {
-      activeInfoEl.querySelector('.player-name').textContent = shortenModelName(currentPlayer.modelId);
+      activeInfoEl.querySelector('.player-name').textContent = getPlayerName(currentPlayer);
       activeInfoEl.querySelector('.card-count span').textContent = currentPlayer.handSize;
     }
   }
@@ -604,7 +622,7 @@ function swapActivePlayer(state) {
     }
     if (infoEl) {
       infoEl.dataset.player = otherIndex;
-      infoEl.querySelector('.player-name').textContent = shortenModelName(player.modelId);
+      infoEl.querySelector('.player-name').textContent = getPlayerName(player);
       infoEl.querySelector('.card-count span').textContent = player.handSize;
     }
     if (handEl) {
@@ -809,7 +827,7 @@ function updateTurnQueue(state) {
   
   // Render queue
   turnQueueDisplay.innerHTML = queue.map((item, i) => {
-    const name = shortenModelName(item.player.modelId);
+    const name = getPlayerName(item.player);
     const thumbnail = window.ModelThemes.getThumbnail(item.player.modelId);
     const isLast = i === queue.length - 1;
     const challengeIndicator = item.isChallenge ? ' 🔍' : '';
@@ -832,12 +850,98 @@ function shortenModelName(name) {
   return full.length > 16 ? full.substring(0, 14) + '…' : full;
 }
 
-function createCardElement(cardStr, showFace = true) {
+function getPlayerName(player) {
+  if (!player) return '???';
+  if (player.displayName) return player.displayName;
+  return shortenModelName(player.modelId || player);
+}
+
+function getAwaitingHumanAction(state = previousState) {
+  return state?.awaitingHumanAction || null;
+}
+
+function resetHumanSelection() {
+  selectedHumanCards = new Set();
+  renderSelectedCards();
+}
+
+function renderSelectedCards() {
+  const selected = [...selectedHumanCards];
+  selectedCardsDisplay.innerHTML = selected.length === 0
+    ? '<span class="selected-card-pill">no cards selected</span>'
+    : selected.map((card) => `<span class="selected-card-pill">${card}</span>`).join('');
+
+  const awaitingHumanAction = getAwaitingHumanAction();
+  const canSubmitPlay = awaitingHumanAction?.type === 'play' && selected.length >= 1 && selected.length <= 4;
+  submitPlayBtn.disabled = !canSubmitPlay;
+  clearPlayBtn.disabled = selected.length === 0;
+}
+
+function updateSetupStatus() {
+  const provider = providerSelect.value;
+  const mode = playModeSelect.value;
+  if (provider === 'mock') {
+    setupStatus.textContent = 'mock mode needs no key and is useful for checking the interaction loop locally.';
+    return;
+  }
+
+  if (mode === 'interactive') {
+    setupStatus.textContent = apiKeyInput.value.trim()
+      ? 'your API key will be used only for this in-memory game session.'
+      : 'enter an NVIDIA API key for live model play, or switch provider to mock for a dry run.';
+    return;
+  }
+
+  setupStatus.textContent = apiKeyInput.value.trim()
+    ? 'spectator mode will run live model turns with your key and will not write those sessions into research logs.'
+    : 'without a key, spectator mode falls back to whichever provider the server already has configured.';
+}
+
+function renderHumanActionDock(state) {
+  const awaitingHumanAction = state?.awaitingHumanAction;
+  if (!state?.interactive || !awaitingHumanAction) {
+    humanActionPanel.hidden = true;
+    delete humanActionPanel.dataset.action;
+    return;
+  }
+
+  humanActionPanel.hidden = false;
+  humanActionPanel.dataset.action = awaitingHumanAction.type;
+
+  if (awaitingHumanAction.type === 'play') {
+    humanActionTitle.textContent = 'your play';
+    humanActionRank.textContent = `claim ${awaitingHumanAction.currentRank}`;
+    humanActionCopy.textContent = 'Select 1-4 cards from your hand. The table only sees how many cards you put down.';
+    challengeBtn.disabled = false;
+    passBtn.disabled = false;
+    renderSelectedCards();
+    return;
+  }
+
+  const pendingPlay = awaitingHumanAction.pendingPlay;
+  humanActionTitle.textContent = 'your challenge';
+  humanActionRank.textContent = pendingPlay ? `${pendingPlay.claimedCount}× ${pendingPlay.claimedRank}` : '';
+  humanActionCopy.textContent = pendingPlay
+    ? `${getPlayerName(pendingPlay)} claims ${pendingPlay.claimedCount}× ${pendingPlay.claimedRank}. Call bullshit or let it pass.`
+    : 'Decide whether to challenge the previous play.';
+  challengeBtn.disabled = false;
+  passBtn.disabled = false;
+  selectedCardsDisplay.innerHTML = '<span class="selected-card-pill">challenge window open</span>';
+}
+
+function createCardElement(cardStr, showFace = true, options = {}) {
+  const { selectable = false, selected = false, hidden = false, onClick = null } = options;
   const div = document.createElement('div');
   div.className = 'card-mini';
+  if (hidden) div.classList.add('is-hidden');
+  if (selectable) div.classList.add('is-selectable');
+  if (selected) div.classList.add('is-selected');
   div.innerHTML = showFace
     ? window.CardRenderer.getCardSVG(cardStr)
     : window.CardRenderer.getCardBackSVG();
+  if (typeof onClick === 'function') {
+    div.addEventListener('click', onClick);
+  }
   return div;
 }
 
@@ -845,6 +949,22 @@ function createCardElement(cardStr, showFace = true) {
 newGameBtn.addEventListener('click', startNewGame);
 autoPlayBtn.addEventListener('click', toggleAutoPlay);
 stepBtn.addEventListener('click', stepGame);
+setupToggleBtn.addEventListener('click', () => {
+  setupModal.classList.toggle('drawer-hidden');
+});
+setupCloseBtn.addEventListener('click', () => {
+  setupModal.classList.add('drawer-hidden');
+});
+playModeSelect.addEventListener('change', updateSetupStatus);
+providerSelect.addEventListener('change', updateSetupStatus);
+apiKeyInput.addEventListener('input', updateSetupStatus);
+submitPlayBtn.addEventListener('click', submitHumanPlay);
+clearPlayBtn.addEventListener('click', () => {
+  resetHumanSelection();
+  renderGameState(previousState);
+});
+challengeBtn.addEventListener('click', () => submitHumanChallenge(true));
+passBtn.addEventListener('click', () => submitHumanChallenge(false));
 
 // Log drawer toggle
 logToggleBtn.addEventListener('click', () => {
@@ -875,6 +995,8 @@ experimentSelect.addEventListener('change', () => {
     refreshLeaderboard();
   }
 });
+
+updateSetupStatus();
 
 function startStatsAutoRefresh() {
   stopStatsAutoRefresh();
@@ -967,26 +1089,135 @@ async function refreshLeaderboard() {
   }
 }
 
+function renderPlayerHand(handEl, player, state) {
+  if (!handEl || !player) return;
+
+  handEl.innerHTML = '';
+  const awaitingHumanAction = getAwaitingHumanAction(state);
+  const canSelectForPlay =
+    awaitingHumanAction?.type === 'play' &&
+    player.id === state.humanPlayerId &&
+    player.handVisible &&
+    player.isActive;
+
+  if (!player.handVisible) {
+    for (let index = 0; index < player.handSize; index++) {
+      handEl.appendChild(createCardElement('back', false, { hidden: true }));
+    }
+    return;
+  }
+
+  (player.hand || []).forEach((cardStr) => {
+    handEl.appendChild(createCardElement(cardStr, true, {
+      selectable: canSelectForPlay,
+      selected: selectedHumanCards.has(cardStr),
+      onClick: canSelectForPlay
+        ? () => {
+            if (selectedHumanCards.has(cardStr)) {
+              selectedHumanCards.delete(cardStr);
+            } else if (selectedHumanCards.size < 4) {
+              selectedHumanCards.add(cardStr);
+            }
+            renderSelectedCards();
+            renderGameState(previousState);
+          }
+        : null,
+    }));
+  });
+}
+
+async function submitHumanPlay() {
+  if (!currentGameId || selectedHumanCards.size === 0) return;
+
+  submitPlayBtn.disabled = true;
+  clearPlayBtn.disabled = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/game/${currentGameId}/human/play`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardsToPlay: [...selectedHumanCards] }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      throw new Error(data.error || 'Failed to submit play');
+    }
+
+    resetHumanSelection();
+    renderGameState(data);
+  } catch (error) {
+    console.error('Human play failed:', error);
+    logError('Move failed', error.message);
+    renderSelectedCards();
+  }
+}
+
+async function submitHumanChallenge(challenge) {
+  if (!currentGameId) return;
+
+  challengeBtn.disabled = true;
+  passBtn.disabled = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/game/${currentGameId}/human/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenge }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      throw new Error(data.error || 'Failed to submit challenge decision');
+    }
+
+    renderGameState(data);
+  } catch (error) {
+    console.error('Human challenge failed:', error);
+    logError('Decision failed', error.message);
+  } finally {
+    challengeBtn.disabled = false;
+    passBtn.disabled = false;
+  }
+}
+
 async function startNewGame() {
   const experimentId = parseInt(experimentSelect.value);
+  const interactive = playModeSelect.value === 'interactive';
+  const provider = providerSelect.value;
+  const apiKey = apiKeyInput.value.trim();
+  const humanName = humanNameInput.value.trim() || 'you';
 
   try {
     newGameBtn.disabled = true;
     previousState = null;
+    resetHumanSelection();
 
     const response = await fetch(`${API_BASE}/game/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ experimentId })
+      body: JSON.stringify({
+        experimentId,
+        interactive,
+        provider,
+        apiKey: provider === 'nim' ? apiKey : '',
+        humanName,
+        persistLogs: false,
+      })
     });
 
     const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(data.error || 'Failed to start game');
+    }
     currentGameId = data.gameId;
 
     autoPlayBtn.disabled = false;
     stepBtn.disabled = false;
 
-    thoughtLog.innerHTML = '<div class="empty-thought">game started — click step or auto to begin...</div>';
+    thoughtLog.innerHTML = interactive
+      ? '<div class="empty-thought">game started — use auto to advance model turns, then play your own turns from the action panel.</div>'
+      : '<div class="empty-thought">game started — click step or auto to begin...</div>';
 
     // Apply visual themes to columns based on which models are playing
     if (data.players) {
@@ -1002,15 +1233,18 @@ async function startNewGame() {
     // Render state and animate deal
     renderGameState(data);
     animateDeal(data);
+    setupModal.classList.add('drawer-hidden');
 
   } catch (error) {
     console.error('Failed to start game:', error);
+    logError('Start failed', error.message);
     newGameBtn.disabled = false;
   }
 }
 
 async function stepGame() {
   if (!currentGameId) return;
+  if (getAwaitingHumanAction()) return;
 
   try {
     stepBtn.disabled = true;
@@ -1029,7 +1263,7 @@ async function stepGame() {
     }
 
     if (previousState?.phase !== 'finished') {
-      stepBtn.disabled = false;
+      stepBtn.disabled = Boolean(getAwaitingHumanAction());
     }
 
   } catch (error) {
@@ -1059,6 +1293,10 @@ async function startAutoPlay() {
 
   while (isAutoPlaying && currentGameId) {
     try {
+      if (getAwaitingHumanAction()) {
+        break;
+      }
+
       const response = await fetch(`${API_BASE}/game/${currentGameId}/step?stream=1`, {
         method: 'POST',
         signal
@@ -1098,6 +1336,7 @@ async function startAutoPlay() {
         renderGameState(data);
       }
 
+      if (previousState?.awaitingHumanAction) break;
       if (previousState?.phase === 'finished') break;
 
       await new Promise(r => setTimeout(r, 600));
@@ -1118,7 +1357,7 @@ function stopAutoPlay() {
   isAutoPlaying = false;
   const autoLabel2 = autoPlayBtn.querySelector('span');
   if (autoLabel2) autoLabel2.textContent = 'auto';
-  stepBtn.disabled = false;
+  stepBtn.disabled = Boolean(getAwaitingHumanAction());
 
   if (autoPlayAbort) {
     autoPlayAbort.abort();
@@ -1297,8 +1536,13 @@ function renderGameState(state) {
   const hasPending = state.pendingTurn != null;
   const pendingJustAppeared = !hadPending && hasPending;
   const pendingJustResolved = hadPending && !hasPending && newTurn;
+  const awaitingHumanAction = getAwaitingHumanAction(state);
 
-  let activePlayerIndex = null;
+  if (awaitingHumanAction?.type !== 'play' && selectedHumanCards.size > 0) {
+    resetHumanSelection();
+  }
+
+  let activePlayerIndex = state.currentPlayerIndex ?? null;
   const playerId = newTurn?.playerId || state.pendingTurn?.playerId;
   if (playerId) {
     activePlayerIndex = state.players.findIndex(p => p.id === playerId);
@@ -1311,11 +1555,8 @@ function renderGameState(state) {
     // Render cards for active player
     const activeHandEl = document.querySelector('.player-hand[data-hand="active"]');
     const currentPlayer = state.players[activePlayerIndex];
-    if (activeHandEl && currentPlayer && currentPlayer.hand) {
-      activeHandEl.innerHTML = '';
-      currentPlayer.hand.forEach(cardStr => {
-        activeHandEl.appendChild(createCardElement(cardStr, true));
-      });
+    if (activeHandEl && currentPlayer) {
+      renderPlayerHand(activeHandEl, currentPlayer, state);
     }
     
     // Update character image for active player
@@ -1415,7 +1656,7 @@ function renderGameState(state) {
     const column = document.querySelector(`.player-column[data-column="${i}"]`);
 
     if (infoEl) {
-      infoEl.querySelector('.player-name').textContent = shortenModelName(player.modelId);
+      infoEl.querySelector('.player-name').textContent = getPlayerName(player);
       infoEl.querySelector('.card-count span').textContent = player.handSize;
 
       const isThinking = player.id === thinkingId;
@@ -1481,12 +1722,7 @@ function renderGameState(state) {
     }
 
     if (handEl) {
-      handEl.innerHTML = '';
-      if (player.hand && player.hand.length > 0) {
-        player.hand.forEach(cardStr => {
-          handEl.appendChild(createCardElement(cardStr, true));
-        });
-      }
+      renderPlayerHand(handEl, player, state);
     }
   });
 
@@ -1514,19 +1750,25 @@ function renderGameState(state) {
 
   // Update current rank
   currentRankDisplay.textContent = state.currentRank || 'A';
+  renderHumanActionDock(state);
+  stepBtn.disabled = Boolean(awaitingHumanAction);
 
   // Update phase display with clearer messaging
-  if (state.phase === 'finished') {
+  if (awaitingHumanAction?.type === 'play') {
+    gamePhaseDisplay.innerHTML = `<span class="phase-model">your turn</span><span class="phase-action">play cards claiming ${awaitingHumanAction.currentRank}</span>`;
+  } else if (awaitingHumanAction?.type === 'challenge' && awaitingHumanAction.pendingPlay) {
+    gamePhaseDisplay.innerHTML = `<span class="phase-model">your turn</span><span class="phase-action">judge ${getPlayerName(awaitingHumanAction.pendingPlay)}'s play</span>`;
+  } else if (state.phase === 'finished') {
     gamePhaseDisplay.innerHTML = 'game over';
   } else if (state.phase === 'waiting' && thinkingId) {
     const thinkingPlayer = state.players.find(p => p.id === thinkingId);
-    const name = shortenModelName(thinkingPlayer?.modelId);
+    const name = getPlayerName(thinkingPlayer);
     gamePhaseDisplay.innerHTML = `<span class="phase-model">${name}</span><span class="phase-action">is playing...</span>`;
   } else if (state.phase === 'challenging' && thinkingId && state.pendingTurn) {
     const thinkingPlayer = state.players.find(p => p.id === thinkingId);
     const accusedPlayer = state.players.find(p => p.id === state.pendingTurn.playerId);
-    const challengerName = shortenModelName(thinkingPlayer?.modelId);
-    const accusedName = shortenModelName(accusedPlayer?.modelId);
+    const challengerName = getPlayerName(thinkingPlayer);
+    const accusedName = getPlayerName(accusedPlayer);
     gamePhaseDisplay.innerHTML = `<span class="phase-model">${challengerName}</span><span class="phase-action">judging ${accusedName}'s play...</span>`;
   } else if (state.phase === 'challenging') {
     gamePhaseDisplay.innerHTML = 'challenge phase...';
@@ -1542,7 +1784,7 @@ function renderGameState(state) {
   // Handle winner
   if (state.winner && state.phase === 'finished') {
     const winner = state.players.find(p => p.id === state.winner);
-    showWinner(winner);
+    showWinner(winner, state.winnerName);
   }
 
   previousState = JSON.parse(JSON.stringify(state));
@@ -1590,7 +1832,7 @@ function renderPendingCards(pendingTurn) {
 
 function renderPendingTurnLog(pendingTurn, players) {
   const player = players.find(p => p.id === pendingTurn.playerId);
-  const playerName = shortenModelName(player?.modelId);
+  const playerName = getPlayerName(player);
   const num = '?';
 
   const entry = document.createElement('div');
@@ -1657,15 +1899,15 @@ function renderTurnLog(turns, players) {
   for (let i = existingCount; i < turns.length; i++) {
     const turn = turns[i];
     const player = players.find(p => p.id === turn.playerId);
-    const playerName = shortenModelName(player?.modelId);
+    const playerName = getPlayerName(player);
 
     const entry = document.createElement('div');
     entry.className = 'turn-entry';
 
     const num = turn.turnNumber || i + 1;
-    const badge = turn.wasLie
-      ? '<span class="badge-lie">lie</span>'
-      : '<span class="badge-truth">truth</span>';
+    const badge = typeof turn.wasLie === 'boolean'
+      ? (turn.wasLie ? '<span class="badge-lie">lie</span>' : '<span class="badge-truth">truth</span>')
+      : '<span class="badge-pending">hidden</span>';
 
     let html = `<div class="turn-line"><span class="turn-number">#${num}</span>  <span class="turn-player">${playerName}</span>  <span class="turn-action">→ ${turn.claimedCount}× ${turn.claimedRank}</span>  ${badge}</div>`;
 
@@ -1678,7 +1920,7 @@ function renderTurnLog(turns, players) {
 
     if (turn.challenged) {
       const challenger = players.find(p => p.id === turn.challengerId);
-      const challengerName = shortenModelName(challenger?.modelId);
+      const challengerName = getPlayerName(challenger);
       const resultClass = turn.challengeCorrect ? 'challenge-correct' : 'challenge-wrong';
       const resultText = turn.challengeCorrect ? 'caught it!' : 'wrong call!';
       html += `<div class="challenge-line ${resultClass}">${challengerName} called BS — ${resultText}</div>`;
@@ -1696,11 +1938,13 @@ function renderTurnLog(turns, players) {
   }
 }
 
-function showWinner(player) {
-  winnerName.textContent = shortenModelName(player?.modelId);
+function showWinner(player, winnerLabel) {
+  winnerName.textContent = winnerLabel || getPlayerName(player);
   winnerOverlay.style.display = 'flex';
 
   stopAutoPlay();
+  resetHumanSelection();
+  humanActionPanel.hidden = true;
   autoPlayBtn.disabled = true;
   stepBtn.disabled = true;
   newGameBtn.disabled = false;
@@ -1709,4 +1953,6 @@ function showWinner(player) {
 document.querySelector('.winner-overlay .btn').addEventListener('click', () => {
   winnerOverlay.style.display = 'none';
   currentGameId = null;
+  resetHumanSelection();
+  humanActionPanel.hidden = true;
 });

@@ -455,7 +455,37 @@ window.ModelThemes = (() => {
     return modelAliases[modelId] || modelId;
   }
 
+  const HUMAN_MODEL_ID = 'human/player';
+  const humanTheme = {
+    name: 'You',
+    shortName: 'You',
+    title: 'THE PLAYER',
+    accent: '#111111',
+    accentBright: '#444444',
+    accentDim: '#666666',
+    secondary: '#d4d4d4',
+    bg: [
+      'radial-gradient(ellipse at 50% 30%, rgba(0,0,0,0.08) 0%, transparent 52%)',
+      'linear-gradient(180deg, #f7f7f7 0%, #ededed 50%, #f7f7f7 100%)',
+    ].join(', '),
+    patternSVG: '',
+    character() {
+      return `<svg viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="80" cy="80" r="72" fill="rgba(0,0,0,0.04)"/>
+        <circle cx="80" cy="58" r="22" stroke="#111111" stroke-width="3" fill="white"/>
+        <path d="M42 124C48 98 62 84 80 84C98 84 112 98 118 124" stroke="#111111" stroke-width="3" fill="white"/>
+        <circle cx="72" cy="54" r="3" fill="#111111"/>
+        <circle cx="88" cy="54" r="3" fill="#111111"/>
+        <path d="M72 66C75 69 85 69 88 66" stroke="#111111" stroke-width="3" stroke-linecap="round"/>
+      </svg>`;
+    },
+  };
+
   function getCharacterImageForState(modelId, state, cacheBust = null) {
+    if (resolveModelId(modelId) === HUMAN_MODEL_ID) {
+      return humanTheme.character();
+    }
+
     const folder = imageFolders[resolveModelId(modelId)] || 'mistral';
     
     const isMinimax = folder === 'minimax';
@@ -509,6 +539,9 @@ window.ModelThemes = (() => {
 
   return {
     getTheme(modelId) {
+      if (resolveModelId(modelId) === HUMAN_MODEL_ID) {
+        return humanTheme;
+      }
       return themes[resolveModelId(modelId)] || defaultTheme;
     },
     getDefault() {
@@ -519,6 +552,9 @@ window.ModelThemes = (() => {
       return getCharacterImageForState(modelId, state, cacheBust);
     },
     getThumbnail(modelId) {
+      if (resolveModelId(modelId) === HUMAN_MODEL_ID) {
+        return 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="white" stroke="black" stroke-width="4"/><text x="32" y="39" text-anchor="middle" font-family="monospace" font-size="18" font-weight="700" fill="black">YOU</text></svg>');
+      }
       const folder = imageFolders[resolveModelId(modelId)] || 'mistral';
       return `/images/${folder}/llms_${folder}_default.png`;
     },

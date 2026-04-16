@@ -9,6 +9,8 @@ export interface Card {
 export interface Player {
   id: string;
   modelId: string;
+  displayName?: string;
+  role?: 'model' | 'human';
   hand: Card[];
   isEliminated: boolean;
 }
@@ -164,3 +166,9 @@ export const BASELINE_MODELS = [
 ] as const;
 
 export type BaselineModelId = typeof BASELINE_MODELS[number];
+
+export interface PlayerSeatConfig {
+  modelId: string;
+  displayName?: string;
+  role?: 'model' | 'human';
+}

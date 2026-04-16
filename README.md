@@ -105,7 +105,7 @@ npm start -- tournament -e 1 -g 10 -p nim
 Visualizer:
 
 ```bash
-npm run server
+npm run visualizer
 ```
 
 Open `http://localhost:3001`.
@@ -160,4 +160,4 @@ Core methods:
 
 ## Submission Note
 
-The current paper path is the arXiv preprint build at [paper/arxiv/main.tex](/Users/area/repos/llm-bullshit/paper/arxiv/main.tex). The repository and blog remain non-public for now, so the first preprint should not depend on public repo, blog, or release URLs.
+The current paper path is the arXiv preprint build at [paper/arxiv/main.tex](/Users/area/repos/llm-bullshit/paper/arxiv/main.tex). Public-facing narrative writing is maintained outside this repository so the research artifact can stay focused on the benchmark, analysis pipeline, and paper source.

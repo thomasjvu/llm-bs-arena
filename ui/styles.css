@@ -146,6 +146,19 @@ select:focus {
   outline: none;
 }
 
+input {
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 2px solid #000000;
+  color: #000000;
+  font-family: 'Courier Prime', 'Space Mono', monospace;
+  font-size: 0.72rem;
+}
+
+input:focus {
+  outline: none;
+}
+
 .btn {
   padding: 6px 14px;
   border: 2px solid #000000;
@@ -902,6 +915,23 @@ select:focus {
   flex-shrink: 0;
 }
 
+.card-mini.is-hidden {
+  filter: grayscale(0.12);
+}
+
+.card-mini.is-selectable {
+  cursor: pointer;
+}
+
+.card-mini.is-selectable:hover {
+  transform: translateY(-6px) scale(1.08);
+}
+
+.card-mini.is-selected {
+  transform: translateY(-8px);
+  box-shadow: 0 0 0 2px #000000, 4px 10px 0 rgba(0, 0, 0, 0.18);
+}
+
 .card-mini svg {
   width: 100%;
   height: 100%;
@@ -1349,6 +1379,114 @@ select:focus {
 .stats-table tbody tr:nth-child(2) .stats-rank,
 .stats-table tbody tr:nth-child(3) .stats-rank {
   color: var(--success);
+}
+
+.setup-modal {
+  width: 420px;
+  max-width: 92vw;
+}
+
+.setup-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup-field span {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--text-muted);
+}
+
+.setup-note {
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  padding: 10px 12px;
+  border: 1px solid #000000;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.setup-note-strong {
+  background: rgba(0, 0, 0, 0.06);
+  font-weight: 700;
+}
+
+.human-action-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 82px;
+  z-index: 70;
+  width: min(360px, calc(100vw - 36px));
+  padding: 14px;
+  background: #ffffff;
+  border: 2px solid #000000;
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.human-action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.human-action-rank {
+  padding: 4px 8px;
+  border: 1px solid #000000;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.human-action-copy {
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.human-selected-cards {
+  min-height: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.selected-card-pill {
+  padding: 4px 8px;
+  border: 1px solid #000000;
+  background: rgba(0, 0, 0, 0.04);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.human-action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.human-challenge-buttons {
+  display: none;
+}
+
+.human-action-dock[data-action="challenge"] .human-play-buttons {
+  display: none;
+}
+
+.human-action-dock[data-action="challenge"] .human-challenge-buttons {
+  display: flex;
 }
 
 .thought-content {

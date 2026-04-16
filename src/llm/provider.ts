@@ -13,6 +13,11 @@ export type Provider = 'nim' | 'mock';
 export const LOG_SCHEMA_VERSION = 2;
 export const SCRIPTED_BASELINE_PREFIX = 'baseline/';
 
+export interface ProviderRuntimeConfig {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
@@ -22,17 +27,17 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 const DEFAULT_RECOVERY_WINDOW_MS = parsePositiveInt(process.env.LLM_RECOVERY_WINDOW_MS, 36_000_000);
 const DEFAULT_RECOVERY_BACKOFF_MS = parsePositiveInt(process.env.LLM_RECOVERY_BACKOFF_MS, 30_000);
 
-function createBaseAdapter(provider: Provider = 'nim'): LLMAdapter {
+function createBaseAdapter(provider: Provider = 'nim', runtimeConfig: ProviderRuntimeConfig = {}): LLMAdapter {
   switch (provider) {
     case 'mock':
       console.log('Using mock LLM adapter');
       return new MockLLMAdapter();
     case 'nim':
-      if (!hasNimConfig()) {
+      if (!hasNimConfig(runtimeConfig)) {
         throw new Error('NVIDIA_API_KEY or NVIDIA_NIM_BASE_URL environment variable is required for nim provider');
       }
       console.log('Using NVIDIA NIM provider');
-      return new NimLLMAdapter(createNimClient());
+      return new NimLLMAdapter(createNimClient(runtimeConfig));
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
@@ -149,11 +154,15 @@ export class ResilientLLMAdapter implements LLMAdapter {
   }
 }
 
-export function createAdapter(provider: Provider = 'nim', modelIds: readonly string[] = []): LLMAdapter {
+export function createAdapter(
+  provider: Provider = 'nim',
+  modelIds: readonly string[] = [],
+  runtimeConfig: ProviderRuntimeConfig = {}
+): LLMAdapter {
   const baseAdapter =
     provider === 'mock'
-      ? createBaseAdapter(provider)
-      : new ResilientLLMAdapter(() => createBaseAdapter(provider), provider.toUpperCase());
+      ? createBaseAdapter(provider, runtimeConfig)
+      : new ResilientLLMAdapter(() => createBaseAdapter(provider, runtimeConfig), provider.toUpperCase());
 
   if (!usesScriptedBaseline(modelIds)) {
     return baseAdapter;
@@ -163,12 +172,12 @@ export function createAdapter(provider: Provider = 'nim', modelIds: readonly str
   return new RoutedLLMAdapter(baseAdapter);
 }
 
-export function detectProvider(): Provider {
+export function detectProvider(runtimeConfig: ProviderRuntimeConfig = {}): Provider {
   const requestedProvider = process.env.LLM_PROVIDER as Provider | undefined;
   if (requestedProvider === 'mock') return 'mock';
-  if (requestedProvider === 'nim' && hasNimConfig()) return 'nim';
+  if (requestedProvider === 'nim' && hasNimConfig(runtimeConfig)) return 'nim';
 
-  if (hasNimConfig()) return 'nim';
+  if (hasNimConfig(runtimeConfig)) return 'nim';
   return 'mock';
 }
 
@@ -181,24 +190,34 @@ export function getProviderDisplayName(provider: Provider): string {
   }
 }
 
-export function buildRunMetadata(provider: Provider, modelIds: readonly string[] = []): RunMetadata {
+export function buildRunMetadata(
+  provider: Provider,
+  modelIds: readonly string[] = [],
+  runtimeConfig: ProviderRuntimeConfig = {}
+): RunMetadata {
   return {
     logSchemaVersion: LOG_SCHEMA_VERSION,
     provider: usesScriptedBaseline(modelIds) ? `${provider}+baseline` : provider,
-    providerBaseUrl: getProviderBaseUrl(provider),
+    providerBaseUrl: getProviderBaseUrl(provider, runtimeConfig),
     promptVersion: PROMPT_VERSION,
     promptHash: getPromptHash(),
   };
 }
 
-function hasNimConfig(): boolean {
-  return Boolean(process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY || process.env.NVIDIA_NIM_BASE_URL);
+function hasNimConfig(runtimeConfig: ProviderRuntimeConfig = {}): boolean {
+  return Boolean(
+    runtimeConfig.apiKey ||
+    runtimeConfig.baseUrl ||
+    process.env.NVIDIA_API_KEY ||
+    process.env.NVIDIA_NIM_API_KEY ||
+    process.env.NVIDIA_NIM_BASE_URL
+  );
 }
 
-function getProviderBaseUrl(provider: Provider): string | undefined {
+function getProviderBaseUrl(provider: Provider, runtimeConfig: ProviderRuntimeConfig = {}): string | undefined {
   switch (provider) {
     case 'nim':
-      return process.env.NVIDIA_NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+      return runtimeConfig.baseUrl || process.env.NVIDIA_NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
     case 'mock':
       return undefined;
   }

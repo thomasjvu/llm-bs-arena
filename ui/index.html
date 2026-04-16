@@ -239,6 +239,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         <span>stats</span>
       </button>
+      <button id="setup-toggle-btn" class="nav-item">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 1 1 4.38 17l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82L4.21 7.21a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01A1.65 1.65 0 0 0 10 3.26V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>setup</span>
+      </button>
     </nav>
 
     <!-- Thought Log Modal -->
@@ -285,6 +289,64 @@
             </table>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Setup Drawer -->
+    <div class="thought-modal setup-modal drawer-hidden" id="setup-modal">
+      <div class="thought-modal-content">
+        <div class="thought-modal-header">
+          <span>play setup</span>
+          <button class="btn thought-modal-close" id="setup-close-btn">close</button>
+        </div>
+        <div class="setup-content">
+          <label class="setup-field">
+            <span>experience</span>
+            <select id="play-mode-select">
+              <option value="interactive" selected>play against the models</option>
+              <option value="spectator">watch model-only table</option>
+            </select>
+          </label>
+          <label class="setup-field">
+            <span>provider</span>
+            <select id="provider-select">
+              <option value="nim" selected>nvidia nim</option>
+              <option value="mock">mock demo</option>
+            </select>
+          </label>
+          <label class="setup-field">
+            <span>your name</span>
+            <input id="human-name-input" type="text" maxlength="40" placeholder="you" value="you" />
+          </label>
+          <label class="setup-field">
+            <span>nvidia api key</span>
+            <input id="api-key-input" type="password" autocomplete="off" placeholder="nvapi-..." />
+          </label>
+          <div class="setup-note">
+            three opponents are drawn from the frozen six-model research cohort for each game.
+          </div>
+          <div class="setup-note setup-note-strong" id="setup-status">
+            api keys are sent only for this browser session and are not written to benchmark logs.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Human Action Dock -->
+    <div class="human-action-dock" id="human-action-panel" hidden>
+      <div class="human-action-header">
+        <span id="human-action-title">your move</span>
+        <span class="human-action-rank" id="human-action-rank"></span>
+      </div>
+      <div class="human-action-copy" id="human-action-copy"></div>
+      <div class="human-selected-cards" id="selected-cards"></div>
+      <div class="human-action-buttons human-play-buttons" id="human-play-buttons">
+        <button class="btn cute" id="submit-play-btn" disabled>play selected cards</button>
+        <button class="btn" id="clear-play-btn" disabled>clear</button>
+      </div>
+      <div class="human-action-buttons human-challenge-buttons" id="human-challenge-buttons">
+        <button class="btn cute" id="challenge-btn">call bullshit</button>
+        <button class="btn" id="pass-btn">pass</button>
       </div>
     </div>
 

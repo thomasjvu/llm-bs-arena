@@ -189,7 +189,7 @@ If anything looks wrong here, do not start the tournament yet.
 If you want to inspect behavior visually:
 
 ```bash
-npm run server
+npm run visualizer
 ```
 
 Then open `http://localhost:3001`.

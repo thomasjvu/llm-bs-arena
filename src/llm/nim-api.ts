@@ -28,6 +28,11 @@ export interface ChatCompletionResponse {
   };
 }
 
+export interface NimClientConfig {
+  apiKey?: string;
+  baseUrl?: string;
+}
+
 const DEFAULT_CONFIG = {
   apiKey: process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY || '',
   baseUrl: process.env.NVIDIA_NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1',
@@ -456,9 +461,9 @@ export class NimClient {
   }
 }
 
-export function createNimClient(apiKey?: string): NimClient {
+export function createNimClient(config: NimClientConfig = {}): NimClient {
   return new NimClient({
-    apiKey: apiKey || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY,
-    baseUrl: process.env.NVIDIA_NIM_BASE_URL || DEFAULT_CONFIG.baseUrl,
+    apiKey: config.apiKey || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY,
+    baseUrl: config.baseUrl || process.env.NVIDIA_NIM_BASE_URL || DEFAULT_CONFIG.baseUrl,
   });
 }
