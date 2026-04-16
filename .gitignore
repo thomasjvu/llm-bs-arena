@@ -5,7 +5,7 @@ node_modules/
 # Build output
 dist/
 *.js.map
-paper/tmlr/build/
+paper/arxiv/build/
 release/**/assets/*.tar.gz
 
 # Logs and data

@@ -96,7 +96,7 @@ Copy this block once per selected case.
 
 ## Suggested Workflow
 
-1. Use `paper/tmlr/artifacts/frozen/research_summary.md` to identify which models/experiments deserve examples.
+1. Use `paper/arxiv/artifacts/frozen/research_summary.md` to identify which models/experiments deserve examples.
 2. Open candidate logs in the browser visualizer or inspect the JSON directly.
 3. Prefer cases that match a quantitative finding already present in the paper.
 4. Write the factual summary first.

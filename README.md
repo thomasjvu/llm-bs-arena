@@ -31,7 +31,7 @@ The strongest results from the frozen cohort are:
 - Kimi leads Exp1, Exp2, and Exp3; Nemotron leads Exp0
 - Mistral is the clearest high-challenge, zero-win profile
 
-Tracked frozen artifacts live in [paper/tmlr/artifacts/frozen](/Users/area/repos/llm-bullshit/paper/tmlr/artifacts/frozen) and tracked paper figures live in [paper/tmlr/figures](/Users/area/repos/llm-bullshit/paper/tmlr/figures).
+Tracked frozen artifacts live in [paper/arxiv/artifacts/frozen](/Users/area/repos/llm-bullshit/paper/arxiv/artifacts/frozen) and tracked paper figures live in [paper/arxiv/figures](/Users/area/repos/llm-bullshit/paper/arxiv/figures).
 
 ## Release Surface
 
@@ -42,13 +42,11 @@ Primary technical docs:
 - [RESEARCH_RUNBOOK.md](/Users/area/repos/llm-bullshit/RESEARCH_RUNBOOK.md)
 
 Paper source:
-- [paper/tmlr/main.tex](/Users/area/repos/llm-bullshit/paper/tmlr/main.tex)
-- [paper/tmlr/supplement.tex](/Users/area/repos/llm-bullshit/paper/tmlr/supplement.tex)
+- [paper/arxiv/main.tex](/Users/area/repos/llm-bullshit/paper/arxiv/main.tex)
 - [references.bib](/Users/area/repos/llm-bullshit/references.bib)
 
 Internal submission docs:
-- [paper/support/TMLR_SUBMISSION_CHECKLIST.md](/Users/area/repos/llm-bullshit/paper/support/TMLR_SUBMISSION_CHECKLIST.md)
-- [paper/support/ANONYMIZATION_PLAN.md](/Users/area/repos/llm-bullshit/paper/support/ANONYMIZATION_PLAN.md)
+- [paper/support/ARXIV_UPLOAD_CHECKLIST.md](/Users/area/repos/llm-bullshit/paper/support/ARXIV_UPLOAD_CHECKLIST.md)
 - [paper/support/CLAIMS_EVIDENCE_MATRIX.md](/Users/area/repos/llm-bullshit/paper/support/CLAIMS_EVIDENCE_MATRIX.md)
 
 ## Setup
@@ -162,4 +160,4 @@ Core methods:
 
 ## Submission Note
 
-The repository is currently private. The paper and supplement should be prepared for blinded TMLR submission using the docs under [paper/support](/Users/area/repos/llm-bullshit/paper/support). Do not publish the blog or a deanonymized repo snapshot before the blind submission path is settled.
+The current paper path is the arXiv preprint build at [paper/arxiv/main.tex](/Users/area/repos/llm-bullshit/paper/arxiv/main.tex). The repository and blog remain non-public for now, so the first preprint should not depend on public repo, blog, or release URLs.

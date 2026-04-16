@@ -1,6 +1,6 @@
 # Broader Impact Draft
 
-Use or adapt this if the final TMLR submission needs a broader impact statement.
+Use or adapt this if the final preprint or a later venue submission needs a broader impact statement.
 
 ## Draft Text
 
@@ -13,7 +13,7 @@ We mitigate these risks in several ways. First, the paper makes narrow claims an
 ## When To Include This
 
 Include a broader impact statement if:
-- the final TMLR submission or action editor requests one
+- a later venue submission requests one
 - the discussion section already touches on possible misuse
 - the paper makes claims that could be read as enabling deception optimization
 

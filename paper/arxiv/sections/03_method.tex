@@ -6,7 +6,7 @@ Each game uses four agents, a standard 52-card deck, and a seeded shuffle. The p
 
 \subsection{Prompt Conditions}
 
-The pilot uses four conditions. Experiment~0 is a low-strategy reference rather than a true random baseline. Experiment~1 explicitly legalizes and normalizes deception. Experiment~2 tells the focal model it may lie while opponents are honesty-constrained, providing an asymmetric-fairness framing. Experiment~3 is a plain-language honesty mandate that explicitly forbids lying. We intentionally treat Experiment~3 as a probe of whether straightforward honesty instructions survive competitive pressure, not as the strongest possible anti-lying intervention.
+The pilot uses four conditions. Experiment~0 is the low-strategy prompt control. Experiment~1 explicitly legalizes and normalizes deception. Experiment~2 tells the focal model it may lie while opponents are honesty-constrained, providing an asymmetric-fairness framing. Experiment~3 is a plain-language honesty mandate that explicitly forbids lying. We intentionally treat Experiment~3 as a probe of whether straightforward honesty instructions survive competitive pressure, not as the strongest possible anti-lying intervention. Full prompt texts are included in \prompttextlocation.
 
 \subsection{Model Cohort}
 
@@ -20,11 +20,13 @@ Reproducibility and dataset hygiene are enforced through seeded deck order and s
 
 \subsection{Analysis}
 
-The primary statistical unit is one row per player per game rather than one row per turn. Experiment-level narrative claims use mean model-level rates computed from the frozen per-condition summaries. Model-profile sections use the exact per-model condition rates from those same frozen summaries. This keeps cross-condition comparisons from being driven by raw row volume while preserving exact model-level leaderboards. Qualitative reasoning traces and exemplar games are used as supporting evidence rather than as the main statistical unit.
+The primary statistical unit is one row per player per game rather than one row per turn. Cross-condition narrative claims use mean rates from the six frozen model summaries in each experiment. Model-profile sections use the exact per-model condition rates.
+
+This keeps cross-condition comparisons from being driven by raw row volume while preserving exact model-level leaderboards. Qualitative reasoning traces and exemplar games are used as supporting evidence rather than as the main statistical unit.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{benchmark_overview.png}
-  \caption{Bullshit-Bench overview. Four LLM agents play seeded games of \emph{Bullshit} under one of four prompt conditions. The engine records the actual cards played, the public claim, whether the move was a lie, whether challenge opportunities were offered, and the outcome of any challenge. These provenance-aware logs are then aggregated into player-game metrics, frozen cohort artifacts, and paper figures.}
+  \caption{BS-Bench overview. Four LLM agents play seeded games of \emph{Bullshit} under one of four prompt conditions. The engine records the actual cards played, the public claim, whether the move was a lie, whether challenge opportunities were offered, and the outcome of any challenge. These provenance-aware logs are then aggregated into player-game metrics, frozen cohort artifacts, and paper figures.}
   \label{fig:benchmark-overview}
 \end{figure}

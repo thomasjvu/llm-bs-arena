@@ -12,7 +12,7 @@
     "path": "release/v1.0.0/assets/bullshit-bench-v1.0.0-raw-games.tar.gz",
     "kind": "raw-logs-archive",
     "bytes": 9535042,
-    "sha256": "b94eb05cbd1390637923670dd1534615a8403be386acf50889198ca13c301088"
+    "sha256": "c9195bc8db3d327384e38224e4a2f875e6871eac3a8b3f3e2cd2746f486c4214"
   },
   "comparableCohort": {
     "schemaVersion": 2,
@@ -52,6 +52,6 @@
     "paper/tmlr/figures/lie_frequency_heatmap.png",
     "paper/tmlr/figures/lie_frequency_vs_win_rate.png"
   ],
-  "generatedAt": "2026-04-15T16:33:21.020Z",
+  "generatedAt": "2026-04-15T20:04:44.915Z",
   "releaseDate": "2026-04-15"
 }

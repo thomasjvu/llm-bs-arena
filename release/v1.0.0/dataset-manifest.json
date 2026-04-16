@@ -2,7 +2,7 @@
   "benchmarkName": "Bullshit-Bench",
   "benchmarkVersion": "1.0.0",
   "datasetVersion": "1.0.0",
-  "generatedAt": "2026-04-15T16:33:21.016Z",
+  "generatedAt": "2026-04-15T20:04:44.911Z",
   "totalGamesFound": 600,
   "includedGames": 600,
   "playerGameRows": 2400,
@@ -39,7 +39,7 @@
     "path": "release/v1.0.0/assets/bullshit-bench-v1.0.0-raw-games.tar.gz",
     "kind": "raw-logs-archive",
     "bytes": 9535042,
-    "sha256": "b94eb05cbd1390637923670dd1534615a8403be386acf50889198ca13c301088"
+    "sha256": "c9195bc8db3d327384e38224e4a2f875e6871eac3a8b3f3e2cd2746f486c4214"
   },
   "frozenArtifacts": [
     {
@@ -81,52 +81,52 @@
     {
       "path": "paper/tmlr/artifacts/frozen/research_summary.md",
       "kind": "frozen-artifact",
-      "bytes": 4521,
-      "sha256": "5cd9b0ba99833d65e75564f1797d58144b06fffd203f75e85e15c3c7a190fdf8"
+      "bytes": 3981,
+      "sha256": "5a24ecd26563d4d38a45cbae453bac73d833818633bda36a74d9992765f1d3b8"
     }
   ],
   "trackedFigures": [
     {
       "path": "paper/tmlr/figures/benchmark_overview.png",
       "kind": "figure",
-      "bytes": 104987,
-      "sha256": "8f00cb2fc6d76fcaeec7566ba21ee532463e63a53a3bd449c1c79f015f7a0464"
+      "bytes": 230703,
+      "sha256": "ac3a02cf9b0319e3681cbffa286d4016d19d8f8063364c68713ad58a67336377"
     },
     {
       "path": "paper/tmlr/figures/compare_lie_frequency.png",
       "kind": "figure",
-      "bytes": 152449,
-      "sha256": "0fc040c19b6953355d5327c381609e9fc43c6292a7b2ec4a462590573c952190"
+      "bytes": 107078,
+      "sha256": "ddd25c759e45969cf584e507f043496160b2dba76022f5c08794aedcbe2d3f2a"
     },
     {
       "path": "paper/tmlr/figures/exp1_win_rates.png",
       "kind": "figure",
-      "bytes": 97644,
-      "sha256": "a95d23e0b625184d16616164c27b4ab7fc5f4d8807a36e514d4355db935df1cf"
+      "bytes": 102421,
+      "sha256": "41af28d35393f08a8208ea53dae2d01a3e60c7a987f133a8dbd3861873b37626"
     },
     {
       "path": "paper/tmlr/figures/exp3_violations.png",
       "kind": "figure",
-      "bytes": 180989,
-      "sha256": "ecbb7941854fe44f2e803b7a6aafc2d422036695d6599e415d9df8639d09c2f7"
+      "bytes": 110487,
+      "sha256": "731604b00e3314c382c55de43c5a3d0038257be7929afebe8b210cbc5c0b02eb"
     },
     {
       "path": "paper/tmlr/figures/game_length_distribution.png",
       "kind": "figure",
-      "bytes": 86584,
-      "sha256": "19ac74f569bf06f092121866633fd7e25eb73749981a6b54aed5ef8f158270eb"
+      "bytes": 92873,
+      "sha256": "90cc03a8339f47832e99a7abe2d3e20c8cca1407027d970cd3041529a32f18a3"
     },
     {
       "path": "paper/tmlr/figures/lie_frequency_heatmap.png",
       "kind": "figure",
-      "bytes": 171335,
-      "sha256": "f8172229b94e44b5b955d12eaaf651dc868368b785b25533d3d38e80fb8144cb"
+      "bytes": 155488,
+      "sha256": "add8a9c246dc965bf2f7e7ef44656874406bea7f3b2cb2fb2f3a8935f82d9d7a"
     },
     {
       "path": "paper/tmlr/figures/lie_frequency_vs_win_rate.png",
       "kind": "figure",
-      "bytes": 173316,
-      "sha256": "f50bdf6c334c177eb955ef82cb4a57b2f00bc1f61b39c16399a6ee05bc37e47c"
+      "bytes": 196562,
+      "sha256": "04fd982822a1c68f8f1772c218fbf8206ef437bb0af1208e6c5cbf9ac10c8974"
     }
   ]
 }

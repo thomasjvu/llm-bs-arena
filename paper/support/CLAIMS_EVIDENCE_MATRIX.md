@@ -1,6 +1,6 @@
 # Claims-Evidence Matrix
 
-Use this to keep the TMLR submission aligned with the venue's main criterion: every important claim must be supported by clear, convincing evidence, or be reduced until it is.
+Use this to keep the paper aligned with its main standard: every important claim must be supported by clear, convincing evidence, or be reduced until it is.
 
 ## Submission Rule
 
@@ -25,8 +25,8 @@ Evidence:
 - In the frozen Exp3 cohort, every model still lies at a material rate, ranging from `20.4%` to `31.1%`.
 
 Sources:
-- `paper/tmlr/artifacts/frozen/player_game_stats.csv`
-- `paper/tmlr/artifacts/frozen/research_summary.md`
+- `paper/arxiv/artifacts/frozen/player_game_stats.csv`
+- `paper/arxiv/artifacts/frozen/research_summary.md`
 
 Limitation:
 - This is a plain-language honesty mandate, not a maximal intervention.
@@ -41,8 +41,8 @@ Evidence:
 - Mean model-level lie success rises from `11.0%` in Exp1 to `34.7%` in Exp3.
 
 Sources:
-- `paper/tmlr/artifacts/frozen/player_game_stats.csv`
-- `paper/tmlr/artifacts/frozen/research_summary.md`
+- `paper/arxiv/artifacts/frozen/player_game_stats.csv`
+- `paper/arxiv/artifacts/frozen/research_summary.md`
 
 Limitation:
 - This is still a roster-specific pilot and the mechanism is inferred from behavior, not directly elicited from internal model state.
@@ -63,8 +63,8 @@ Evidence:
   - Kimi `+3.3`
 
 Sources:
-- `paper/tmlr/artifacts/frozen/player_game_stats.csv`
-- `paper/tmlr/artifacts/frozen/research_summary.md`
+- `paper/arxiv/artifacts/frozen/player_game_stats.csv`
+- `paper/arxiv/artifacts/frozen/research_summary.md`
 
 Limitation:
 - This is evidence of heterogeneous response to one framing, not proof of moral restraint as a general phenomenon.
@@ -80,8 +80,8 @@ Evidence:
 - Qualitative case studies show recurring strategy types: successful bluffing, targeted challenge, and honesty-mandate violation.
 
 Sources:
-- `paper/tmlr/artifacts/frozen/player_game_stats.csv`
-- `paper/tmlr/artifacts/frozen/research_summary.md`
+- `paper/arxiv/artifacts/frozen/player_game_stats.csv`
+- `paper/arxiv/artifacts/frozen/research_summary.md`
 - `paper/support/QUALITATIVE_CASE_STUDIES.md`
 
 Limitation:
