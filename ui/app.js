@@ -33,10 +33,10 @@ const app = {
   ephemeralThinkingPlayerId: null,
   transientReveal: null,
   transientRevealTimer: null,
-  spectatorRevealPlayerId: null,
   spectatorPeekPlayerId: null,
-  cinematicCue: null,
-  cinematicCueTimer: null,
+  attention: null,
+  attentionTimer: null,
+  attentionSeq: 0,
   stats: {
     open: false,
     loading: false,
@@ -48,31 +48,6 @@ const app = {
 
 function supportsHoverPeek() {
   return window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
-}
-
-function canRevealPortrait(playerId) {
-  const state = app.currentState;
-  if (!playerId || !state || state.interactive) {
-    return false;
-  }
-
-  const layout = buildSlotLayout(state);
-  const slotId = getSlotForPlayer(layout, playerId);
-  if (!slotId) return false;
-  return layout.slotMeta?.[slotId]?.section === 'judge';
-}
-
-function setSpectatorReveal(playerId) {
-  const nextPlayerId = canRevealPortrait(playerId) ? playerId : null;
-  if (app.spectatorRevealPlayerId === nextPlayerId) return;
-  app.spectatorRevealPlayerId = nextPlayerId;
-  render();
-}
-
-function clearSpectatorReveal() {
-  if (!app.spectatorRevealPlayerId) return;
-  app.spectatorRevealPlayerId = null;
-  render();
 }
 
 function canOpenSpectatorPeek(playerId) {
@@ -98,22 +73,28 @@ function clearSpectatorPeek() {
   render();
 }
 
-function clearCinematicCue(shouldRender = true) {
-  if (app.cinematicCueTimer) {
-    window.clearTimeout(app.cinematicCueTimer);
-    app.cinematicCueTimer = null;
+function clearAttention(shouldRender = true) {
+  if (app.attentionTimer) {
+    window.clearTimeout(app.attentionTimer);
+    app.attentionTimer = null;
   }
-  app.cinematicCue = null;
+  app.attention = null;
   if (shouldRender) render();
 }
 
-function setCinematicCue(cue, duration = 1600) {
-  clearCinematicCue(false);
-  app.cinematicCue = cue;
+function setAttention({ playerIds = [], zones = [], variant = 'turn' } = {}, duration = 520) {
+  clearAttention(false);
+  app.attentionSeq += 1;
+  app.attention = {
+    playerIds,
+    zones,
+    variant,
+    seq: app.attentionSeq,
+  };
   render();
-  app.cinematicCueTimer = window.setTimeout(() => {
-    app.cinematicCue = null;
-    app.cinematicCueTimer = null;
+  app.attentionTimer = window.setTimeout(() => {
+    app.attention = null;
+    app.attentionTimer = null;
     render();
   }, duration);
 }
@@ -193,29 +174,12 @@ function setCurrentState(nextState) {
   app.currentGameId = next.gameId;
   app.ephemeralThinkingPlayerId = null;
 
-  if (next.interactive || !next.players?.some((player) => player.id === app.spectatorRevealPlayerId)) {
-    app.spectatorRevealPlayerId = null;
-  }
   if (next.interactive || !next.players?.some((player) => player.id === app.spectatorPeekPlayerId)) {
     app.spectatorPeekPlayerId = null;
   }
 
   handleTransition(previous, next);
   render();
-}
-
-function buildCue(layout, playerId, state, text, subtext, variant, portraitState) {
-  const player = state.players.find((entry) => entry.id === playerId) ?? null;
-  const slotId = getSlotForPlayer(layout, playerId) || DEFAULT_SLOT_ID;
-  return {
-    playerId,
-    label: player ? (player.displayName || player.modelId) : '',
-    text,
-    subtext,
-    variant,
-    portraitState,
-    facing: layout.slotMeta?.[slotId]?.facing || 'right',
-  };
 }
 
 function handleTransition(previous, next) {
@@ -226,6 +190,11 @@ function handleTransition(previous, next) {
   if (!previousPending && nextPending) {
     const slotId = getSlotForPlayer(nextLayout, nextPending.playerId) || DEFAULT_SLOT_ID;
     effects.animateCardFlight(dom.slots[slotId]?.root, dom.pendingDisplay, nextPending.claimedCount || 1);
+    setAttention({
+      playerIds: [nextPending.playerId],
+      zones: ['claim'],
+      variant: 'turn',
+    });
   }
 
   const resolvedTurn = previousPending && !nextPending && next.turns?.length
@@ -234,76 +203,37 @@ function handleTransition(previous, next) {
 
   if (previousPending && !nextPending && resolvedTurn) {
     const cards = (resolvedTurn.actualCards || []).map(normalizeCard).filter(Boolean);
+    const flightCount = Math.max(resolvedTurn.claimedCount || 1, cards.length || 1);
     if (cards.length) {
       setTransientReveal(cards, resolvedTurn.wasLie ? 'lie exposed' : 'truth revealed');
     }
 
-    if (resolvedTurn.challenged) {
-      const challengedPlayer = next.players.find((player) => player.id === resolvedTurn.playerId);
-      const challenger = next.players.find((player) => player.id === resolvedTurn.challengerId);
+    effects.animateCardFlight(dom.pendingDisplay, dom.pileDisplay, flightCount);
 
-      if (resolvedTurn.challengeCorrect && challenger) {
-        setCinematicCue(
-          buildCue(
-            nextLayout,
-            challenger.id,
-            next,
-            'OBJECTION!!',
-            `${challenger.displayName || challenger.modelId} catches ${challengedPlayer?.displayName || challengedPlayer?.modelId}.`,
-            'danger',
-            'judging'
-          ),
-          1800
-        );
-      } else if (challengedPlayer) {
-        setCinematicCue(
-          buildCue(
-            nextLayout,
-            challengedPlayer.id,
-            next,
-            'OVERRULED',
-            `${challengedPlayer.displayName || challengedPlayer.modelId}'s claim survives.`,
-            'success',
-            'default'
-          ),
-          1600
-        );
-      }
+    if (resolvedTurn.challenged) {
+      const loserId = resolvedTurn.challengeCorrect ? resolvedTurn.playerId : resolvedTurn.challengerId;
+      const loserSlotId = getSlotForPlayer(nextLayout, loserId) || DEFAULT_SLOT_ID;
+      effects.animateCardFlight(dom.pileDisplay, dom.slots[loserSlotId]?.root, Math.min(4, Math.max(previous?.pileSize || 1, flightCount)), 210);
+      setAttention({
+        playerIds: [resolvedTurn.playerId, resolvedTurn.challengerId].filter(Boolean),
+        zones: ['claim', 'pile'],
+        variant: resolvedTurn.challengeCorrect ? 'danger' : 'success',
+      }, 720);
     } else {
-      const actor = next.players.find((player) => player.id === resolvedTurn.playerId);
-      if (actor) {
-        setCinematicCue(
-          buildCue(
-            nextLayout,
-            actor.id,
-            next,
-            'CLAIM STANDS',
-            `${actor.displayName || actor.modelId} pushes through ${resolvedTurn.claimedCount} x ${resolvedTurn.claimedRank}.`,
-            'neutral',
-            'default'
-          ),
-          1200
-        );
-      }
+      setAttention({
+        playerIds: [resolvedTurn.playerId].filter(Boolean),
+        zones: ['claim', 'pile'],
+        variant: 'turn',
+      });
     }
   }
 
   if (next.winner && next.winner !== previous?.winner) {
-    const winner = next.players.find((player) => player.id === next.winner);
-    if (winner) {
-      setCinematicCue(
-        buildCue(
-          nextLayout,
-          winner.id,
-          next,
-          'WINNER',
-          `${winner.displayName || winner.modelId} clears the table.`,
-          'success',
-          'win'
-        ),
-        2200
-      );
-    }
+    setAttention({
+      playerIds: [next.winner],
+      zones: ['claim', 'pile'],
+      variant: 'winner',
+    }, 900);
   }
 
   if (next.awaitingHumanAction?.type !== 'play') {
@@ -327,10 +257,9 @@ async function startNewGame() {
   app.launcherBusy = true;
   app.launcherError = '';
   app.selectedCards.clear();
-  app.spectatorRevealPlayerId = null;
   app.spectatorPeekPlayerId = null;
   app.utilityOpen = false;
-  clearCinematicCue(false);
+  clearAttention(false);
   resetTransientReveal();
   stopAutoPlay(false);
   render();
@@ -497,25 +426,21 @@ async function refreshStats() {
 Object.values(dom.slots).forEach(({ root }) => {
   root.addEventListener('pointerenter', () => {
     if (!supportsHoverPeek()) return;
-    setSpectatorReveal(root.dataset.playerId || null);
     setSpectatorPeek(root.dataset.playerId || null);
   });
 
   root.addEventListener('pointerleave', (event) => {
     if (!supportsHoverPeek()) return;
     if (event.relatedTarget?.closest?.('[data-slot]')) return;
-    clearSpectatorReveal();
     clearSpectatorPeek();
   });
 
   root.addEventListener('click', (event) => {
     if (supportsHoverPeek()) return;
     const playerId = root.dataset.playerId || null;
-    const canReveal = canRevealPortrait(playerId);
     const canPeek = canOpenSpectatorPeek(playerId);
-    if (!canReveal && !canPeek) return;
+    if (!canPeek) return;
 
-    app.spectatorRevealPlayerId = canReveal && app.spectatorRevealPlayerId !== playerId ? playerId : null;
     app.spectatorPeekPlayerId = canPeek && app.spectatorPeekPlayerId !== playerId ? playerId : null;
     render();
     event.stopPropagation();
@@ -525,7 +450,6 @@ Object.values(dom.slots).forEach(({ root }) => {
 document.addEventListener('click', (event) => {
   if (!supportsHoverPeek()) {
     if (!event.target.closest('[data-slot]')) {
-      clearSpectatorReveal();
       clearSpectatorPeek();
     }
   }

@@ -3,23 +3,23 @@ export const SLOT_IDS = ['cast-0', 'cast-1', 'cast-2', 'cast-3'];
 
 const SLOT_META = {
   'cast-0': {
-    stagePosition: 'actor-left',
-    section: 'actor',
+    stagePosition: 'seat-0',
+    section: 'board',
     facing: 'right',
   },
   'cast-1': {
-    stagePosition: 'judge-top',
-    section: 'judge',
-    facing: 'left',
+    stagePosition: 'seat-1',
+    section: 'board',
+    facing: 'right',
   },
   'cast-2': {
-    stagePosition: 'judge-mid',
-    section: 'judge',
+    stagePosition: 'seat-2',
+    section: 'board',
     facing: 'left',
   },
   'cast-3': {
-    stagePosition: 'judge-bottom',
-    section: 'judge',
+    stagePosition: 'seat-3',
+    section: 'board',
     facing: 'left',
   },
 };
@@ -58,18 +58,7 @@ function getTurnLeadPlayerId(state) {
 export function buildSlotLayout(state) {
   const players = state?.players ?? [];
   const activePlayerId = getActiveSpeakerId(state);
-  const activeIndex = players.findIndex((player) => player.id === activePlayerId);
-  const judgePlayers = activeIndex >= 0
-    ? [
-        ...players.slice(activeIndex + 1),
-        ...players.slice(0, activeIndex),
-      ]
-    : players.slice(1);
-  const stageOrder = [
-    activeIndex >= 0 ? players[activeIndex] : players[0],
-    ...judgePlayers,
-  ].filter(Boolean);
-  const slots = Object.fromEntries(SLOT_IDS.map((slotId, index) => [slotId, stageOrder[index]?.id ?? null]));
+  const slots = Object.fromEntries(SLOT_IDS.map((slotId, index) => [slotId, players[index]?.id ?? null]));
   const playerToSlot = new Map();
 
   SLOT_IDS.forEach((slotId) => {

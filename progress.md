@@ -41,3 +41,19 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Updated `ui/cards.js` to use flatter SVG cards and nudged the center suit icon left for better centering.
 - Switched Nemotron and unknown/unapproved model art to the GLM portrait set temporarily, with the placeholder TODO documented in `ui/model-themes.js`.
 - Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/layout.js`, `ui/model-themes.js`, and `ui/cards.js` passed.
+
+2026-04-16
+- Adjusted spectator judge-hand behavior: judge card trays now stay visible as facedown cards, and only the hovered/tapped judge flips that tray face-up.
+- Added more table motion: resolved plays now animate into the pile, and challenged piles animate back to the loser seat after objections resolve.
+- Normalized displayed model names through frontend theme short names so verbose provider/model ids stop leaking into the main VN dialogue.
+- Flattened the dialogue box further, fixed its height bands so the main text area stays stable, and shrank/restyled the hamburger to a small black button with white bars.
+- Added turn-order arrows, moved discard metadata to the right of the pile, and constrained actor/judge portrait art to the same max visible size.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/effects.js`, `ui/app/layout.js`, `ui/model-themes.js`, and `ui/cards.js` passed.
+
+2026-04-16
+- Replaced the actor-left / judge-stack composition with a fixed 4-column board so all four players stay visible at equal scale in a stable seat order.
+- Removed the fullscreen cinematic cue path and replaced it with inline attention flashes on the affected seat columns plus the claim/pile zones.
+- Kept spectator hand trays always visible as facedown cards for every visible player hand, with hover/tap revealing only that one player at a time.
+- Removed standby `ready` filler tags from idle seats and kept the VN strip at a fixed height under the board.
+- Rebuilt the DOM and stylesheet around the new board structure, including a portrait-mobile orientation guard that blocks the app and asks the user to switch to landscape.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/layout.js`, and `ui/app/effects.js` passed.

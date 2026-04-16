@@ -33,7 +33,13 @@ function formatPercent(value) {
 }
 
 function getPlayerName(player) {
-  return player?.displayName || shortenName(player?.modelId) || 'Unknown';
+  if (player?.displayName) return player.displayName;
+  if (player?.modelId) return window.ModelThemes.getTheme(player.modelId).shortName || shortenName(player.modelId);
+  return 'Unknown';
+}
+
+function getPlayerById(state, playerId) {
+  return state?.players?.find((entry) => entry.id === playerId) ?? null;
 }
 
 function getHumanAction(state) {
@@ -72,7 +78,7 @@ function getSeatStatus(player, state) {
   if (state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'defense';
   if (state?.thinkingPlayerId === player.id && state.phase === 'challenging') return 'judge';
   if (getCurrentTurnPlayerId(state) === player.id) return 'turn';
-  return player.role === 'human' ? 'you' : 'ready';
+  return '';
 }
 
 function getSeatClasses(player, state) {
@@ -150,18 +156,20 @@ function canPeekSpectatorHand(player, state) {
   return Boolean(!state?.interactive && player?.handVisible && player?.hand?.length);
 }
 
-function renderPeekTray(container, root, player, state, app) {
+function renderPeekTray(container, root, slotMeta, player, state, app) {
   container.innerHTML = '';
+  const alwaysVisibleBacks = !state?.interactive && player?.handVisible && player?.hand?.length;
   const peekable = canPeekSpectatorHand(player, state);
   const isOpen = peekable && app.spectatorPeekPlayerId === player.id;
 
   root.dataset.peekable = peekable ? 'true' : 'false';
   root.dataset.peekOpen = isOpen ? 'true' : 'false';
+  root.dataset.cardsVisible = alwaysVisibleBacks ? 'true' : 'false';
 
-  if (!isOpen) return;
+  if (!alwaysVisibleBacks && !isOpen) return;
 
   player.hand.slice(0, 6).forEach((card) => {
-    container.appendChild(renderCard(card, true));
+    container.appendChild(renderCard(card, isOpen));
   });
 
   if (player.hand.length > 6) {
@@ -172,33 +180,19 @@ function renderPeekTray(container, root, player, state, app) {
   }
 }
 
-function isPortraitRevealed(slotMeta, player, state, app) {
-  if (!player) return false;
-  if (state?.interactive) return true;
-  if (slotMeta?.section === 'actor') return true;
-  return app.spectatorRevealPlayerId === player.id;
-}
+function getFlashValue(app, type, targetId = '') {
+  const attention = app.attention;
+  if (!attention) return '';
 
-function renderPortraitCard(slotMeta, player, state, app, portraitState) {
-  const theme = window.ModelThemes.getTheme(player.modelId);
-  const revealed = isPortraitRevealed(slotMeta, player, state, app);
-  return `
-    <div class="portrait-flip ${revealed ? 'is-revealed' : ''}">
-      <div class="portrait-face portrait-face--back">
-        <div class="portrait-back">
-          <div class="portrait-back-mark">bullshit</div>
-          <div class="portrait-back-name">${theme.shortName || getPlayerName(player)}</div>
-        </div>
-      </div>
-      <div class="portrait-face portrait-face--front">
-        ${window.ModelThemes.getCharacterImage(
-          player.modelId,
-          portraitState,
-          `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
-        )}
-      </div>
-    </div>
-  `;
+  if (type === 'player' && targetId && attention.playerIds?.includes(targetId)) {
+    return `${attention.variant || 'turn'}-${attention.seq || 0}`;
+  }
+
+  if (type === 'zone' && targetId && attention.zones?.includes(targetId)) {
+    return `${attention.variant || 'turn'}-${attention.seq || 0}`;
+  }
+
+  return '';
 }
 
 function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
@@ -213,20 +207,25 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   root.className = 'cast-seat';
   root.dataset.facing = slotMeta?.facing || 'right';
   root.dataset.position = slotMeta?.stagePosition || slotId;
-  root.dataset.section = slotMeta?.section || 'judge';
-  root.classList.add(root.dataset.section === 'actor' ? 'cast-seat--actor' : 'cast-seat--judge');
+  root.dataset.section = slotMeta?.section || 'board';
 
   if (!player) {
     root.dataset.badge = '';
     root.dataset.playerId = '';
+    root.dataset.flash = '';
+    root.dataset.active = 'false';
     root.dataset.peekable = 'false';
     root.dataset.peekOpen = 'false';
+    root.style.removeProperty('--seat-accent');
+    root.style.removeProperty('--seat-accent-bright');
+    root.style.removeProperty('--seat-secondary');
+    root.style.removeProperty('--seat-accent-dim');
     portrait.innerHTML = '';
     clearNode(peek);
     setText(shout, '');
     setText(name, 'empty seat');
     setText(count, '0 cards');
-    setText(status, 'waiting');
+    setText(status, '');
     return;
   }
 
@@ -241,15 +240,20 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   root.style.setProperty('--seat-secondary', theme.secondary);
   root.style.setProperty('--seat-accent-dim', theme.accentDim);
 
-  root.dataset.portraitRevealed = isPortraitRevealed(slotMeta, player, state, app) ? 'true' : 'false';
-  portrait.innerHTML = renderPortraitCard(slotMeta, player, state, app, portraitState);
+  root.dataset.active = state?.currentPlayerIndex != null && state.players?.[state.currentPlayerIndex]?.id === player.id ? 'true' : 'false';
+  root.dataset.flash = getFlashValue(app, 'player', player.id);
+  portrait.innerHTML = window.ModelThemes.getCharacterImage(
+    player.modelId,
+    portraitState,
+    `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
+  );
   setText(shout, shoutText);
   setText(name, getPlayerName(player));
   setText(count, `${player.handSize} ${player.handSize === 1 ? 'card' : 'cards'}`);
   setText(status, getSeatStatus(player, state));
 
   getSeatClasses(player, state).forEach((className) => root.classList.add(className));
-  renderPeekTray(peek, root, player, state, app);
+  renderPeekTray(peek, root, slotMeta, player, state, app);
 }
 
 function renderTurnRibbon(container, state) {
@@ -260,7 +264,7 @@ function renderTurnRibbon(container, state) {
     return;
   }
 
-  queue.forEach((entry) => {
+  queue.forEach((entry, index) => {
     const pill = document.createElement('div');
     pill.className = 'turn-pill';
     if (entry.isLead) pill.classList.add('is-lead', 'is-current');
@@ -284,6 +288,14 @@ function renderTurnRibbon(container, state) {
     pill.appendChild(thumb);
     pill.appendChild(label);
     container.appendChild(pill);
+
+    if (index < queue.length - 1) {
+      const arrow = document.createElement('div');
+      arrow.className = 'turn-arrow';
+      arrow.setAttribute('aria-hidden', 'true');
+      arrow.textContent = '→';
+      container.appendChild(arrow);
+    }
   });
 }
 
@@ -343,9 +355,10 @@ function buildDialogueState(app) {
   }
 
   if (state.phase === 'finished' && state.winnerName) {
+    const winner = getPlayerById(state, state.winner);
     return {
-      speaker: state.winnerName,
-      text: `${state.winnerName} wins the table after ${state.totalTurns} turns.`,
+      speaker: winner ? getPlayerName(winner) : state.winnerName,
+      text: `${winner ? getPlayerName(winner) : state.winnerName} wins the table after ${state.totalTurns} turns.`,
       banner: {
         state: 'sustained',
         label: 'winner',
@@ -493,11 +506,13 @@ function renderDialogue(dom, app) {
 
   if (dialogue.banner) {
     dom.challengeBanner.hidden = false;
+    dom.challengeBanner.classList.remove('is-empty');
     dom.challengeBanner.dataset.state = dialogue.banner.state;
     setText(dom.challengeLabel, dialogue.banner.label);
     setText(dom.challengeCopy, dialogue.banner.copy);
   } else {
-    dom.challengeBanner.hidden = true;
+    dom.challengeBanner.hidden = false;
+    dom.challengeBanner.classList.add('is-empty');
     dom.challengeBanner.dataset.state = '';
     setText(dom.challengeLabel, '');
     setText(dom.challengeCopy, '');
@@ -673,42 +688,6 @@ function renderLauncher(dom, app) {
   }
 }
 
-function renderCinematicOverlay(dom, app, state) {
-  const cue = app.cinematicCue;
-  if (!cue) {
-    dom.cinematicOverlay.hidden = true;
-    dom.cinematicOverlay.dataset.state = '';
-    dom.cinematicPortrait.innerHTML = '';
-    setText(dom.cinematicLabel, '');
-    setText(dom.cinematicText, '');
-    setText(dom.cinematicSubtext, '');
-    return;
-  }
-
-  const player = state?.players?.find((entry) => entry.id === cue.playerId) ?? null;
-  dom.cinematicOverlay.hidden = false;
-  dom.cinematicOverlay.dataset.state = cue.variant || 'neutral';
-
-  if (player) {
-    const theme = window.ModelThemes.getTheme(player.modelId);
-    dom.cinematicOverlay.style.setProperty('--cue-accent', theme.accent);
-    dom.cinematicOverlay.dataset.facing = cue.facing || 'right';
-    dom.cinematicPortrait.innerHTML = window.ModelThemes.getCharacterImage(
-      player.modelId,
-      cue.portraitState || getPortraitState(player, state),
-      `${state?.totalTurns || 0}-${cue.text}-${player.handSize}`
-    );
-  } else {
-    dom.cinematicOverlay.style.setProperty('--cue-accent', '#000000');
-    dom.cinematicOverlay.dataset.facing = cue.facing || 'right';
-    dom.cinematicPortrait.innerHTML = '';
-  }
-
-  setText(dom.cinematicLabel, cue.label || '');
-  setText(dom.cinematicText, cue.text || '');
-  setText(dom.cinematicSubtext, cue.subtext || '');
-}
-
 export function bindDom(documentRef = document) {
   const slots = Object.fromEntries(
     SLOT_IDS.map((slotId) => {
@@ -786,11 +765,6 @@ export function bindDom(documentRef = document) {
     logToggleBtn: documentRef.getElementById('log-toggle-btn'),
     statsToggleBtn: documentRef.getElementById('stats-toggle-btn'),
     experimentSelect: documentRef.getElementById('experiment-select'),
-    cinematicOverlay: documentRef.getElementById('cinematic-overlay'),
-    cinematicPortrait: documentRef.getElementById('cinematic-portrait'),
-    cinematicLabel: documentRef.getElementById('cinematic-label'),
-    cinematicText: documentRef.getElementById('cinematic-text'),
-    cinematicSubtext: documentRef.getElementById('cinematic-subtext'),
   };
 }
 
@@ -806,6 +780,8 @@ export function renderApp(dom, app, layout, onToggleCard) {
   setText(dom.roundNumber, String((viewState?.totalTurns || 0) + 1));
   setText(dom.currentRank, viewState?.currentRank || 'A');
   setText(dom.pileCount, `${viewState?.pileSize || 0} ${(viewState?.pileSize || 0) === 1 ? 'card' : 'cards'}`);
+  dom.pendingDisplay.dataset.flash = getFlashValue(app, 'zone', 'claim');
+  dom.pileDisplay.dataset.flash = getFlashValue(app, 'zone', 'pile');
   renderPile(dom.pileDisplay, viewState?.pileSize || 0);
   renderPending(dom.pendingDisplay, viewState, app.transientReveal);
   renderTurnRibbon(dom.turnRibbon, viewState);
@@ -821,7 +797,6 @@ export function renderApp(dom, app, layout, onToggleCard) {
   dom.logDrawer.hidden = !app.logOpen;
   renderStats(dom, app.stats);
   renderLauncher(dom, app);
-  renderCinematicOverlay(dom, app, viewState);
 
   dom.utilityDrawer.hidden = !app.utilityOpen;
   dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy;
@@ -839,7 +814,11 @@ export function buildTextState(app, layout) {
     awaitingHumanAction: state?.awaitingHumanAction || null,
     activePlayerId: layout.activePlayerId,
     utilityOpen: app.utilityOpen,
-    cinematicCue: app.cinematicCue ? { text: app.cinematicCue.text, variant: app.cinematicCue.variant } : null,
+    attention: app.attention ? {
+      playerIds: app.attention.playerIds,
+      zones: app.attention.zones,
+      variant: app.attention.variant,
+    } : null,
     slots: SLOT_IDS.map((slotId) => {
       const playerId = layout.slots[slotId];
       const player = state?.players?.find((entry) => entry.id === playerId);
@@ -852,7 +831,6 @@ export function buildTextState(app, layout) {
         handSize: player?.handSize || 0,
         visible: Boolean(player?.handVisible),
         peekOpen: app.spectatorPeekPlayerId === playerId,
-        portraitRevealed: app.spectatorRevealPlayerId === playerId,
         status: player ? getSeatStatus(player, state) : 'empty',
       };
     }),

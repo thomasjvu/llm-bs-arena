@@ -1,5 +1,5 @@
 export function createEffects() {
-  function animateCardFlight(fromEl, toEl, count = 1) {
+  function animateCardFlight(fromEl, toEl, count = 1, delay = 0) {
     if (!fromEl || !toEl || !window.CardRenderer) return;
 
     const from = fromEl.getBoundingClientRect();
@@ -12,15 +12,18 @@ export function createEffects() {
       card.className = 'fx-card-flight';
       card.style.left = `${from.left + from.width * 0.5 - 20 + index * 6}px`;
       card.style.top = `${from.top + from.height * 0.45 - 28 - index * 3}px`;
+      card.style.transitionDelay = `${delay + index * 35}ms`;
       card.innerHTML = window.CardRenderer.getCardBackSVG();
       document.body.appendChild(card);
 
       requestAnimationFrame(() => {
-        card.style.transform = `translate(${to.left - from.left + to.width * 0.5 - 12}px, ${to.top - from.top + to.height * 0.35 - 18}px) rotate(${8 - index * 5}deg) scale(0.86)`;
-        card.style.opacity = '0';
+        window.setTimeout(() => {
+          card.style.transform = `translate(${to.left - from.left + to.width * 0.5 - 12}px, ${to.top - from.top + to.height * 0.35 - 18}px) rotate(${8 - index * 5}deg) scale(0.86)`;
+          card.style.opacity = '0';
+        }, delay + index * 35);
       });
 
-      window.setTimeout(() => card.remove(), 650);
+      window.setTimeout(() => card.remove(), 650 + delay + index * 35);
     }
   }
 
