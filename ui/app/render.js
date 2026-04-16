@@ -1,4 +1,4 @@
-import { SLOT_IDS, buildTurnRibbon, getSlotForPlayer } from './layout.js';
+import { SLOT_IDS, buildTurnRibbon } from './layout.js';
 
 function byRole(root, role) {
   return root.querySelector(`[data-role="${role}"]`);
@@ -42,6 +42,9 @@ function getHumanAction(state) {
 
 function getCurrentTurnPlayerId(state) {
   if (!state?.players?.length) return null;
+  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.pendingPlay?.playerId) {
+    return state.awaitingHumanAction.pendingPlay.playerId;
+  }
   if (state.awaitingHumanAction?.playerId) return state.awaitingHumanAction.playerId;
   if (state.phase === 'challenging') {
     return state.thinkingPlayerId || state.pendingTurn?.playerId || null;
@@ -60,17 +63,16 @@ function getPortraitState(player, state) {
   return 'default';
 }
 
-function getStatusLabel(player, state) {
+function getSeatStatus(player, state) {
   if (!player) return 'waiting';
   if (state?.winner === player.id) return 'winner';
   if (player.isEliminated) return 'out';
-  if (state?.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) return 'play now';
-  if (state?.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'decide now';
-  if (state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'defending';
-  if (state?.thinkingPlayerId === player.id && state.phase === 'challenging') return 'judging now';
-  if (state?.thinkingPlayerId === player.id) return 'thinking';
-  if (player.isActive) return 'current turn';
-  return 'ready';
+  if (state?.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) return 'play';
+  if (state?.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'judge';
+  if (state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'defense';
+  if (state?.thinkingPlayerId === player.id && state.phase === 'challenging') return 'judge';
+  if (getCurrentTurnPlayerId(state) === player.id) return 'turn';
+  return player.role === 'human' ? 'you' : 'ready';
 }
 
 function getSeatClasses(player, state) {
@@ -91,145 +93,36 @@ function getSeatBadge(player, state) {
   if (!player || !state) return '';
   if (state.winner === player.id) return 'winner';
   if (state.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) return 'your turn';
-  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'your objection';
-  if (state.phase === 'challenging' && state.thinkingPlayerId === player.id) return 'judging';
-  if (state.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'on defense';
-  if (state.phase !== 'challenging' && player.isActive) return 'current turn';
+  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'objection?';
+  if (state.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'defense';
+  if (state.phase === 'challenging' && state.thinkingPlayerId === player.id) return 'judge';
+  if (getCurrentTurnPlayerId(state) === player.id) return 'acting';
   return '';
 }
 
 function getSeatShout(player, state) {
-  if (!player || !state) return { text: '', tone: 'neutral' };
-
+  if (!player || !state) return '';
   const latestTurn = state.turns?.length ? state.turns[state.turns.length - 1] : null;
 
-  if (state.winner === player.id) {
-    return { text: 'winner', tone: 'success' };
-  }
-
-  if (state.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) {
-    return { text: 'play now', tone: 'neutral' };
-  }
-
-  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) {
-    return { text: 'objection?', tone: 'danger' };
-  }
-
-  if (state.phase === 'challenging' && state.pendingTurn?.playerId === player.id) {
-    return { text: 'hold it!', tone: 'neutral' };
-  }
+  if (state.winner === player.id) return 'winner';
+  if (state.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) return 'your move';
+  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'objection?';
+  if (state.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'hold it!';
 
   if (latestTurn?.challenged) {
     if (latestTurn.challengerId === player.id) {
-      return {
-        text: latestTurn.challengeCorrect ? 'objection!!' : 'overruled',
-        tone: latestTurn.challengeCorrect ? 'danger' : 'neutral',
-      };
+      return latestTurn.challengeCorrect ? 'objection!!' : 'overruled';
     }
-
     if (latestTurn.playerId === player.id) {
-      return {
-        text: latestTurn.challengeCorrect ? 'exposed' : 'claim stands',
-        tone: latestTurn.challengeCorrect ? 'neutral' : 'success',
-      };
+      return latestTurn.challengeCorrect ? 'caught' : 'holds';
     }
   }
 
   if (getCurrentTurnPlayerId(state) === player.id) {
-    return {
-      text: player.role === 'human' ? 'your move' : 'turn live',
-      tone: 'neutral',
-    };
+    return 'acting';
   }
 
-  return { text: '', tone: 'neutral' };
-}
-
-function getPlayerAction(player, state) {
-  if (!player || !state) {
-    return { label: '', detail: '', callout: '' };
-  }
-
-  if (state.pendingTurn?.playerId === player.id) {
-    return {
-      label: `${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank} on table`,
-      detail: state.phase === 'challenging'
-        ? 'Waiting to see whether anyone objects.'
-        : cleanReasoning(state.pendingTurn.reasoning),
-      callout: state.phase === 'challenging' ? 'objection window open' : 'claim live',
-    };
-  }
-
-  const latestTurn = [...(state.turns || [])].reverse().find((turn) => turn.playerId === player.id);
-  if (latestTurn) {
-    return {
-      label: latestTurn.challenged
-        ? `${latestTurn.claimedCount} x ${latestTurn.claimedRank} challenged`
-        : `last claim ${latestTurn.claimedCount} x ${latestTurn.claimedRank}`,
-      detail: latestTurn.challenged
-        ? latestTurn.challengeCorrect
-          ? 'Objection sustained.'
-          : 'Objection overruled.'
-        : cleanReasoning(latestTurn.reasoning),
-      callout: latestTurn.challenged
-        ? latestTurn.challengeCorrect
-          ? 'objection sustained'
-          : 'objection overruled'
-        : 'no challenge',
-    };
-  }
-
-  const latestChallenge = [...(state.turns || [])].reverse().find((turn) => turn.challengerId === player.id);
-  if (latestChallenge) {
-    return {
-      label: latestChallenge.challengeCorrect ? 'raised objection' : 'objection missed',
-      detail: latestChallenge.challengeCorrect ? 'Challenge succeeded.' : 'Challenge failed.',
-      callout: latestChallenge.challengeCorrect ? 'challenge landed' : 'challenge failed',
-    };
-  }
-
-  return { label: '', detail: '', callout: '' };
-}
-
-function buildLogEntries(state) {
-  const entries = [];
-  if (!state) return entries;
-
-  if (state.pendingTurn) {
-    entries.push({
-      tone: 'live',
-      title: `claim: ${getPlayerName(state.players.find((player) => player.id === state.pendingTurn.playerId))} put down ${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank}`,
-      detail: state.awaitingHumanAction?.type === 'challenge'
-        ? 'Objection window is open.'
-        : 'Challenge checks are in progress.',
-      note: cleanReasoning(state.pendingTurn.reasoning),
-    });
-  }
-
-  [...(state.turns || [])].reverse().forEach((turn) => {
-    const playerName = getPlayerName(state.players.find((player) => player.id === turn.playerId));
-    const challengerName = getPlayerName(state.players.find((player) => player.id === turn.challengerId));
-    entries.push({
-      tone: turn.challenged ? (turn.challengeCorrect ? 'danger' : 'success') : 'neutral',
-      title: turn.challenged
-        ? `objection: ${challengerName} challenged ${playerName}`
-        : `${playerName} claimed ${turn.claimedCount} x ${turn.claimedRank}`,
-      detail: turn.challenged
-        ? `${challengerName} challenged and was ${turn.challengeCorrect ? 'right' : 'wrong'}.`
-        : 'No one challenged.',
-      note: cleanReasoning(turn.reasoning) || cleanReasoning(turn.challengeReasoning),
-    });
-  });
-
-  return entries.slice(0, 18);
-}
-
-function createStatRows(statsObj) {
-  return Object.values(statsObj || {}).sort((a, b) => {
-    if (b.winRate !== a.winRate) return b.winRate - a.winRate;
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    return b.challengeAccuracy - a.challengeAccuracy;
-  });
+  return '';
 }
 
 function renderCard(cardString, showFace = true) {
@@ -253,132 +146,104 @@ function renderSelectableHand(container, cards, selectedCards, onToggleCard) {
   });
 }
 
-function renderHiddenHand(container, count) {
-  const visibleCards = Math.min(count, 8);
-  for (let index = 0; index < visibleCards; index += 1) {
-    const cardEl = renderCard('back', false);
-    cardEl.classList.add('is-hidden-card');
-    container.appendChild(cardEl);
-  }
-  if (count > visibleCards) {
+function canPeekSpectatorHand(player, state) {
+  return Boolean(!state?.interactive && player?.handVisible && player?.hand?.length);
+}
+
+function renderPeekTray(container, root, player, state, app) {
+  container.innerHTML = '';
+  const peekable = canPeekSpectatorHand(player, state);
+  const isOpen = peekable && app.spectatorPeekPlayerId === player.id;
+
+  root.dataset.peekable = peekable ? 'true' : 'false';
+  root.dataset.peekOpen = isOpen ? 'true' : 'false';
+
+  if (!isOpen) return;
+
+  player.hand.slice(0, 6).forEach((card) => {
+    container.appendChild(renderCard(card, true));
+  });
+
+  if (player.hand.length > 6) {
     const extra = document.createElement('div');
     extra.className = 'hand-overflow';
-    extra.textContent = `+${count - visibleCards}`;
+    extra.textContent = `+${player.hand.length - 6}`;
     container.appendChild(extra);
   }
 }
 
-function renderPlayerHand(container, player, state, selectedCards, onToggleCard) {
-  container.innerHTML = '';
-  if (!player) return;
-
-  const awaitingHumanAction = getHumanAction(state);
-  const canSelect =
-    awaitingHumanAction?.type === 'play' &&
-    awaitingHumanAction.playerId === player.id &&
-    player.handVisible;
-
-  if (!player.handVisible) {
-    renderHiddenHand(container, player.handSize);
-    return;
-  }
-
-  if (!player.hand?.length) {
-    const empty = document.createElement('div');
-    empty.className = 'hand-empty';
-    empty.textContent = 'hand clear';
-    container.appendChild(empty);
-    return;
-  }
-
-  if (canSelect) {
-    renderSelectableHand(container, player.hand, selectedCards, onToggleCard);
-    return;
-  }
-
-  player.hand.forEach((card) => {
-    container.appendChild(renderCard(card, true));
-  });
-}
-
-function renderSlot(slotDom, slotId, player, state, onToggleCard, selectedCards) {
+function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   const root = slotDom.root;
-  const bg = slotDom.bg;
   const portrait = slotDom.portrait;
   const shout = slotDom.shout;
-  const title = slotDom.title;
+  const peek = slotDom.peek;
   const name = slotDom.name;
   const count = slotDom.count;
   const status = slotDom.status;
-  const callout = slotDom.callout;
-  const action = slotDom.action;
-  const reasoning = slotDom.reasoning;
-  const hand = slotDom.hand;
 
-  root.className = slotId === 'active' ? 'seat-card seat-card--active' : 'seat-card seat-card--side';
+  root.className = 'cast-seat';
+  root.dataset.facing = slotMeta?.facing || 'right';
+  root.dataset.position = slotMeta?.stagePosition || slotId;
+  root.dataset.section = slotMeta?.section || 'judge';
+  root.classList.add(root.dataset.section === 'actor' ? 'cast-seat--actor' : 'cast-seat--judge');
 
   if (!player) {
     root.dataset.badge = '';
-    bg.style.background = '';
+    root.dataset.playerId = '';
+    root.dataset.peekable = 'false';
+    root.dataset.peekOpen = 'false';
     portrait.innerHTML = '';
+    clearNode(peek);
     setText(shout, '');
-    if (shout) shout.dataset.tone = '';
-    setText(title, 'standby');
     setText(name, 'empty seat');
     setText(count, '0 cards');
     setText(status, 'waiting');
-    clearNode(callout);
-    clearNode(action);
-    clearNode(reasoning);
-    hand.innerHTML = '';
     return;
   }
 
   const theme = window.ModelThemes.getTheme(player.modelId);
-  const actionState = getPlayerAction(player, state);
-  const shoutState = getSeatShout(player, state);
   const portraitState = getPortraitState(player, state);
+  const shoutText = getSeatShout(player, state);
 
-  bg.style.background = theme.bg;
+  root.dataset.playerId = player.id;
+  root.dataset.badge = getSeatBadge(player, state);
   root.style.setProperty('--seat-accent', theme.accent);
   root.style.setProperty('--seat-accent-bright', theme.accentBright);
   root.style.setProperty('--seat-secondary', theme.secondary);
   root.style.setProperty('--seat-accent-dim', theme.accentDim);
-  root.dataset.badge = getSeatBadge(player, state);
+
   portrait.innerHTML = window.ModelThemes.getCharacterImage(
     player.modelId,
     portraitState,
     `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
   );
-  setText(shout, shoutState.text);
-  if (shout) shout.dataset.tone = shoutState.text ? shoutState.tone : '';
-  setText(title, '');
+  setText(shout, shoutText);
   setText(name, getPlayerName(player));
   setText(count, `${player.handSize} ${player.handSize === 1 ? 'card' : 'cards'}`);
-  setText(status, getStatusLabel(player, state));
-  setText(callout, shoutState.text ? '' : actionState.callout);
-  setText(action, actionState.label);
-  setText(reasoning, actionState.detail);
+  setText(status, getSeatStatus(player, state));
 
   getSeatClasses(player, state).forEach((className) => root.classList.add(className));
-  renderPlayerHand(hand, player, state, selectedCards, onToggleCard);
+  renderPeekTray(peek, root, player, state, app);
 }
 
 function renderTurnRibbon(container, state) {
   container.innerHTML = '';
   const queue = buildTurnRibbon(state);
   if (!queue.length) {
-    container.innerHTML = '<div class="turn-pill">waiting for table</div>';
+    container.innerHTML = '<div class="turn-pill">waiting</div>';
     return;
   }
 
   queue.forEach((entry) => {
     const pill = document.createElement('div');
     pill.className = 'turn-pill';
-    if (entry.isLead) pill.classList.add('is-lead');
-    if (entry.isLead) pill.classList.add('is-current');
+    if (entry.isLead) pill.classList.add('is-lead', 'is-current');
     if (entry.isAwaitingHuman) pill.classList.add('is-awaiting-human');
     if (entry.isEliminated) pill.classList.add('is-eliminated');
+
+    const order = document.createElement('span');
+    order.className = 'turn-index';
+    order.textContent = String(entry.order);
 
     const thumb = document.createElement('img');
     thumb.className = 'turn-thumb';
@@ -386,132 +251,278 @@ function renderTurnRibbon(container, state) {
     thumb.alt = entry.name;
 
     const label = document.createElement('span');
+    label.className = 'turn-label';
     label.textContent = shortenName(entry.name);
 
+    pill.appendChild(order);
     pill.appendChild(thumb);
     pill.appendChild(label);
     container.appendChild(pill);
   });
 }
 
-function renderPile(container, pile) {
+function renderPile(container, pileSize) {
   container.innerHTML = '';
-  const visible = (pile || []).slice(-5);
-  if (!visible.length) {
-    container.innerHTML = '<div class="pile-placeholder">table clear</div>';
+  if (!pileSize) {
+    container.innerHTML = '<div class="pile-icon pile-icon--empty"></div>';
     return;
   }
-  visible.forEach((card) => container.appendChild(renderCard(card, false)));
+
+  const icon = document.createElement('div');
+  icon.className = 'pile-icon';
+  icon.dataset.depth =
+    pileSize > 10
+      ? 'deep'
+      : pileSize > 4
+        ? 'medium'
+        : 'light';
+
+  icon.innerHTML = `
+    <span class="pile-sheet"></span>
+    <span class="pile-sheet"></span>
+    <span class="pile-sheet"></span>
+  `;
+  container.appendChild(icon);
 }
 
 function renderPending(container, state, reveal) {
   container.innerHTML = '';
+  const label = document.createElement('div');
+  label.className = 'claim-line';
 
   if (state?.pendingTurn) {
-    const count = state.pendingTurn.claimedCount || state.pendingTurn.actualCards?.length || 1;
-    for (let index = 0; index < count; index += 1) {
-      container.appendChild(renderCard('back', false));
-    }
-    return;
+    label.textContent = `${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank} on table`;
+  } else if (reveal?.label) {
+    label.textContent = reveal.label;
+    label.classList.add('claim-line--reveal');
+  } else {
+    label.textContent = 'table quiet';
   }
 
-  if (reveal?.cards?.length) {
-    reveal.cards.forEach((card) => container.appendChild(renderCard(card, true)));
-    return;
-  }
-
-  container.innerHTML = '<div class="pending-placeholder">awaiting claim</div>';
+  container.appendChild(label);
 }
 
-function renderPhase(dom, app) {
+function buildDialogueState(app) {
   const state = app.currentState;
   const awaitingHumanAction = getHumanAction(state);
   const latestTurn = state?.turns?.length ? state.turns[state.turns.length - 1] : null;
-  let kicker = 'launcher';
-  let main = 'Choose how you want to experience the table.';
-  let runtime = 'idle';
-  let bannerState = '';
 
-  if (state) {
-    kicker = state.interactive ? 'play vs models' : 'watch demo';
-    runtime = app.autoPlaying ? 'auto running' : 'live';
-
-    if (state.phase === 'finished' && state.winnerName) {
-      main = `${state.winnerName} won the table after ${state.totalTurns} turns.`;
-      runtime = 'finished';
-    } else if (awaitingHumanAction?.type === 'play') {
-      main = `Your turn. Select 1 to 4 cards and claim ${awaitingHumanAction.currentRank}.`;
-      runtime = 'your play';
-    } else if (awaitingHumanAction?.type === 'challenge' && awaitingHumanAction.pendingPlay) {
-      const pendingPlayer = getPlayerName(awaitingHumanAction.pendingPlay);
-      main = `${pendingPlayer} claims ${awaitingHumanAction.pendingPlay.claimedCount} x ${awaitingHumanAction.pendingPlay.claimedRank}. Challenge or pass.`;
-      runtime = 'your call';
-      bannerState = 'objection';
-    } else if (state.phase === 'challenging' && state.pendingTurn) {
-      main = `${getPlayerName(state.players.find((player) => player.id === state.pendingTurn.playerId))} is being judged.`;
-      runtime = 'challenge window';
-      bannerState = 'objection';
-    } else if (app.ephemeralThinkingPlayerId) {
-      const thinker = state.players.find((player) => player.id === app.ephemeralThinkingPlayerId);
-      main = `${getPlayerName(thinker)} is thinking.`;
-      runtime = 'thinking';
-      bannerState = 'turn';
-    } else {
-      const current = state.players[state.currentPlayerIndex];
-      main = `${getPlayerName(current)} is up. Required rank: ${state.currentRank}.`;
-      bannerState = 'turn';
-    }
+  if (!state) {
+    return {
+      speaker: 'launcher',
+      text: 'Choose how you want to experience the table.',
+      banner: null,
+      runtime: 'idle',
+    };
   }
 
-  setText(dom.phaseKicker, kicker);
-  setText(dom.phaseMain, main);
-  setText(dom.modeChip, state?.interactive ? 'interactive' : (app.launcherMode || 'spectator'));
-  setText(dom.providerChip, app.provider);
-  setText(dom.runtimeChip, runtime);
+  if (state.phase === 'finished' && state.winnerName) {
+    return {
+      speaker: state.winnerName,
+      text: `${state.winnerName} wins the table after ${state.totalTurns} turns.`,
+      banner: {
+        state: 'sustained',
+        label: 'winner',
+        copy: 'Use the utility drawer to start a new game.',
+      },
+      runtime: 'finished',
+    };
+  }
+
+  if (awaitingHumanAction?.type === 'play') {
+    return {
+      speaker: awaitingHumanAction.playerName,
+      text: `Select 1 to 4 cards and claim ${awaitingHumanAction.currentRank}.`,
+      banner: {
+        state: 'turn',
+        label: 'your move',
+        copy: 'Only the count and claimed rank are public.',
+      },
+      runtime: 'your play',
+    };
+  }
 
   if (awaitingHumanAction?.type === 'challenge' && awaitingHumanAction.pendingPlay) {
+    return {
+      speaker: getPlayerName(awaitingHumanAction.pendingPlay),
+      text: `${getPlayerName(awaitingHumanAction.pendingPlay)} says ${awaitingHumanAction.pendingPlay.claimedCount} x ${awaitingHumanAction.pendingPlay.claimedRank}. Call bullshit or pass.`,
+      banner: {
+        state: 'objection',
+        label: 'objection!!',
+        copy: 'Challenge window is open.',
+      },
+      runtime: 'your call',
+    };
+  }
+
+  if (state.phase === 'challenging' && state.pendingTurn) {
+    const player = state.players.find((entry) => entry.id === state.pendingTurn.playerId);
+    return {
+      speaker: getPlayerName(player),
+      text: `${getPlayerName(player)} is under cross-examination for ${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank}.`,
+      banner: {
+        state: 'objection',
+        label: 'cross-examination',
+        copy: 'Waiting for objections to resolve.',
+      },
+      runtime: 'challenge window',
+    };
+  }
+
+  if (latestTurn?.challenged) {
+    const challenger = state.players.find((entry) => entry.id === latestTurn.challengerId);
+    const player = state.players.find((entry) => entry.id === latestTurn.playerId);
+    return {
+      speaker: latestTurn.challengeCorrect ? getPlayerName(challenger) : getPlayerName(player),
+      text: latestTurn.challengeCorrect
+        ? `${getPlayerName(challenger)} exposes the lie.`
+        : `${getPlayerName(player)} survives the objection.`,
+      banner: {
+        state: latestTurn.challengeCorrect ? 'sustained' : 'overruled',
+        label: latestTurn.challengeCorrect ? 'sustained' : 'overruled',
+        copy: `${getPlayerName(player)} claimed ${latestTurn.claimedCount} x ${latestTurn.claimedRank}.`,
+      },
+      runtime: latestTurn.challengeCorrect ? 'caught' : 'claim stands',
+    };
+  }
+
+  if (app.ephemeralThinkingPlayerId) {
+    const thinker = state.players.find((entry) => entry.id === app.ephemeralThinkingPlayerId);
+    return {
+      speaker: getPlayerName(thinker),
+      text: `${getPlayerName(thinker)} is preparing a play.`,
+      banner: {
+        state: 'turn',
+        label: 'thinking',
+        copy: `Required claim: ${state.currentRank}.`,
+      },
+      runtime: 'thinking',
+    };
+  }
+
+  const current = state.players[state.currentPlayerIndex];
+  return {
+    speaker: getPlayerName(current),
+    text: `${getPlayerName(current)} is up. Required claim: ${state.currentRank}.`,
+    banner: {
+      state: 'turn',
+      label: 'turn live',
+      copy: `Pile size: ${state.pileSize} cards.`,
+    },
+    runtime: app.autoPlaying ? 'auto running' : 'live',
+  };
+}
+
+function buildLogEntries(state) {
+  const entries = [];
+  if (!state) return entries;
+  const includeNotes = !state.interactive;
+
+  if (state.pendingTurn) {
+    entries.push({
+      tone: 'live',
+      title: `${getPlayerName(state.players.find((player) => player.id === state.pendingTurn.playerId))} claims ${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank}`,
+      detail: state.awaitingHumanAction?.type === 'challenge'
+        ? 'Objection window is open.'
+        : 'Challenge checks are in progress.',
+      note: includeNotes ? cleanReasoning(state.pendingTurn.reasoning) : '',
+    });
+  }
+
+  [...(state.turns || [])].reverse().forEach((turn) => {
+    const playerName = getPlayerName(state.players.find((player) => player.id === turn.playerId));
+    const challengerName = getPlayerName(state.players.find((player) => player.id === turn.challengerId));
+    entries.push({
+      tone: turn.challenged ? (turn.challengeCorrect ? 'danger' : 'success') : 'neutral',
+      title: turn.challenged
+        ? `${challengerName} challenged ${playerName}`
+        : `${playerName} claimed ${turn.claimedCount} x ${turn.claimedRank}`,
+      detail: turn.challenged
+        ? `${challengerName} was ${turn.challengeCorrect ? 'right' : 'wrong'}.`
+        : 'No one challenged.',
+      note: includeNotes ? (cleanReasoning(turn.reasoning) || cleanReasoning(turn.challengeReasoning)) : '',
+    });
+  });
+
+  return entries.slice(0, 18);
+}
+
+function createStatRows(statsObj) {
+  return Object.values(statsObj || {}).sort((a, b) => {
+    if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return b.challengeAccuracy - a.challengeAccuracy;
+  });
+}
+
+function renderDialogue(dom, app) {
+  const state = app.currentState;
+  const dialogue = buildDialogueState(app);
+
+  setText(dom.phaseKicker, dialogue.speaker);
+  setText(dom.phaseMain, dialogue.text);
+  setText(dom.modeChip, state?.interactive ? 'interactive' : (app.launcherMode || 'spectator'));
+  setText(dom.providerChip, app.provider);
+  setText(dom.runtimeChip, dialogue.runtime);
+
+  if (dialogue.banner) {
     dom.challengeBanner.hidden = false;
-    dom.challengeBanner.dataset.state = 'objection';
-    setText(dom.challengeLabel, 'objection!!');
-    setText(
-      dom.challengeCopy,
-      `${getPlayerName(awaitingHumanAction.pendingPlay)} says ${awaitingHumanAction.pendingPlay.claimedCount} x ${awaitingHumanAction.pendingPlay.claimedRank}. Decide whether to object.`
-    );
-  } else if (state?.phase === 'challenging' && state.pendingTurn) {
-    dom.challengeBanner.hidden = false;
-    dom.challengeBanner.dataset.state = 'objection';
-    setText(dom.challengeLabel, 'objection pending');
-    setText(
-      dom.challengeCopy,
-      `${getPlayerName(state.players.find((player) => player.id === state.pendingTurn.playerId))} is waiting on challenge checks.`
-    );
-  } else if (latestTurn?.challenged) {
-    const challengerName = getPlayerName(state.players.find((player) => player.id === latestTurn.challengerId));
-    const playerName = getPlayerName(state.players.find((player) => player.id === latestTurn.playerId));
-    dom.challengeBanner.hidden = false;
-    dom.challengeBanner.dataset.state = latestTurn.challengeCorrect ? 'sustained' : 'overruled';
-    setText(dom.challengeLabel, latestTurn.challengeCorrect ? 'sustained' : 'overruled');
-    setText(
-      dom.challengeCopy,
-      `${challengerName} challenged ${playerName}'s ${latestTurn.claimedCount} x ${latestTurn.claimedRank}.`
-    );
-  } else if (state) {
-    const currentTurnPlayer = state.players.find((player) => player.id === getCurrentTurnPlayerId(state));
-    dom.challengeBanner.hidden = false;
-    dom.challengeBanner.dataset.state = bannerState || 'turn';
-    setText(dom.challengeLabel, 'turn live');
-    setText(
-      dom.challengeCopy,
-      state.awaitingHumanAction?.type === 'play'
-        ? `${getPlayerName(currentTurnPlayer)} must play ${state.currentRank}.`
-        : `${getPlayerName(currentTurnPlayer)} is acting now.`
-    );
+    dom.challengeBanner.dataset.state = dialogue.banner.state;
+    setText(dom.challengeLabel, dialogue.banner.label);
+    setText(dom.challengeCopy, dialogue.banner.copy);
   } else {
     dom.challengeBanner.hidden = true;
     dom.challengeBanner.dataset.state = '';
     setText(dom.challengeLabel, '');
     setText(dom.challengeCopy, '');
   }
+}
+
+function renderCommandPanel(dom, app, onToggleCard) {
+  const state = app.currentState;
+  const awaitingHumanAction = getHumanAction(state);
+  dom.commandPanel.hidden = !awaitingHumanAction;
+  dom.dialogueHand.innerHTML = '';
+
+  if (!awaitingHumanAction) {
+    dom.selectedCards.innerHTML = '';
+    return;
+  }
+
+  setText(dom.commandMode, state.provider || app.provider);
+
+  if (awaitingHumanAction.type === 'play') {
+    const humanPlayer = state.players.find((player) => player.id === awaitingHumanAction.playerId);
+    setText(dom.commandTitle, 'your play');
+    setText(dom.commandRank, `claim ${awaitingHumanAction.currentRank}`);
+    setText(dom.commandCopy, 'Pick 1 to 4 cards. The audience only sees the count and claimed rank.');
+    dom.playButtons.hidden = false;
+    dom.challengeButtons.hidden = true;
+    dom.submitPlayBtn.disabled = app.selectedCards.size < 1 || app.selectedCards.size > 4;
+    dom.clearPlayBtn.disabled = app.selectedCards.size === 0;
+
+    if (humanPlayer?.handVisible) {
+      renderSelectableHand(dom.dialogueHand, humanPlayer.hand, app.selectedCards, onToggleCard);
+    }
+
+    dom.selectedCards.innerHTML = app.selectedCards.size
+      ? [...app.selectedCards].map((card) => `<span class="selected-pill">${card}</span>`).join('')
+      : '<span class="selected-pill selected-pill--muted">no cards selected</span>';
+    return;
+  }
+
+  const pendingPlay = awaitingHumanAction.pendingPlay;
+  setText(dom.commandTitle, 'your challenge');
+  setText(dom.commandRank, pendingPlay ? `${pendingPlay.claimedCount} x ${pendingPlay.claimedRank}` : '');
+  setText(
+    dom.commandCopy,
+    pendingPlay
+      ? `${getPlayerName(pendingPlay)} says they played ${pendingPlay.claimedCount} x ${pendingPlay.claimedRank}.`
+      : 'Decide whether to call bullshit.'
+  );
+  dom.playButtons.hidden = true;
+  dom.challengeButtons.hidden = false;
+  dom.selectedCards.innerHTML = '<span class="selected-pill selected-pill--muted">challenge window open</span>';
 }
 
 function renderLog(dom, state) {
@@ -636,43 +647,40 @@ function renderLauncher(dom, app) {
   }
 }
 
-function renderCommandDock(dom, app) {
-  const state = app.currentState;
-  const awaitingHumanAction = getHumanAction(state);
-  dom.commandDock.hidden = !awaitingHumanAction;
-
-  if (!awaitingHumanAction) {
+function renderCinematicOverlay(dom, app, state) {
+  const cue = app.cinematicCue;
+  if (!cue) {
+    dom.cinematicOverlay.hidden = true;
+    dom.cinematicOverlay.dataset.state = '';
+    dom.cinematicPortrait.innerHTML = '';
+    setText(dom.cinematicLabel, '');
+    setText(dom.cinematicText, '');
+    setText(dom.cinematicSubtext, '');
     return;
   }
 
-  setText(dom.commandMode, state.provider || app.provider);
+  const player = state?.players?.find((entry) => entry.id === cue.playerId) ?? null;
+  dom.cinematicOverlay.hidden = false;
+  dom.cinematicOverlay.dataset.state = cue.variant || 'neutral';
 
-  if (awaitingHumanAction.type === 'play') {
-    setText(dom.commandTitle, 'your play');
-    setText(dom.commandRank, `claim ${awaitingHumanAction.currentRank}`);
-    setText(dom.commandCopy, 'Pick 1 to 4 cards from your visible hand. The table only sees the count and claimed rank.');
-    dom.playButtons.hidden = false;
-    dom.challengeButtons.hidden = true;
-    dom.submitPlayBtn.disabled = app.selectedCards.size < 1 || app.selectedCards.size > 4;
-    dom.clearPlayBtn.disabled = app.selectedCards.size === 0;
-    dom.selectedCards.innerHTML = app.selectedCards.size
-      ? [...app.selectedCards].map((card) => `<span class="selected-pill">${card}</span>`).join('')
-      : '<span class="selected-pill selected-pill--muted">no cards selected</span>';
-    return;
+  if (player) {
+    const theme = window.ModelThemes.getTheme(player.modelId);
+    dom.cinematicOverlay.style.setProperty('--cue-accent', theme.accent);
+    dom.cinematicOverlay.dataset.facing = cue.facing || 'right';
+    dom.cinematicPortrait.innerHTML = window.ModelThemes.getCharacterImage(
+      player.modelId,
+      cue.portraitState || getPortraitState(player, state),
+      `${state?.totalTurns || 0}-${cue.text}-${player.handSize}`
+    );
+  } else {
+    dom.cinematicOverlay.style.setProperty('--cue-accent', '#000000');
+    dom.cinematicOverlay.dataset.facing = cue.facing || 'right';
+    dom.cinematicPortrait.innerHTML = '';
   }
 
-  const pendingPlay = awaitingHumanAction.pendingPlay;
-  setText(dom.commandTitle, 'your challenge');
-  setText(dom.commandRank, pendingPlay ? `${pendingPlay.claimedCount} x ${pendingPlay.claimedRank}` : '');
-  setText(
-    dom.commandCopy,
-    pendingPlay
-      ? `${getPlayerName(pendingPlay)} says they played ${pendingPlay.claimedCount} x ${pendingPlay.claimedRank}.`
-      : 'Decide whether to call bullshit.'
-  );
-  dom.playButtons.hidden = true;
-  dom.challengeButtons.hidden = false;
-  dom.selectedCards.innerHTML = '<span class="selected-pill selected-pill--muted">challenge window open</span>';
+  setText(dom.cinematicLabel, cue.label || '');
+  setText(dom.cinematicText, cue.text || '');
+  setText(dom.cinematicSubtext, cue.subtext || '');
 }
 
 export function bindDom(documentRef = document) {
@@ -681,23 +689,21 @@ export function bindDom(documentRef = document) {
       const root = documentRef.querySelector(`[data-slot="${slotId}"]`);
       return [slotId, {
         root,
-        bg: byRole(root, 'bg'),
         portrait: byRole(root, 'portrait'),
         shout: byRole(root, 'shout'),
-        title: byRole(root, 'title'),
+        peek: byRole(root, 'peek'),
         name: byRole(root, 'name'),
         count: byRole(root, 'count'),
         status: byRole(root, 'status'),
-        callout: byRole(root, 'callout'),
-        action: byRole(root, 'action'),
-        reasoning: byRole(root, 'reasoning'),
-        hand: byRole(root, 'hand'),
       }];
     })
   );
 
   return {
     root: documentRef.getElementById('app-shell'),
+    utilityDrawer: documentRef.getElementById('utility-drawer'),
+    utilityToggleBtn: documentRef.getElementById('utility-toggle-btn'),
+    utilityCloseBtn: documentRef.getElementById('utility-close-btn'),
     modeChip: documentRef.getElementById('mode-chip'),
     providerChip: documentRef.getElementById('provider-chip'),
     runtimeChip: documentRef.getElementById('runtime-chip'),
@@ -713,11 +719,12 @@ export function bindDom(documentRef = document) {
     pendingDisplay: documentRef.getElementById('pending-display'),
     turnRibbon: documentRef.getElementById('turn-ribbon'),
     slots,
-    commandDock: documentRef.getElementById('human-action-panel'),
+    commandPanel: documentRef.getElementById('command-panel'),
     commandTitle: documentRef.getElementById('human-action-title'),
     commandRank: documentRef.getElementById('human-action-rank'),
     commandMode: documentRef.getElementById('human-action-mode'),
     commandCopy: documentRef.getElementById('human-action-copy'),
+    dialogueHand: documentRef.getElementById('dialogue-hand'),
     selectedCards: documentRef.getElementById('selected-cards'),
     playButtons: documentRef.getElementById('human-play-buttons'),
     challengeButtons: documentRef.getElementById('human-challenge-buttons'),
@@ -753,9 +760,11 @@ export function bindDom(documentRef = document) {
     logToggleBtn: documentRef.getElementById('log-toggle-btn'),
     statsToggleBtn: documentRef.getElementById('stats-toggle-btn'),
     experimentSelect: documentRef.getElementById('experiment-select'),
-    winnerModal: documentRef.getElementById('winner-modal'),
-    winnerName: documentRef.getElementById('winner-name'),
-    winnerCloseBtn: documentRef.getElementById('winner-close-btn'),
+    cinematicOverlay: documentRef.getElementById('cinematic-overlay'),
+    cinematicPortrait: documentRef.getElementById('cinematic-portrait'),
+    cinematicLabel: documentRef.getElementById('cinematic-label'),
+    cinematicText: documentRef.getElementById('cinematic-text'),
+    cinematicSubtext: documentRef.getElementById('cinematic-subtext'),
   };
 }
 
@@ -767,37 +776,31 @@ export function renderApp(dom, app, layout, onToggleCard) {
 
   dom.root.dataset.mode = viewState?.interactive ? 'interactive' : (app.launcherMode || 'spectator');
 
-  renderPhase(dom, { ...app, currentState: viewState });
-
+  renderDialogue(dom, { ...app, currentState: viewState });
   setText(dom.roundNumber, String((viewState?.totalTurns || 0) + 1));
   setText(dom.currentRank, viewState?.currentRank || 'A');
   setText(dom.pileCount, `${viewState?.pileSize || 0} ${(viewState?.pileSize || 0) === 1 ? 'card' : 'cards'}`);
-  renderPile(dom.pileDisplay, viewState?.pile || []);
+  renderPile(dom.pileDisplay, viewState?.pileSize || 0);
   renderPending(dom.pendingDisplay, viewState, app.transientReveal);
   renderTurnRibbon(dom.turnRibbon, viewState);
 
   SLOT_IDS.forEach((slotId) => {
     const playerId = layout.slots[slotId];
     const player = viewState?.players?.find((entry) => entry.id === playerId) ?? null;
-    renderSlot(dom.slots[slotId], slotId, player, viewState, onToggleCard, app.selectedCards);
+    renderSeat(dom.slots[slotId], slotId, layout.slotMeta?.[slotId], player, viewState, app);
   });
 
-  renderCommandDock(dom, app);
+  renderCommandPanel(dom, app, onToggleCard);
   renderLog(dom, viewState);
   dom.logDrawer.hidden = !app.logOpen;
   renderStats(dom, app.stats);
   renderLauncher(dom, app);
+  renderCinematicOverlay(dom, app, viewState);
 
+  dom.utilityDrawer.hidden = !app.utilityOpen;
   dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy;
   dom.autoPlayBtn.disabled = !app.currentGameId || viewState?.phase === 'finished' || app.stepBusy || Boolean(viewState?.awaitingHumanAction);
   setText(dom.autoPlayBtn, app.autoPlaying ? 'stop' : 'auto');
-
-  if (viewState?.phase === 'finished' && viewState.winnerName && app.showWinnerModal) {
-    dom.winnerModal.hidden = false;
-    setText(dom.winnerName, viewState.winnerName);
-  } else {
-    dom.winnerModal.hidden = true;
-  }
 }
 
 export function buildTextState(app, layout) {
@@ -809,16 +812,21 @@ export function buildTextState(app, layout) {
     pileSize: state?.pileSize || 0,
     awaitingHumanAction: state?.awaitingHumanAction || null,
     activePlayerId: layout.activePlayerId,
+    utilityOpen: app.utilityOpen,
+    cinematicCue: app.cinematicCue ? { text: app.cinematicCue.text, variant: app.cinematicCue.variant } : null,
     slots: SLOT_IDS.map((slotId) => {
       const playerId = layout.slots[slotId];
       const player = state?.players?.find((entry) => entry.id === playerId);
       return {
         slotId,
         playerId,
+        stagePosition: layout.slotMeta?.[slotId]?.stagePosition || slotId,
+        facing: layout.slotMeta?.[slotId]?.facing || 'forward',
         name: getPlayerName(player),
         handSize: player?.handSize || 0,
         visible: Boolean(player?.handVisible),
-        status: player ? getStatusLabel(player, state) : 'empty',
+        peekOpen: app.spectatorPeekPlayerId === playerId,
+        status: player ? getSeatStatus(player, state) : 'empty',
       };
     }),
     selectedCards: [...app.selectedCards],

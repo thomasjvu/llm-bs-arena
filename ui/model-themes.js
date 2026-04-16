@@ -27,7 +27,6 @@ window.ModelThemes = (() => {
         <rect x="14" y="14" width="132" height="132" rx="28" fill="${fill}" opacity="0.18"/>
         <rect x="28" y="28" width="104" height="104" rx="20" stroke="${fill}" stroke-width="3" opacity="0.75"/>
         ${lines}
-        <text x="80" y="132" text-anchor="middle" font-family="monospace" font-size="14" font-weight="700" fill="${fill}" opacity="0.78">${label}</text>
       </svg>
     `;
   }
@@ -247,7 +246,11 @@ window.ModelThemes = (() => {
     if (theme.folder) {
       return renderFolderCharacter(theme, state, cacheBust);
     }
-    return (theme.renderCharacter || defaultTheme.renderCharacter)(state);
+    return `
+      <div class="character-asset character-asset--generated">
+        ${(theme.renderCharacter || defaultTheme.renderCharacter)(state)}
+      </div>
+    `;
   }
 
   function getThumbnail(modelId) {

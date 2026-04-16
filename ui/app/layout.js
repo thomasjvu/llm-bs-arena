@@ -1,12 +1,39 @@
-export const SLOT_IDS = ['active', 'sidebar-0', 'sidebar-1', 'sidebar-2'];
+export const DEFAULT_SLOT_ID = 'cast-0';
+export const SLOT_IDS = ['cast-0', 'cast-1', 'cast-2', 'cast-3'];
 
-function getFocusPlayerId(state) {
+const SLOT_META = {
+  'cast-0': {
+    stagePosition: 'actor-left',
+    section: 'actor',
+    facing: 'right',
+  },
+  'cast-1': {
+    stagePosition: 'judge-top',
+    section: 'judge',
+    facing: 'left',
+  },
+  'cast-2': {
+    stagePosition: 'judge-mid',
+    section: 'judge',
+    facing: 'left',
+  },
+  'cast-3': {
+    stagePosition: 'judge-bottom',
+    section: 'judge',
+    facing: 'left',
+  },
+};
+
+function getActiveSpeakerId(state) {
   if (!state?.players?.length) return null;
+  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.pendingPlay?.playerId) {
+    return state.awaitingHumanAction.pendingPlay.playerId;
+  }
+  if (state.awaitingHumanAction?.playerId) {
+    return state.awaitingHumanAction.playerId;
+  }
   if (state.phase === 'challenging' && state.pendingTurn?.playerId) {
     return state.pendingTurn.playerId;
-  }
-  if (state.awaitingHumanAction?.type === 'play') {
-    return state.awaitingHumanAction.playerId;
   }
   if (state.thinkingPlayerId) {
     return state.thinkingPlayerId;
@@ -16,6 +43,9 @@ function getFocusPlayerId(state) {
 
 function getTurnLeadPlayerId(state) {
   if (!state?.players?.length) return null;
+  if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.pendingPlay?.playerId) {
+    return state.awaitingHumanAction.pendingPlay.playerId;
+  }
   if (state.awaitingHumanAction?.playerId) {
     return state.awaitingHumanAction.playerId;
   }
@@ -27,34 +57,34 @@ function getTurnLeadPlayerId(state) {
 
 export function buildSlotLayout(state) {
   const players = state?.players ?? [];
-  const focusPlayerId = getFocusPlayerId(state);
-  if (!players.length || !focusPlayerId) {
-    return {
-      activePlayerId: null,
-      orderedPlayerIds: [],
-      slots: Object.fromEntries(SLOT_IDS.map((slotId) => [slotId, null])),
-      playerToSlot: new Map(),
-    };
-  }
-
-  const focusIndex = Math.max(0, players.findIndex((player) => player.id === focusPlayerId));
-  const orderedPlayerIds = players.map((_, offset) => players[(focusIndex + offset) % players.length].id);
-  const slots = {};
+  const activePlayerId = getActiveSpeakerId(state);
+  const activeIndex = players.findIndex((player) => player.id === activePlayerId);
+  const judgePlayers = activeIndex >= 0
+    ? [
+        ...players.slice(activeIndex + 1),
+        ...players.slice(0, activeIndex),
+      ]
+    : players.slice(1);
+  const stageOrder = [
+    activeIndex >= 0 ? players[activeIndex] : players[0],
+    ...judgePlayers,
+  ].filter(Boolean);
+  const slots = Object.fromEntries(SLOT_IDS.map((slotId, index) => [slotId, stageOrder[index]?.id ?? null]));
   const playerToSlot = new Map();
 
-  SLOT_IDS.forEach((slotId, index) => {
-    const playerId = orderedPlayerIds[index] ?? null;
-    slots[slotId] = playerId;
+  SLOT_IDS.forEach((slotId) => {
+    const playerId = slots[slotId];
     if (playerId) {
       playerToSlot.set(playerId, slotId);
     }
   });
 
   return {
-    activePlayerId: orderedPlayerIds[0] ?? null,
-    orderedPlayerIds,
+    activePlayerId,
+    orderedPlayerIds: players.map((player) => player.id),
     slots,
     playerToSlot,
+    slotMeta: SLOT_META,
   };
 }
 
@@ -74,6 +104,7 @@ export function buildTurnRibbon(state) {
       id: player.id,
       name: player.displayName || player.modelId,
       modelId: player.modelId,
+      order: offset + 1,
       isLead: offset === 0,
       isAwaitingHuman: state.awaitingHumanAction?.playerId === player.id,
       isEliminated: player.isEliminated,

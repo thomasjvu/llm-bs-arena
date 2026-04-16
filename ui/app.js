@@ -1,6 +1,6 @@
 import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats } from './app/api.js';
 import { createEffects } from './app/effects.js';
-import { buildSlotLayout, getSlotForPlayer } from './app/layout.js';
+import { DEFAULT_SLOT_ID, buildSlotLayout, getSlotForPlayer } from './app/layout.js';
 import { bindDom, renderApp, buildTextState } from './app/render.js';
 import { loadPreferences, savePreferences } from './app/storage.js';
 
@@ -25,14 +25,17 @@ const app = {
   launcherOpen: !preferences.mode,
   launcherBusy: false,
   launcherError: '',
+  utilityOpen: false,
   logOpen: false,
   stepBusy: false,
   autoPlaying: false,
   selectedCards: new Set(),
   ephemeralThinkingPlayerId: null,
-  showWinnerModal: false,
   transientReveal: null,
   transientRevealTimer: null,
+  spectatorPeekPlayerId: null,
+  cinematicCue: null,
+  cinematicCueTimer: null,
   stats: {
     open: false,
     loading: false,
@@ -41,6 +44,53 @@ const app = {
     data: null,
   },
 };
+
+function supportsHoverPeek() {
+  return window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
+}
+
+function canOpenSpectatorPeek(playerId) {
+  const state = app.currentState;
+  if (!playerId || !state || state.interactive) {
+    return false;
+  }
+
+  const player = state.players?.find((entry) => entry.id === playerId);
+  return Boolean(player?.handVisible && player?.hand?.length);
+}
+
+function setSpectatorPeek(playerId) {
+  const nextPlayerId = canOpenSpectatorPeek(playerId) ? playerId : null;
+  if (app.spectatorPeekPlayerId === nextPlayerId) return;
+  app.spectatorPeekPlayerId = nextPlayerId;
+  render();
+}
+
+function clearSpectatorPeek() {
+  if (!app.spectatorPeekPlayerId) return;
+  app.spectatorPeekPlayerId = null;
+  render();
+}
+
+function clearCinematicCue(shouldRender = true) {
+  if (app.cinematicCueTimer) {
+    window.clearTimeout(app.cinematicCueTimer);
+    app.cinematicCueTimer = null;
+  }
+  app.cinematicCue = null;
+  if (shouldRender) render();
+}
+
+function setCinematicCue(cue, duration = 1600) {
+  clearCinematicCue(false);
+  app.cinematicCue = cue;
+  render();
+  app.cinematicCueTimer = window.setTimeout(() => {
+    app.cinematicCue = null;
+    app.cinematicCueTimer = null;
+    render();
+  }, duration);
+}
 
 function persistPreferences() {
   const next = savePreferences({
@@ -116,8 +166,27 @@ function setCurrentState(nextState) {
   app.currentState = next;
   app.currentGameId = next.gameId;
   app.ephemeralThinkingPlayerId = null;
+
+  if (next.interactive || !next.players?.some((player) => player.id === app.spectatorPeekPlayerId)) {
+    app.spectatorPeekPlayerId = null;
+  }
+
   handleTransition(previous, next);
   render();
+}
+
+function buildCue(layout, playerId, state, text, subtext, variant, portraitState) {
+  const player = state.players.find((entry) => entry.id === playerId) ?? null;
+  const slotId = getSlotForPlayer(layout, playerId) || DEFAULT_SLOT_ID;
+  return {
+    playerId,
+    label: player ? (player.displayName || player.modelId) : '',
+    text,
+    subtext,
+    variant,
+    portraitState,
+    facing: layout.slotMeta?.[slotId]?.facing || 'right',
+  };
 }
 
 function handleTransition(previous, next) {
@@ -126,9 +195,8 @@ function handleTransition(previous, next) {
   const nextLayout = buildSlotLayout(next);
 
   if (!previousPending && nextPending) {
-    const slotId = getSlotForPlayer(nextLayout, nextPending.playerId) || 'active';
-    const sourceHand = dom.slots[slotId]?.hand;
-    effects.animateCardFlight(sourceHand, dom.pendingDisplay, nextPending.claimedCount || 1);
+    const slotId = getSlotForPlayer(nextLayout, nextPending.playerId) || DEFAULT_SLOT_ID;
+    effects.animateCardFlight(dom.slots[slotId]?.root, dom.pendingDisplay, nextPending.claimedCount || 1);
   }
 
   const resolvedTurn = previousPending && !nextPending && next.turns?.length
@@ -142,23 +210,71 @@ function handleTransition(previous, next) {
     }
 
     if (resolvedTurn.challenged) {
-      const actorSlot = getSlotForPlayer(nextLayout, resolvedTurn.playerId) || 'active';
-      const challengerSlot = getSlotForPlayer(nextLayout, resolvedTurn.challengerId) || 'active';
-      effects.showBurst(
-        resolvedTurn.challengeCorrect ? dom.slots[challengerSlot]?.root : dom.slots[actorSlot]?.root,
-        resolvedTurn.challengeCorrect ? 'OBJECTION!!' : 'OVERRULED',
-        resolvedTurn.challengeCorrect ? 'danger' : 'success'
-      );
+      const challengedPlayer = next.players.find((player) => player.id === resolvedTurn.playerId);
+      const challenger = next.players.find((player) => player.id === resolvedTurn.challengerId);
+
+      if (resolvedTurn.challengeCorrect && challenger) {
+        setCinematicCue(
+          buildCue(
+            nextLayout,
+            challenger.id,
+            next,
+            'OBJECTION!!',
+            `${challenger.displayName || challenger.modelId} catches ${challengedPlayer?.displayName || challengedPlayer?.modelId}.`,
+            'danger',
+            'judging'
+          ),
+          1800
+        );
+      } else if (challengedPlayer) {
+        setCinematicCue(
+          buildCue(
+            nextLayout,
+            challengedPlayer.id,
+            next,
+            'OVERRULED',
+            `${challengedPlayer.displayName || challengedPlayer.modelId}'s claim survives.`,
+            'success',
+            'default'
+          ),
+          1600
+        );
+      }
     } else {
-      const actorSlot = getSlotForPlayer(nextLayout, resolvedTurn.playerId) || 'active';
-      effects.showBurst(dom.slots[actorSlot]?.root, 'CLAIM STANDS', 'neutral');
+      const actor = next.players.find((player) => player.id === resolvedTurn.playerId);
+      if (actor) {
+        setCinematicCue(
+          buildCue(
+            nextLayout,
+            actor.id,
+            next,
+            'CLAIM STANDS',
+            `${actor.displayName || actor.modelId} pushes through ${resolvedTurn.claimedCount} x ${resolvedTurn.claimedRank}.`,
+            'neutral',
+            'default'
+          ),
+          1200
+        );
+      }
     }
   }
 
   if (next.winner && next.winner !== previous?.winner) {
-    app.showWinnerModal = true;
-    const winnerSlot = getSlotForPlayer(nextLayout, next.winner) || 'active';
-    effects.showBurst(dom.slots[winnerSlot]?.root, 'WINNER', 'success');
+    const winner = next.players.find((player) => player.id === next.winner);
+    if (winner) {
+      setCinematicCue(
+        buildCue(
+          nextLayout,
+          winner.id,
+          next,
+          'WINNER',
+          `${winner.displayName || winner.modelId} clears the table.`,
+          'success',
+          'win'
+        ),
+        2200
+      );
+    }
   }
 
   if (next.awaitingHumanAction?.type !== 'play') {
@@ -181,8 +297,10 @@ function toggleSelectedCard(card) {
 async function startNewGame() {
   app.launcherBusy = true;
   app.launcherError = '';
-  app.showWinnerModal = false;
   app.selectedCards.clear();
+  app.spectatorPeekPlayerId = null;
+  app.utilityOpen = false;
+  clearCinematicCue(false);
   resetTransientReveal();
   stopAutoPlay(false);
   render();
@@ -346,6 +464,44 @@ async function refreshStats() {
   }
 }
 
+Object.values(dom.slots).forEach(({ root }) => {
+  root.addEventListener('pointerenter', () => {
+    if (!supportsHoverPeek()) return;
+    setSpectatorPeek(root.dataset.playerId || null);
+  });
+
+  root.addEventListener('pointerleave', (event) => {
+    if (!supportsHoverPeek()) return;
+    if (event.relatedTarget?.closest?.('[data-slot]')) return;
+    clearSpectatorPeek();
+  });
+
+  root.addEventListener('click', (event) => {
+    if (supportsHoverPeek()) return;
+    const playerId = root.dataset.playerId || null;
+    if (!canOpenSpectatorPeek(playerId)) return;
+
+    app.spectatorPeekPlayerId = app.spectatorPeekPlayerId === playerId ? null : playerId;
+    render();
+    event.stopPropagation();
+  });
+});
+
+document.addEventListener('click', (event) => {
+  if (!supportsHoverPeek()) {
+    if (!event.target.closest('[data-slot]')) {
+      clearSpectatorPeek();
+    }
+  }
+
+  if (!event.target.closest('#utility-drawer') && !event.target.closest('#utility-toggle-btn')) {
+    if (app.utilityOpen) {
+      app.utilityOpen = false;
+      render();
+    }
+  }
+});
+
 dom.launcherModeButtons.forEach((button) => {
   button.addEventListener('click', () => updateMode(button.dataset.launchMode));
 });
@@ -379,8 +535,19 @@ dom.launcherCloseBtn.addEventListener('click', () => {
   render();
 });
 
+dom.utilityToggleBtn.addEventListener('click', () => {
+  app.utilityOpen = !app.utilityOpen;
+  render();
+});
+
+dom.utilityCloseBtn.addEventListener('click', () => {
+  app.utilityOpen = false;
+  render();
+});
+
 dom.setupToggleBtn.addEventListener('click', () => {
   app.launcherOpen = true;
+  app.utilityOpen = false;
   app.launcherError = '';
   render();
 });
@@ -454,11 +621,6 @@ dom.experimentSelect.addEventListener('change', () => {
   if (app.stats.open) {
     void refreshStats();
   }
-});
-
-dom.winnerCloseBtn.addEventListener('click', () => {
-  app.showWinnerModal = false;
-  render();
 });
 
 window.addEventListener('load', () => {
