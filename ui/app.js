@@ -33,6 +33,7 @@ const app = {
   ephemeralThinkingPlayerId: null,
   transientReveal: null,
   transientRevealTimer: null,
+  spectatorRevealPlayerId: null,
   spectatorPeekPlayerId: null,
   cinematicCue: null,
   cinematicCueTimer: null,
@@ -47,6 +48,31 @@ const app = {
 
 function supportsHoverPeek() {
   return window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
+}
+
+function canRevealPortrait(playerId) {
+  const state = app.currentState;
+  if (!playerId || !state || state.interactive) {
+    return false;
+  }
+
+  const layout = buildSlotLayout(state);
+  const slotId = getSlotForPlayer(layout, playerId);
+  if (!slotId) return false;
+  return layout.slotMeta?.[slotId]?.section === 'judge';
+}
+
+function setSpectatorReveal(playerId) {
+  const nextPlayerId = canRevealPortrait(playerId) ? playerId : null;
+  if (app.spectatorRevealPlayerId === nextPlayerId) return;
+  app.spectatorRevealPlayerId = nextPlayerId;
+  render();
+}
+
+function clearSpectatorReveal() {
+  if (!app.spectatorRevealPlayerId) return;
+  app.spectatorRevealPlayerId = null;
+  render();
 }
 
 function canOpenSpectatorPeek(playerId) {
@@ -167,6 +193,9 @@ function setCurrentState(nextState) {
   app.currentGameId = next.gameId;
   app.ephemeralThinkingPlayerId = null;
 
+  if (next.interactive || !next.players?.some((player) => player.id === app.spectatorRevealPlayerId)) {
+    app.spectatorRevealPlayerId = null;
+  }
   if (next.interactive || !next.players?.some((player) => player.id === app.spectatorPeekPlayerId)) {
     app.spectatorPeekPlayerId = null;
   }
@@ -298,6 +327,7 @@ async function startNewGame() {
   app.launcherBusy = true;
   app.launcherError = '';
   app.selectedCards.clear();
+  app.spectatorRevealPlayerId = null;
   app.spectatorPeekPlayerId = null;
   app.utilityOpen = false;
   clearCinematicCue(false);
@@ -467,21 +497,26 @@ async function refreshStats() {
 Object.values(dom.slots).forEach(({ root }) => {
   root.addEventListener('pointerenter', () => {
     if (!supportsHoverPeek()) return;
+    setSpectatorReveal(root.dataset.playerId || null);
     setSpectatorPeek(root.dataset.playerId || null);
   });
 
   root.addEventListener('pointerleave', (event) => {
     if (!supportsHoverPeek()) return;
     if (event.relatedTarget?.closest?.('[data-slot]')) return;
+    clearSpectatorReveal();
     clearSpectatorPeek();
   });
 
   root.addEventListener('click', (event) => {
     if (supportsHoverPeek()) return;
     const playerId = root.dataset.playerId || null;
-    if (!canOpenSpectatorPeek(playerId)) return;
+    const canReveal = canRevealPortrait(playerId);
+    const canPeek = canOpenSpectatorPeek(playerId);
+    if (!canReveal && !canPeek) return;
 
-    app.spectatorPeekPlayerId = app.spectatorPeekPlayerId === playerId ? null : playerId;
+    app.spectatorRevealPlayerId = canReveal && app.spectatorRevealPlayerId !== playerId ? playerId : null;
+    app.spectatorPeekPlayerId = canPeek && app.spectatorPeekPlayerId !== playerId ? playerId : null;
     render();
     event.stopPropagation();
   });
@@ -490,6 +525,7 @@ Object.values(dom.slots).forEach(({ root }) => {
 document.addEventListener('click', (event) => {
   if (!supportsHoverPeek()) {
     if (!event.target.closest('[data-slot]')) {
+      clearSpectatorReveal();
       clearSpectatorPeek();
     }
   }

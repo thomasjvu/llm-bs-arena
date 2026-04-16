@@ -32,3 +32,12 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Reduced visible borders across the board and shifted the stage toward softer surfaces, divider lines, and contrast-based focus rather than card-like boxes.
 - Light verification only for this pass: `node --check ui/app.js ui/app/render.js ui/app/layout.js` passed.
 - Remaining manual follow-up: inspect the new actor/judge split in browser and tune exact spacing, judge portrait crop, and header breathing room from screenshots instead of broad rewrites.
+
+2026-04-16
+- Implemented the flat cinematic polish pass on `codex/design-cinematic-stage`.
+- Judge portraits now render as true front/back flip cards in spectator mode: hover reveals on desktop and tap toggles one reveal at a time on touch.
+- Rebuilt the turn order into image-over-name tiles and replaced the `menu` pill with a hamburger button.
+- Reworked the dialogue area into a flatter visual-novel box and removed remaining shadow/gradient-heavy chrome from the live board.
+- Updated `ui/cards.js` to use flatter SVG cards and nudged the center suit icon left for better centering.
+- Switched Nemotron and unknown/unapproved model art to the GLM portrait set temporarily, with the placeholder TODO documented in `ui/model-themes.js`.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/layout.js`, `ui/model-themes.js`, and `ui/cards.js` passed.

@@ -200,22 +200,8 @@ function createCardSVG(rank, suit) {
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`;
 
-  // Soft rounded card background with gradient
-  svg += `<defs>
-    <linearGradient id="cardBg${rank}${suit}" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ffffff"/>
-      <stop offset="100%" style="stop-color:#ffffff"/>
-    </linearGradient>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="2" dy="2" stdDeviation="0" flood-color="#000" flood-opacity="0.3"/>
-    </filter>
-  </defs>`;
-
-  // Card base with very rounded corners
-  svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="url(#cardBg${rank}${suit})" rx="2" ry="2" filter="url(#softShadow)"/>`;
-
-  // Soft border
-  svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="none" stroke="#000000" stroke-width="2" rx="2" ry="2" opacity="1"/>`;
+  svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="#ffffff" rx="2" ry="2"/>`;
+  svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="none" stroke="#000000" stroke-width="2" rx="2" ry="2"/>`;
 
   // Corner rank (top-left)
   const rankPattern = RANK_PATTERNS[rank];
@@ -228,11 +214,7 @@ function createCardSVG(rank, suit) {
   svg += patternToPixels(suitPattern, color, 4, 22, 1);
 
   // Center suit (larger, main focus)
-  svg += patternToPixels(suitPattern, color, width / 2 - 6, height / 2 - 5, 2);
-
-  // Cute sparkle decoration
-  svg += `<circle cx="${width - 10}" cy="12" r="2" fill="${color}" opacity="0.6"/>`;
-  svg += `<circle cx="${width - 14}" cy="8" r="1" fill="${color}" opacity="0.4"/>`;
+  svg += patternToPixels(suitPattern, color, width / 2 - 7, height / 2 - 5, 2);
 
   // Bottom-right rank (rotated 180)
   if (rankPattern) {
@@ -254,20 +236,13 @@ function createCardBackSVG() {
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`;
 
-  // Gradient background
   svg += `<defs>
-    <linearGradient id="backGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ffffff"/>
-      <stop offset="50%" style="stop-color:#ffffff"/>
-      <stop offset="100%" style="stop-color:#ffffff"/>
-    </linearGradient>
     <pattern id="dots" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
       <circle cx="4" cy="4" r="1" fill="#000000" opacity="0.2"/>
     </pattern>
   </defs>`;
 
-  // Card base
-  svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="url(#backGrad)" rx="2" ry="2" stroke="#000000" stroke-width="2"/>`;
+  svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="#ffffff" rx="2" ry="2" stroke="#000000" stroke-width="2"/>`;
 
   // Dot pattern
   svg += `<rect x="6" y="6" width="${width - 12}" height="${height - 12}" fill="url(#dots)" rx="2"/>`;

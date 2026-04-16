@@ -172,6 +172,35 @@ function renderPeekTray(container, root, player, state, app) {
   }
 }
 
+function isPortraitRevealed(slotMeta, player, state, app) {
+  if (!player) return false;
+  if (state?.interactive) return true;
+  if (slotMeta?.section === 'actor') return true;
+  return app.spectatorRevealPlayerId === player.id;
+}
+
+function renderPortraitCard(slotMeta, player, state, app, portraitState) {
+  const theme = window.ModelThemes.getTheme(player.modelId);
+  const revealed = isPortraitRevealed(slotMeta, player, state, app);
+  return `
+    <div class="portrait-flip ${revealed ? 'is-revealed' : ''}">
+      <div class="portrait-face portrait-face--back">
+        <div class="portrait-back">
+          <div class="portrait-back-mark">bullshit</div>
+          <div class="portrait-back-name">${theme.shortName || getPlayerName(player)}</div>
+        </div>
+      </div>
+      <div class="portrait-face portrait-face--front">
+        ${window.ModelThemes.getCharacterImage(
+          player.modelId,
+          portraitState,
+          `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
+        )}
+      </div>
+    </div>
+  `;
+}
+
 function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   const root = slotDom.root;
   const portrait = slotDom.portrait;
@@ -212,11 +241,8 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   root.style.setProperty('--seat-secondary', theme.secondary);
   root.style.setProperty('--seat-accent-dim', theme.accentDim);
 
-  portrait.innerHTML = window.ModelThemes.getCharacterImage(
-    player.modelId,
-    portraitState,
-    `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
-  );
+  root.dataset.portraitRevealed = isPortraitRevealed(slotMeta, player, state, app) ? 'true' : 'false';
+  portrait.innerHTML = renderPortraitCard(slotMeta, player, state, app, portraitState);
   setText(shout, shoutText);
   setText(name, getPlayerName(player));
   setText(count, `${player.handSize} ${player.handSize === 1 ? 'card' : 'cards'}`);
@@ -826,6 +852,7 @@ export function buildTextState(app, layout) {
         handSize: player?.handSize || 0,
         visible: Boolean(player?.handVisible),
         peekOpen: app.spectatorPeekPlayerId === playerId,
+        portraitRevealed: app.spectatorRevealPlayerId === playerId,
         status: player ? getSeatStatus(player, state) : 'empty',
       };
     }),

@@ -12,6 +12,13 @@ window.ModelThemes = (() => {
 
   const KNOWN_IMAGE_FOLDERS = new Set(['qwen', 'minimax', 'mistral', 'glm', 'kimi']);
 
+  // Frontend asset TODOs:
+  // - nvidia/nemotron-3-super-120b-a12b: using GLM portrait set as a temporary placeholder.
+  // - any unregistered provider/model id: falls back to the GLM portrait set until dedicated art is added.
+  const PLACEHOLDER_THEME_IDS = new Set([
+    'nvidia/nemotron-3-super-120b-a12b',
+  ]);
+
   const LEGACY_ALIASES = {
     'moonshotai/kimi-k2-instruct': 'moonshotai/kimi-k2.5',
     'z-ai/glm4.7': 'z-ai/glm5',
@@ -85,11 +92,7 @@ window.ModelThemes = (() => {
       accentDim: '#a85421',
       secondary: '#ffe8c4',
       folder: 'qwen',
-      bg: [
-        'radial-gradient(circle at 18% 20%, rgba(255, 186, 111, 0.28), transparent 28%)',
-        'radial-gradient(circle at 82% 16%, rgba(255, 114, 58, 0.22), transparent 30%)',
-        'linear-gradient(160deg, #24110d 0%, #4b1c13 56%, #160d0a 100%)',
-      ].join(', '),
+      bg: '#fafafa',
     },
     'minimaxai/minimax-m2.5': {
       name: 'MiniMax M2.5',
@@ -100,11 +103,7 @@ window.ModelThemes = (() => {
       accentDim: '#b14239',
       secondary: '#ffe1d8',
       folder: 'minimax',
-      bg: [
-        'radial-gradient(circle at 80% 22%, rgba(255, 148, 112, 0.24), transparent 30%)',
-        'radial-gradient(circle at 24% 74%, rgba(255, 87, 87, 0.20), transparent 28%)',
-        'linear-gradient(160deg, #2b0e10 0%, #5b161d 58%, #17070a 100%)',
-      ].join(', '),
+      bg: '#fafafa',
     },
     'nvidia/nemotron-3-super-120b-a12b': {
       name: 'Nemotron 3 Super 120B',
@@ -114,12 +113,8 @@ window.ModelThemes = (() => {
       accentBright: '#b8ffd2',
       accentDim: '#2d8a61',
       secondary: '#e8fff2',
-      bg: [
-        'radial-gradient(circle at 18% 24%, rgba(118, 255, 195, 0.18), transparent 28%)',
-        'radial-gradient(circle at 78% 76%, rgba(71, 210, 140, 0.16), transparent 24%)',
-        'linear-gradient(160deg, #0d1712 0%, #163025 55%, #09110d 100%)',
-      ].join(', '),
-      renderCharacter: nemotronPortrait,
+      folder: 'glm',
+      placeholderSource: 'z-ai/glm5',
     },
     'mistralai/mistral-small-4-119b-2603': {
       name: 'Mistral Small 4',
@@ -130,11 +125,7 @@ window.ModelThemes = (() => {
       accentDim: '#4c708d',
       secondary: '#eff8ff',
       folder: 'mistral',
-      bg: [
-        'radial-gradient(circle at 16% 20%, rgba(205, 231, 255, 0.18), transparent 24%)',
-        'radial-gradient(circle at 74% 60%, rgba(120, 175, 214, 0.20), transparent 28%)',
-        'linear-gradient(155deg, #0f1720 0%, #243a51 52%, #0c1218 100%)',
-      ].join(', '),
+      bg: '#fafafa',
     },
     'z-ai/glm5': {
       name: 'GLM 5',
@@ -145,11 +136,7 @@ window.ModelThemes = (() => {
       accentDim: '#267f90',
       secondary: '#dcfcff',
       folder: 'glm',
-      bg: [
-        'radial-gradient(circle at 22% 22%, rgba(128, 240, 255, 0.18), transparent 26%)',
-        'radial-gradient(circle at 76% 72%, rgba(67, 205, 211, 0.16), transparent 24%)',
-        'linear-gradient(160deg, #0d1b1d 0%, #174049 55%, #091012 100%)',
-      ].join(', '),
+      bg: '#fafafa',
     },
     'moonshotai/kimi-k2.5': {
       name: 'Kimi K2.5',
@@ -160,11 +147,7 @@ window.ModelThemes = (() => {
       accentDim: '#7448a8',
       secondary: '#f3e9ff',
       folder: 'kimi',
-      bg: [
-        'radial-gradient(circle at 74% 22%, rgba(229, 193, 255, 0.18), transparent 30%)',
-        'radial-gradient(circle at 18% 74%, rgba(181, 121, 255, 0.16), transparent 24%)',
-        'linear-gradient(155deg, #181024 0%, #382258 55%, #0c0816 100%)',
-      ].join(', '),
+      bg: '#fafafa',
     },
     [HUMAN_MODEL_ID]: {
       name: 'You',
@@ -174,11 +157,7 @@ window.ModelThemes = (() => {
       accentBright: '#ffd27d',
       accentDim: '#90391f',
       secondary: '#fff0d9',
-      bg: [
-        'radial-gradient(circle at 18% 24%, rgba(255, 213, 111, 0.20), transparent 26%)',
-        'radial-gradient(circle at 80% 20%, rgba(245, 107, 67, 0.18), transparent 22%)',
-        'linear-gradient(155deg, #25110c 0%, #542117 56%, #160a07 100%)',
-      ].join(', '),
+      bg: '#fafafa',
       renderCharacter: humanPortrait,
     },
   };
@@ -191,10 +170,9 @@ window.ModelThemes = (() => {
     accentBright: '#e3dbff',
     accentDim: '#70639d',
     secondary: '#f2ecff',
-    bg: [
-      'radial-gradient(circle at 20% 22%, rgba(214, 202, 255, 0.18), transparent 28%)',
-      'linear-gradient(160deg, #15131c 0%, #2a2540 58%, #0b0911 100%)',
-    ].join(', '),
+    bg: '#fafafa',
+    folder: 'glm',
+    placeholderSource: 'z-ai/glm5',
     renderCharacter: unknownPortrait,
   };
 
@@ -212,7 +190,18 @@ window.ModelThemes = (() => {
   }
 
   function getTheme(modelId) {
-    return registry[resolveModelId(modelId)] || defaultTheme;
+    const resolvedModelId = resolveModelId(modelId);
+    const theme = registry[resolvedModelId];
+    if (!theme) {
+      return {
+        ...defaultTheme,
+        isPlaceholder: true,
+      };
+    }
+    return {
+      ...theme,
+      isPlaceholder: PLACEHOLDER_THEME_IDS.has(resolvedModelId),
+    };
   }
 
   function getFolderState(theme, state) {
