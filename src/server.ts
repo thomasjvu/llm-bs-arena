@@ -6,6 +6,7 @@ import { GameState, ExperimentId, MODELS, Card, Turn, PlayerSeatConfig } from '.
 import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame } from './engine/game-state.js';
 import { LLMAdapter } from './engine/turn-manager.js';
 import { APIConnectionError as NimAPIConnectionError } from './llm/nim-api.js';
+import { buildClientGameState, getAwaitingHumanAction } from './server-state.js';
 import {
   buildRunMetadata,
   detectProvider,
@@ -43,20 +44,6 @@ interface ActiveGame {
   persistLog: boolean;
 }
 
-interface AwaitingHumanAction {
-  type: 'play' | 'challenge';
-  playerId: string;
-  playerName: string;
-  currentRank?: string;
-  pendingPlay?: {
-    playerId: string;
-    modelId: string;
-    displayName?: string;
-    claimedCount: number;
-    claimedRank: string;
-  };
-}
-
 const activeGames = new Map<string, ActiveGame>();
 
 // MIME types
@@ -65,6 +52,10 @@ const mimeTypes: Record<string, string> = {
   '.css': 'text/css',
   '.js': 'application/javascript',
   '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
 };
 
 function isHumanPlayer(player: { modelId: string; role?: string }): boolean {
@@ -198,99 +189,6 @@ function serveStatic(res: http.ServerResponse, filepath: string) {
   });
 }
 
-// Format card for sending to client
-function formatCard(card: Card): string {
-  return `${card.rank}${card.suit}`;
-}
-
-function getAwaitingHumanAction(game: ActiveGame): AwaitingHumanAction | null {
-  if (!game.humanPlayerId) {
-    return null;
-  }
-
-  const humanPlayer = game.state.players.find((player) => player.id === game.humanPlayerId);
-  if (!humanPlayer) {
-    return null;
-  }
-
-  if (game.phase === 'waiting' && getCurrentPlayer(game.state).id === humanPlayer.id) {
-    return {
-      type: 'play',
-      playerId: humanPlayer.id,
-      playerName: getPlayerLabel(humanPlayer),
-      currentRank: game.state.currentRank,
-    };
-  }
-
-  if (game.phase === 'challenging' && game.pendingTurn && game.challengeQueue[0] === humanPlayer.id) {
-    const pendingPlayer = game.state.players.find((player) => player.id === game.pendingTurn?.playerId);
-    return {
-      type: 'challenge',
-      playerId: humanPlayer.id,
-      playerName: getPlayerLabel(humanPlayer),
-      pendingPlay: {
-        playerId: game.pendingTurn.playerId,
-        modelId: pendingPlayer?.modelId || game.pendingTurn.playerId,
-        displayName: pendingPlayer?.displayName,
-        claimedCount: game.pendingTurn.claimedCount,
-        claimedRank: game.pendingTurn.claimedRank,
-      },
-    };
-  }
-
-  return null;
-}
-
-function getVisibleHand(game: ActiveGame, playerId: string, hand: Card[]): string[] {
-  if (!game.hidePrivateState || game.humanPlayerId === playerId) {
-    return hand.map(formatCard);
-  }
-
-  return [];
-}
-
-function sanitizeReasoning(game: ActiveGame, actorId: string | undefined, reasoning: string | undefined): string {
-  if (!reasoning) {
-    return '';
-  }
-
-  if (!game.hidePrivateState || !actorId || actorId === game.humanPlayerId) {
-    return reasoning;
-  }
-
-  return '';
-}
-
-function sanitizeTurnForClient(game: ActiveGame, turn: Turn, allowPrivateCards: boolean): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {
-    turnNumber: turn.turnNumber,
-    playerId: turn.playerId,
-    claimedRank: turn.claimedRank,
-    claimedCount: turn.claimedCount,
-    challenged: turn.challenged,
-    challengerId: turn.challengerId,
-    challengeCorrect: turn.challengeCorrect,
-    reasoning: sanitizeReasoning(game, turn.playerId, turn.reasoning),
-    challengeReasoning: sanitizeReasoning(game, turn.challengerId, turn.challengeReasoning),
-    pileAfterTurn: turn.pileAfterTurn,
-    handSizesAfterTurn: turn.handSizesAfterTurn,
-    playResponseTimeMs: turn.playResponseTimeMs,
-    playTokenUsage: turn.playTokenUsage,
-    challengeResponseTimeMs: turn.challengeResponseTimeMs,
-    challengeTokenUsage: turn.challengeTokenUsage,
-    challengeOfferedTo: turn.challengeOfferedTo,
-  };
-
-  if (!game.hidePrivateState || turn.challenged || allowPrivateCards) {
-    sanitized.actualCards = turn.actualCards;
-    sanitized.wasLie = turn.wasLie;
-  } else {
-    sanitized.actualCards = [];
-  }
-
-  return sanitized;
-}
-
 function saveGameLogIfEnabled(game: ActiveGame) {
   if (!game.persistLog) {
     return;
@@ -347,64 +245,9 @@ function validateGameState(game: ActiveGame): { valid: boolean; error?: string }
   return { valid: true };
 }
 
-// Maximum turns to send to client to prevent performance issues in long games
-const MAX_CLIENT_TURNS = 100;
-
 // Get visible state for UI
 function getFullGameState(game: ActiveGame) {
-  const state = game.state;
-  const awaitingHumanAction = getAwaitingHumanAction(game);
-
-  // Determine who is currently "thinking" (next to be queried by the server)
-  let thinkingPlayerId: string | null = null;
-  if (awaitingHumanAction) {
-    thinkingPlayerId = null;
-  } else if (game.phase === 'waiting') {
-    thinkingPlayerId = getCurrentPlayer(state).id;
-  } else if (game.phase === 'challenging' && game.challengeQueue.length > 0) {
-    thinkingPlayerId = game.challengeQueue[0];
-  }
-
-  // Limit turns sent to client for performance in long-running games
-  // Always keep all turns internally for game logic, but only send recent ones to UI
-  const totalTurns = state.turns.length;
-  const recentTurns = totalTurns > MAX_CLIENT_TURNS 
-    ? state.turns.slice(totalTurns - MAX_CLIENT_TURNS)
-    : state.turns;
-
-  return {
-    gameId: state.gameId,
-    experimentId: state.experimentId,
-    phase: game.phase,
-    players: state.players.map((p, i) => ({
-      id: p.id,
-      modelId: p.modelId,
-      displayName: p.displayName,
-      role: p.role ?? 'model',
-      hand: getVisibleHand(game, p.id, p.hand),
-      handVisible: !game.hidePrivateState || game.humanPlayerId === p.id,
-      handSize: p.hand.length,
-      isActive: i === state.currentPlayerIndex,
-      isEliminated: p.isEliminated,
-    })),
-    currentPlayerIndex: state.currentPlayerIndex,
-    currentRank: state.currentRank,
-    pile: state.pile.map(formatCard),
-    pileSize: state.pile.length,
-    turns: recentTurns.map((turn) => sanitizeTurnForClient(game, turn, false)),
-    totalTurns: totalTurns, // Send actual count for display purposes
-    pendingTurn: game.pendingTurn
-      ? sanitizeTurnForClient(game, game.pendingTurn, game.pendingTurn.playerId === game.humanPlayerId)
-      : null,
-    winner: state.winner,
-    winnerName: state.winner ? getPlayerLabel(state.players.find((player) => player.id === state.winner) || { modelId: state.winner }) : null,
-    winnerModel: state.winner ? state.players.find(p => p.id === state.winner)?.modelId : null,
-    provider: game.provider,
-    interactive: game.hidePrivateState,
-    humanPlayerId: game.humanPlayerId,
-    awaitingHumanAction,
-    thinkingPlayerId,
-  };
+  return buildClientGameState(game);
 }
 
 // Start a new game
