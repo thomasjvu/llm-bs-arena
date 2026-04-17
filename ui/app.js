@@ -59,6 +59,106 @@ const app = {
   },
 };
 
+const customSelectControls = [];
+
+function syncCustomSelect(select) {
+  const control = select?._customSelect;
+  if (!control) return;
+  const selectedOption = select.options[select.selectedIndex];
+  control.value.textContent = selectedOption?.textContent?.trim() || '';
+  control.trigger.disabled = Boolean(select.disabled);
+  control.optionButtons.forEach((button) => {
+    button.classList.toggle('is-selected', button.dataset.value === select.value);
+  });
+}
+
+function closeCustomSelect(select) {
+  const control = select?._customSelect;
+  if (!control) return;
+  control.field.dataset.open = 'false';
+  control.menu.hidden = true;
+}
+
+function closeAllCustomSelects(except = null) {
+  customSelectControls.forEach((control) => {
+    if (control.select !== except) {
+      closeCustomSelect(control.select);
+    }
+  });
+}
+
+function enhanceSelect(select) {
+  if (!select || select._customSelect) return;
+  const field = select.closest('.control-select, .launcher-field');
+  if (!field) return;
+
+  select.classList.add('select-native');
+
+  const shell = document.createElement('div');
+  shell.className = 'custom-select';
+
+  const trigger = document.createElement('button');
+  trigger.className = 'custom-select-trigger';
+  trigger.type = 'button';
+  trigger.setAttribute('aria-haspopup', 'listbox');
+
+  const value = document.createElement('span');
+  value.className = 'custom-select-value';
+
+  const caret = document.createElement('span');
+  caret.className = 'custom-select-caret';
+  caret.textContent = '▾';
+
+  trigger.append(value, caret);
+
+  const menu = document.createElement('div');
+  menu.className = 'custom-select-menu';
+  menu.hidden = true;
+  menu.setAttribute('role', 'listbox');
+
+  shell.append(trigger, menu);
+  field.appendChild(shell);
+
+  const optionButtons = Array.from(select.options).map((option) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'custom-select-option';
+    button.dataset.value = option.value;
+    button.setAttribute('role', 'option');
+    button.textContent = option.textContent || option.value;
+    button.addEventListener('click', () => {
+      if (select.value !== option.value) {
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      syncCustomSelect(select);
+      closeCustomSelect(select);
+    });
+    menu.appendChild(button);
+    return button;
+  });
+
+  const control = { field, select, shell, trigger, value, caret, menu, optionButtons };
+  select._customSelect = control;
+  customSelectControls.push(control);
+
+  trigger.addEventListener('click', () => {
+    const isOpen = field.dataset.open === 'true';
+    closeAllCustomSelects(select);
+    field.dataset.open = isOpen ? 'false' : 'true';
+    menu.hidden = isOpen;
+  });
+
+  syncCustomSelect(select);
+}
+
+function syncCustomSelects() {
+  [dom.experimentSelect, dom.providerSelect].forEach((select) => {
+    enhanceSelect(select);
+    syncCustomSelect(select);
+  });
+}
+
 function computeMessageTimerKey() {
   if (app.challengeReveal) {
     return [
@@ -279,6 +379,7 @@ function render() {
   syncMessageTimer();
   const layout = buildSlotLayout(app.currentState);
   renderApp(dom, app, layout, toggleSelectedCard);
+  syncCustomSelects();
   syncWindowState();
 }
 
@@ -378,11 +479,11 @@ function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextL
     audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'claim_stands');
     audio.playPickup(pickupCount);
     render();
-  }, 1150);
+  }, 2000);
 
   app.challengeRevealClearTimer = window.setTimeout(() => {
     clearChallengeReveal();
-  }, 2500);
+  }, 3500);
 }
 
 function getPublicResolutionLabel(turn) {
@@ -469,6 +570,14 @@ function handleTransition(previous, next) {
   const nextLayout = buildSlotLayout(next);
   const newFeedEntries = previous ? getNewFeedEntries(previous, next) : [];
   const challengeEntry = newFeedEntries.find((entry) => entry.type === 'challenge');
+  const roundAdvanced = Boolean(previous && next.totalTurns > previous.totalTurns);
+
+  if (roundAdvanced) {
+    setAttention({
+      zones: ['round'],
+      variant: 'turn',
+    }, 960);
+  }
 
   if (challengeEntry) {
     setAttention({
@@ -655,8 +764,8 @@ async function startAutoPlay() {
       const pauseMs = app.currentState?.interactive
         ? 550
         : app.currentState?.phase === 'challenging'
-          ? 1200
-          : 900;
+          ? 1400
+          : 1300;
       await window.advanceTime(pauseMs);
     }
   } finally {
@@ -818,9 +927,23 @@ document.addEventListener('pointerdown', () => {
   void audio.unlock();
 }, { passive: true });
 
+document.addEventListener('pointerdown', (event) => {
+  customSelectControls.forEach((control) => {
+    if (!control.field.contains(event.target)) {
+      closeCustomSelect(control.select);
+    }
+  });
+}, { passive: true });
+
 document.addEventListener('keydown', () => {
   void audio.unlock();
 }, { passive: true });
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeAllCustomSelects();
+  }
+});
 
 dom.launcherModeButtons.forEach((button) => {
   button.addEventListener('click', () => updateMode(button.dataset.launchMode));

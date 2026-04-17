@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LLM Bullshit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script src="cards.js" defer></script>
   <script src="model-themes.js" defer></script>
@@ -61,6 +64,7 @@
             <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-manual-panel" data-role="manual"></div>
             <div class="seat-footer">
               <div class="seat-name" data-role="name">empty seat</div>
               <div class="seat-chip-row">
@@ -76,6 +80,7 @@
             <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-manual-panel" data-role="manual"></div>
             <div class="seat-footer">
               <div class="seat-name" data-role="name">empty seat</div>
               <div class="seat-chip-row">
@@ -91,6 +96,7 @@
             <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-manual-panel" data-role="manual"></div>
             <div class="seat-footer">
               <div class="seat-name" data-role="name">empty seat</div>
               <div class="seat-chip-row">
@@ -106,6 +112,7 @@
             <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-manual-panel" data-role="manual"></div>
             <div class="seat-footer">
               <div class="seat-name" data-role="name">empty seat</div>
               <div class="seat-chip-row">
@@ -132,27 +139,29 @@
 
             <div class="dialogue-feed" id="dialogue-feed" hidden></div>
 
-            <div class="dialogue-command-panel" id="command-panel" hidden>
-              <div class="command-head">
-                <div>
-                  <div class="command-kicker" id="human-action-title">your move</div>
-                  <div class="command-rank" id="human-action-rank"></div>
+            <div class="dialogue-command-home" id="command-panel-home">
+              <div class="dialogue-command-panel" id="command-panel" hidden>
+                <div class="command-head">
+                  <div>
+                    <div class="command-kicker" id="human-action-title">your move</div>
+                    <div class="command-rank" id="human-action-rank"></div>
+                  </div>
+                  <div class="command-mode" id="human-action-mode">manual</div>
                 </div>
-                <div class="command-mode" id="human-action-mode">manual</div>
-              </div>
 
-              <div class="command-copy" id="human-action-copy"></div>
-              <div class="dialogue-hand" id="dialogue-hand"></div>
-              <div class="selected-cards" id="selected-cards"></div>
+                <div class="command-copy" id="human-action-copy"></div>
+                <div class="dialogue-hand" id="dialogue-hand"></div>
+                <div class="selected-cards" id="selected-cards"></div>
 
-              <div class="command-buttons" id="human-play-buttons">
-                <button class="control-btn control-btn-primary" id="submit-play-btn" disabled type="button">play selected cards</button>
-                <button class="control-btn" id="clear-play-btn" disabled type="button">clear</button>
-              </div>
+                <div class="command-buttons" id="human-play-buttons">
+                  <button class="control-btn control-btn-primary" id="submit-play-btn" disabled type="button">play selected cards</button>
+                  <button class="control-btn" id="clear-play-btn" disabled type="button">clear</button>
+                </div>
 
-              <div class="command-buttons" id="human-challenge-buttons" hidden>
-                <button class="control-btn control-btn-primary" id="challenge-btn" type="button">call bullshit</button>
-                <button class="control-btn" id="pass-btn" type="button">pass</button>
+                <div class="command-buttons" id="human-challenge-buttons" hidden>
+                  <button class="control-btn control-btn-primary" id="challenge-btn" type="button">call bullshit</button>
+                  <button class="control-btn" id="pass-btn" type="button">pass</button>
+                </div>
               </div>
             </div>
           </div>
@@ -163,7 +172,7 @@
     <aside class="side-panel" id="utility-drawer" aria-label="Table menu">
       <div class="drawer-header side-panel-header">
         <span>menu</span>
-        <button class="control-btn side-panel-close" id="utility-close-btn" type="button">close</button>
+        <button class="control-btn side-panel-close" id="utility-close-btn" type="button" aria-label="Close menu">×</button>
       </div>
 
       <div class="side-tabs">
@@ -215,7 +224,7 @@
             <div class="launcher-kicker">start table</div>
             <h1>Choose mode.</h1>
           </div>
-          <button class="control-btn" id="launcher-close-btn" type="button">close</button>
+          <button class="control-btn side-panel-close" id="launcher-close-btn" type="button" aria-label="Close launcher">×</button>
         </div>
 
         <div class="launcher-mode-grid">
