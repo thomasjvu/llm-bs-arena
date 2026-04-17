@@ -9,10 +9,10 @@
   --turn: #111111;
   --danger: #cb3c31;
   --success: #1f7a57;
-  --display: "Arial Narrow", "IBM Plex Sans Condensed", "Helvetica Neue", sans-serif;
-  --sans: "Helvetica Neue", "Arial", sans-serif;
+  --display: "Arial Black", "Impact", "Haettenschweiler", "Helvetica Neue", sans-serif;
+  --sans: "Trebuchet MS", "Gill Sans", "Avenir Next", sans-serif;
   --mono: "IBM Plex Mono", "Menlo", monospace;
-  --portrait-size: min(100%, 220px);
+  --portrait-size: min(170%, 480px);
 }
 
 * {
@@ -336,13 +336,11 @@ svg {
 
 .cast-seat {
   position: relative;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
-  gap: 10px;
   min-width: 0;
   min-height: 0;
-  padding: 10px 12px 12px;
+  padding: 0 0 10px;
   border-right: 1px solid var(--line);
+  overflow: hidden;
 }
 
 .cast-seat:last-child {
@@ -367,25 +365,13 @@ svg {
   opacity: 1;
 }
 
+.cast-seat.is-judging-turn::before,
+.cast-seat.is-thinking::before {
+  color: #5b5b5b;
+}
+
 .cast-seat.is-eliminated {
   opacity: 0.34;
-}
-
-.cast-seat.is-current-turn,
-.cast-seat.is-awaiting-human {
-  background: rgba(17, 17, 17, 0.03);
-}
-
-.cast-seat.is-judged {
-  background: rgba(203, 60, 49, 0.05);
-}
-
-.cast-seat.is-thinking {
-  background: rgba(17, 17, 17, 0.025);
-}
-
-.cast-seat.is-winner {
-  background: rgba(31, 122, 87, 0.05);
 }
 
 .cast-seat[data-flash^="turn"]::after,
@@ -418,11 +404,13 @@ svg {
 
 .seat-avatar {
   position: relative;
+  height: 100%;
   min-height: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
+  padding: 0 6px;
 }
 
 .seat-avatar .character-asset {
@@ -431,7 +419,7 @@ svg {
   justify-content: center;
   width: 100%;
   height: 100%;
-  max-width: var(--portrait-size);
+  max-width: min(152%, var(--portrait-size));
   margin: 0 auto;
 }
 
@@ -446,6 +434,32 @@ svg {
   height: 100%;
   object-fit: contain;
   object-position: center bottom;
+  opacity: 0.26;
+  transition: opacity 160ms ease;
+}
+
+.cast-seat.is-acting-turn .character-state-image,
+.cast-seat.is-acting-turn .character-fallback,
+.cast-seat.is-acting-turn .character-asset--generated svg,
+.cast-seat.is-judged .character-state-image,
+.cast-seat.is-judged .character-fallback,
+.cast-seat.is-judged .character-asset--generated svg,
+.cast-seat.is-judging-turn .character-state-image,
+.cast-seat.is-judging-turn .character-fallback,
+.cast-seat.is-judging-turn .character-asset--generated svg,
+.cast-seat.is-awaiting-human .character-state-image,
+.cast-seat.is-awaiting-human .character-fallback,
+.cast-seat.is-awaiting-human .character-asset--generated svg,
+.cast-seat.is-winner .character-state-image,
+.cast-seat.is-winner .character-fallback,
+.cast-seat.is-winner .character-asset--generated svg {
+  opacity: 1;
+}
+
+.cast-seat.is-thinking .character-state-image,
+.cast-seat.is-thinking .character-fallback,
+.cast-seat.is-thinking .character-asset--generated svg {
+  opacity: 0.82;
 }
 
 .character-fallback {
@@ -474,8 +488,14 @@ svg {
 }
 
 .cast-seat.is-judged .seat-shout,
-.cast-seat.is-thinking .seat-shout {
-  background: var(--danger);
+.cast-seat.is-acting-turn .seat-shout,
+.cast-seat.is-awaiting-human.is-acting-turn .seat-shout {
+  background: #111111;
+}
+
+.cast-seat.is-thinking .seat-shout,
+.cast-seat.is-judging-turn .seat-shout {
+  background: #555555;
 }
 
 .cast-seat.is-winner .seat-shout {
@@ -483,13 +503,19 @@ svg {
 }
 
 .seat-peek-tray {
+  position: absolute;
+  right: 10px;
+  bottom: 58px;
+  left: 10px;
+  z-index: 7;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  min-height: 72px;
+  min-height: 64px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 2px 0 0;
+  padding: 0 4px 2px;
 }
 
 .seat-peek-tray:empty {
@@ -497,12 +523,14 @@ svg {
 }
 
 .seat-peek-tray .table-card {
-  width: 40px;
+  width: 38px;
   flex: 0 0 auto;
+  margin-inline: -3px;
 }
 
-.cast-seat[data-peek-open="true"] .seat-peek-tray .table-card {
-  animation: cardReveal 180ms ease;
+.cast-seat[data-peek-open="true"] .seat-peek-tray .table-card.is-peek-revealed {
+  animation: cardReveal 220ms ease both;
+  animation-delay: calc(var(--peek-order, 0) * 55ms);
 }
 
 .hand-overflow {
@@ -518,8 +546,17 @@ svg {
 }
 
 .seat-footer {
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  left: 10px;
+  z-index: 8;
   display: grid;
   gap: 6px;
+  align-content: end;
+  padding: 8px 10px 0;
+  background: rgba(250, 250, 250, 0.94);
+  border-top: 1px solid var(--line);
 }
 
 .seat-name {
@@ -596,10 +633,83 @@ svg {
 
 .phase-main {
   overflow: hidden;
-  font-family: "Georgia", "Times New Roman", serif;
+  font-family: var(--sans);
   font-size: clamp(1.34rem, 2.1vw, 2rem);
-  font-weight: 700;
-  line-height: 1.08;
+  font-weight: 800;
+  line-height: 1.06;
+}
+
+.dialogue-feed {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  overflow: hidden;
+}
+
+.dialogue-feed-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 0 0 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dialogue-feed-entry:last-child {
+  border-bottom: 0;
+}
+
+.dialogue-feed-entry.is-latest .dialogue-feed-title {
+  color: #ffffff;
+}
+
+.dialogue-feed-entry.is-latest {
+  animation: feedSlide 240ms ease;
+}
+
+.dialogue-feed-entry--danger .dialogue-feed-title {
+  color: #ffaca4;
+}
+
+.dialogue-feed-entry--success .dialogue-feed-title {
+  color: #a9e4c5;
+}
+
+.dialogue-feed-entry--live .dialogue-feed-title {
+  color: #ffcf8d;
+}
+
+.dialogue-feed-main {
+  min-width: 0;
+}
+
+.dialogue-feed-title {
+  color: rgba(255, 255, 255, 0.94);
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.12;
+}
+
+.dialogue-feed-detail {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.dialogue-feed-round {
+  align-self: end;
+  color: rgba(255, 255, 255, 0.38);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dialogue-feed-empty {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.92rem;
+  line-height: 1.42;
 }
 
 .challenge-banner {
@@ -832,9 +942,10 @@ svg {
 }
 
 .log-entry {
+  position: relative;
   display: grid;
   gap: 4px;
-  padding: 12px 0;
+  padding: 12px 0 20px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -856,6 +967,17 @@ svg {
 
 .log-entry--success .log-title {
   color: var(--success);
+}
+
+.log-meta {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .stats-table-wrap {
@@ -1087,6 +1209,17 @@ svg {
   }
 }
 
+@keyframes feedSlide {
+  0% {
+    transform: translateY(6px);
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 @media (max-width: 1280px) {
   .screen-hud {
     grid-template-columns: minmax(220px, 0.78fr) minmax(0, 1.45fr) minmax(220px, 0.72fr);
@@ -1138,7 +1271,7 @@ svg {
   }
 
   .seat-peek-tray .table-card {
-    width: 34px;
+    width: 32px;
   }
 
   .turn-thumb {

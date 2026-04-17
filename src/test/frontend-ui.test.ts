@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { buildSlotLayout } from '../../ui/app/layout.js';
 
 describe('frontend slot layout', () => {
-  it('pins the challenged player to the active stage and keeps the rest in table order', () => {
+  it('keeps players in fixed table order while still marking the active speaker', () => {
     const state = {
       phase: 'challenging',
       currentPlayerIndex: 2,
@@ -22,23 +22,23 @@ describe('frontend slot layout', () => {
     const layout = buildSlotLayout(state);
 
     expect(layout.activePlayerId).toBe('player-2');
-    expect(layout.slots.active).toBe('player-2');
-    expect(layout.slots['sidebar-0']).toBe('player-3');
-    expect(layout.slots['sidebar-1']).toBe('player-0');
-    expect(layout.slots['sidebar-2']).toBe('player-1');
+    expect(layout.slots['cast-0']).toBe('player-0');
+    expect(layout.slots['cast-1']).toBe('player-1');
+    expect(layout.slots['cast-2']).toBe('player-2');
+    expect(layout.slots['cast-3']).toBe('player-3');
   });
 });
 
 describe('frontend model themes', () => {
-  it('maps Minimax to its own asset folder and gives Nemotron a generated fallback', () => {
+  it('maps Minimax to its own asset folder and gives Nemotron the GLM placeholder set', () => {
     const source = fs.readFileSync(path.resolve('ui/model-themes.js'), 'utf8');
     const context = { window: {} };
     vm.runInNewContext(source, context);
     const themes = context.window.ModelThemes;
 
     expect(themes.getFolder('minimaxai/minimax-m2.5')).toBe('minimax');
-    expect(themes.getFolder('nvidia/nemotron-3-super-120b-a12b')).toBeNull();
-    expect(themes.getThumbnail('nvidia/nemotron-3-super-120b-a12b')).toMatch(/^data:image\/svg\+xml/);
+    expect(themes.getFolder('nvidia/nemotron-3-super-120b-a12b')).toBe('glm');
+    expect(themes.getThumbnail('nvidia/nemotron-3-super-120b-a12b')).toBe('/images/glm/llms_glm_default.png');
     expect(themes.validateRegistry()).toEqual([]);
   });
 });

@@ -27,6 +27,17 @@ export interface AwaitingHumanAction {
 
 const MAX_CLIENT_TURNS = 100;
 
+type CurrentTurnFeedEntry = {
+  seq: number;
+  type: 'claim' | 'pass' | 'challenge' | 'resolution';
+  playerId: string;
+  targetPlayerId?: string;
+  claimedCount?: number;
+  claimedRank?: string;
+  challengeCorrect?: boolean;
+  outcome?: 'claim_stands' | 'lie_exposed' | 'false_challenge';
+};
+
 function formatCard(card: Card): string {
   return `${card.rank}${card.suit}`;
 }
@@ -72,6 +83,7 @@ function sanitizeTurnForClient(game: ServerGameSnapshot, turn: Turn, allowPrivat
     challengeResponseTimeMs: turn.challengeResponseTimeMs,
     challengeTokenUsage: turn.challengeTokenUsage,
     challengeOfferedTo: turn.challengeOfferedTo,
+    challengeDecisions: turn.challengeDecisions ?? [],
   };
 
   if (!game.hidePrivateState || turn.challenged || allowPrivateCards) {
@@ -82,6 +94,61 @@ function sanitizeTurnForClient(game: ServerGameSnapshot, turn: Turn, allowPrivat
   }
 
   return sanitized;
+}
+
+function buildCurrentTurnFeed(game: ServerGameSnapshot): { turnNumber: number; resolved: boolean; entries: CurrentTurnFeedEntry[] } | null {
+  const pendingTurn = game.pendingTurn;
+  const latestResolvedTurn = game.state.turns.length ? game.state.turns[game.state.turns.length - 1] : null;
+  const turn = pendingTurn || latestResolvedTurn;
+  if (!turn) {
+    return null;
+  }
+
+  const entries: CurrentTurnFeedEntry[] = [{
+    seq: 1,
+    type: 'claim',
+    playerId: turn.playerId,
+    claimedCount: turn.claimedCount,
+    claimedRank: turn.claimedRank,
+  }];
+
+  let seq = 2;
+  for (const decision of turn.challengeDecisions ?? []) {
+    entries.push({
+      seq: seq++,
+      type: decision.challenge ? 'challenge' : 'pass',
+      playerId: decision.playerId,
+      targetPlayerId: turn.playerId,
+      claimedCount: turn.claimedCount,
+      claimedRank: turn.claimedRank,
+    });
+  }
+
+  const resolved = pendingTurn === null && latestResolvedTurn?.turnNumber === turn.turnNumber;
+  if (resolved) {
+    entries.push({
+      seq,
+      type: 'resolution',
+      playerId: turn.challenged
+        ? (turn.challengeCorrect ? turn.challengerId || turn.playerId : turn.playerId)
+        : turn.playerId,
+      targetPlayerId: turn.playerId,
+      claimedCount: turn.claimedCount,
+      claimedRank: turn.claimedRank,
+      challengeCorrect: turn.challengeCorrect,
+      outcome: !turn.challenged
+        ? 'claim_stands'
+        : turn.challengeCorrect
+          ? 'lie_exposed'
+          : 'false_challenge',
+    });
+  }
+
+  return {
+    turnNumber: turn.turnNumber,
+    resolved,
+    entries,
+  };
 }
 
 export function getAwaitingHumanAction(game: ServerGameSnapshot): AwaitingHumanAction | null {
@@ -161,6 +228,7 @@ export function buildClientGameState(game: ServerGameSnapshot) {
     pileSize: state.pile.length,
     turns: recentTurns.map((turn) => sanitizeTurnForClient(game, turn, false)),
     totalTurns,
+    currentTurnFeed: buildCurrentTurnFeed(game),
     pendingTurn: game.pendingTurn
       ? sanitizeTurnForClient(game, game.pendingTurn, game.pendingTurn.playerId === game.humanPlayerId)
       : null,

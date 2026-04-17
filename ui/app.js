@@ -342,7 +342,12 @@ async function startAutoPlay() {
         break;
       }
 
-      await window.advanceTime(550);
+      const pauseMs = app.currentState?.interactive
+        ? 550
+        : app.currentState?.phase === 'challenging'
+          ? 1200
+          : 900;
+      await window.advanceTime(pauseMs);
     }
   } finally {
     app.autoPlaying = false;

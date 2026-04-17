@@ -64,7 +64,7 @@ function getPortraitState(player, state) {
   if (player.isEliminated) return 'lose';
   if (state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'judged';
   if (state?.thinkingPlayerId === player.id) {
-    return state.phase === 'challenging' ? 'thinking' : 'judging';
+    return state.phase === 'challenging' ? 'judging' : 'thinking';
   }
   return 'default';
 }
@@ -87,10 +87,21 @@ function getSeatClasses(player, state) {
   if (!player) return classes;
   if (state?.winner === player.id) classes.push('is-winner');
   if (player.isEliminated) classes.push('is-eliminated');
-  if (state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id) classes.push('is-judged');
-  if (state?.thinkingPlayerId === player.id) classes.push('is-thinking');
-  if (state?.awaitingHumanAction?.playerId === player.id) classes.push('is-awaiting-human');
+  if (state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id) classes.push('is-judged', 'is-acting-turn');
+  if (state?.thinkingPlayerId === player.id) {
+    classes.push('is-thinking');
+    classes.push(state?.phase === 'challenging' ? 'is-judging-turn' : 'is-acting-turn');
+  }
+  if (state?.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) {
+    classes.push('is-awaiting-human', 'is-acting-turn');
+  }
+  if (state?.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) {
+    classes.push('is-awaiting-human', 'is-judging-turn');
+  }
   if (currentTurnPlayerId === player.id) classes.push('is-current-turn');
+  if (currentTurnPlayerId === player.id && state?.phase !== 'challenging' && state?.awaitingHumanAction?.type !== 'challenge') {
+    classes.push('is-acting-turn');
+  }
   if (player.role === 'human') classes.push('is-human');
   return classes;
 }
@@ -102,29 +113,22 @@ function getSeatBadge(player, state) {
   if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'objection?';
   if (state.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'defense';
   if (state.phase === 'challenging' && state.thinkingPlayerId === player.id) return 'judge';
-  if (getCurrentTurnPlayerId(state) === player.id) return 'acting';
+  if (state.thinkingPlayerId === player.id) return 'acting';
+  if (state.players?.[state.currentPlayerIndex]?.id === player.id && !state.pendingTurn) return 'acting';
   return '';
 }
 
 function getSeatShout(player, state) {
   if (!player || !state) return '';
-  const latestTurn = state.turns?.length ? state.turns[state.turns.length - 1] : null;
 
   if (state.winner === player.id) return 'winner';
   if (state.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) return 'your move';
   if (state.awaitingHumanAction?.type === 'challenge' && state.awaitingHumanAction.playerId === player.id) return 'objection?';
   if (state.phase === 'challenging' && state.pendingTurn?.playerId === player.id) return 'hold it!';
-
-  if (latestTurn?.challenged) {
-    if (latestTurn.challengerId === player.id) {
-      return latestTurn.challengeCorrect ? 'objection!!' : 'overruled';
-    }
-    if (latestTurn.playerId === player.id) {
-      return latestTurn.challengeCorrect ? 'caught' : 'holds';
-    }
+  if (state.phase === 'challenging' && state.thinkingPlayerId === player.id) {
+    return 'judge';
   }
-
-  if (getCurrentTurnPlayerId(state) === player.id) {
+  if (state.thinkingPlayerId === player.id || state.players?.[state.currentPlayerIndex]?.id === player.id) {
     return 'acting';
   }
 
@@ -168,8 +172,13 @@ function renderPeekTray(container, root, slotMeta, player, state, app) {
 
   if (!alwaysVisibleBacks && !isOpen) return;
 
-  player.hand.slice(0, 6).forEach((card) => {
-    container.appendChild(renderCard(card, isOpen));
+  player.hand.slice(0, 6).forEach((card, index) => {
+    const cardEl = renderCard(card, isOpen);
+    cardEl.style.setProperty('--peek-order', String(index));
+    if (isOpen) {
+      cardEl.classList.add('is-peek-revealed');
+    }
+    container.appendChild(cardEl);
   });
 
   if (player.hand.length > 6) {
@@ -178,6 +187,83 @@ function renderPeekTray(container, root, slotMeta, player, state, app) {
     extra.textContent = `+${player.hand.length - 6}`;
     container.appendChild(extra);
   }
+}
+
+function buildSpectatorFeedEntries(state) {
+  const feed = state?.currentTurnFeed;
+  if (!feed?.entries?.length) return [];
+
+  return feed.entries.map((entry) => {
+    const actor = getPlayerById(state, entry.playerId);
+    const target = getPlayerById(state, entry.targetPlayerId);
+    const actorName = getPlayerName(actor);
+    const targetName = getPlayerName(target);
+
+    if (entry.type === 'claim') {
+      return {
+        tone: 'live',
+        turnNumber: feed.turnNumber,
+        title: `${actorName} claims ${entry.claimedCount} x ${entry.claimedRank}.`,
+        detail: 'Face-down cards hit the table.',
+      };
+    }
+
+    if (entry.type === 'pass') {
+      return {
+        tone: 'neutral',
+        turnNumber: feed.turnNumber,
+        title: `${actorName} passes.`,
+        detail: `No objection to ${targetName}'s ${entry.claimedCount} x ${entry.claimedRank}.`,
+      };
+    }
+
+    if (entry.type === 'challenge') {
+      return {
+        tone: 'danger',
+        turnNumber: feed.turnNumber,
+        title: `${actorName} calls bullshit.`,
+        detail: `Objecting to ${targetName}'s ${entry.claimedCount} x ${entry.claimedRank}.`,
+      };
+    }
+
+    if (entry.outcome === 'lie_exposed') {
+      if (state.winner && state.currentTurnFeed?.turnNumber === state.totalTurns) {
+        const winner = getPlayerById(state, state.winner);
+        return {
+          tone: 'success',
+          turnNumber: feed.turnNumber,
+          title: `${getPlayerName(winner)} wins the table.`,
+          detail: `${actorName} exposes the lie and clears out.`,
+        };
+      }
+      return {
+        tone: 'danger',
+        turnNumber: feed.turnNumber,
+        title: `${actorName} exposes the lie.`,
+        detail: `${targetName} takes the pile.`,
+      };
+    }
+
+    if (entry.outcome === 'false_challenge') {
+      return {
+        tone: 'success',
+        turnNumber: feed.turnNumber,
+        title: `${actorName} beats the objection.`,
+        detail: `${targetName}'s claim stands.`,
+      };
+    }
+
+    return {
+      tone: 'success',
+      turnNumber: feed.turnNumber,
+      title: state.winner && state.currentTurnFeed?.turnNumber === state.totalTurns
+        ? `${actorName} wins the table.`
+        : `${actorName}'s claim stands.`,
+      detail: state.winner && state.currentTurnFeed?.turnNumber === state.totalTurns
+        ? `${actorName} empties out on ${entry.claimedCount} x ${entry.claimedRank}.`
+        : `No one overturned ${actorName}'s ${entry.claimedCount} x ${entry.claimedRank}.`,
+    };
+  });
 }
 
 function getFlashValue(app, type, targetId = '') {
@@ -456,10 +542,12 @@ function buildLogEntries(state) {
   const entries = [];
   if (!state) return entries;
   const includeNotes = !state.interactive;
+  const turns = state.turns || [];
 
   if (state.pendingTurn) {
     entries.push({
       tone: 'live',
+      round: (state.totalTurns || 0) + 1,
       title: `${getPlayerName(state.players.find((player) => player.id === state.pendingTurn.playerId))} claims ${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank}`,
       detail: state.awaitingHumanAction?.type === 'challenge'
         ? 'Objection window is open.'
@@ -468,11 +556,12 @@ function buildLogEntries(state) {
     });
   }
 
-  [...(state.turns || [])].reverse().forEach((turn) => {
+  [...turns].reverse().forEach((turn, reverseIndex) => {
     const playerName = getPlayerName(state.players.find((player) => player.id === turn.playerId));
     const challengerName = getPlayerName(state.players.find((player) => player.id === turn.challengerId));
     entries.push({
       tone: turn.challenged ? (turn.challengeCorrect ? 'danger' : 'success') : 'neutral',
+      round: turns.length - reverseIndex,
       title: turn.challenged
         ? `${challengerName} challenged ${playerName}`
         : `${playerName} claimed ${turn.claimedCount} x ${turn.claimedRank}`,
@@ -497,21 +586,44 @@ function createStatRows(statsObj) {
 function renderDialogue(dom, app) {
   const state = app.currentState;
   const dialogue = buildDialogueState(app);
+  const showSpectatorFeed = Boolean(state && !state.interactive);
+  const feedEntries = showSpectatorFeed ? buildSpectatorFeedEntries(state) : [];
 
   setText(dom.phaseKicker, dialogue.speaker);
-  setText(dom.phaseMain, dialogue.text);
   setText(dom.modeChip, state?.interactive ? 'interactive' : (app.launcherMode || 'spectator'));
   setText(dom.providerChip, app.provider);
   setText(dom.runtimeChip, dialogue.runtime);
 
+  dom.phaseMain.hidden = showSpectatorFeed;
+  if (!showSpectatorFeed) {
+    setText(dom.phaseMain, dialogue.text);
+  }
+
+  dom.dialogueFeed.hidden = !showSpectatorFeed;
+  if (showSpectatorFeed) {
+    dom.dialogueFeed.innerHTML = feedEntries.length
+      ? feedEntries.map((entry, index) => `
+          <article class="dialogue-feed-entry dialogue-feed-entry--${entry.tone} ${index === feedEntries.length - 1 ? 'is-latest' : ''}">
+            <div class="dialogue-feed-main">
+              <div class="dialogue-feed-title">${entry.title}</div>
+              <div class="dialogue-feed-detail">${entry.detail}</div>
+            </div>
+            <div class="dialogue-feed-round">turn ${entry.turnNumber}</div>
+          </article>
+        `).join('')
+      : '<div class="dialogue-feed-empty">Waiting for the table to start.</div>';
+  } else {
+    dom.dialogueFeed.innerHTML = '';
+  }
+
   if (dialogue.banner) {
-    dom.challengeBanner.hidden = false;
+    dom.challengeBanner.hidden = showSpectatorFeed;
     dom.challengeBanner.classList.remove('is-empty');
     dom.challengeBanner.dataset.state = dialogue.banner.state;
     setText(dom.challengeLabel, dialogue.banner.label);
     setText(dom.challengeCopy, dialogue.banner.copy);
   } else {
-    dom.challengeBanner.hidden = false;
+    dom.challengeBanner.hidden = showSpectatorFeed;
     dom.challengeBanner.classList.add('is-empty');
     dom.challengeBanner.dataset.state = '';
     setText(dom.challengeLabel, '');
@@ -595,6 +707,11 @@ function renderLog(dom, state) {
       note.textContent = entry.note;
       item.appendChild(note);
     }
+
+    const meta = document.createElement('div');
+    meta.className = 'log-meta';
+    meta.textContent = `turn ${entry.round}`;
+    item.appendChild(meta);
 
     dom.logList.appendChild(item);
   });
@@ -714,6 +831,7 @@ export function bindDom(documentRef = document) {
     runtimeChip: documentRef.getElementById('runtime-chip'),
     phaseKicker: documentRef.getElementById('phase-kicker'),
     phaseMain: documentRef.getElementById('phase-main'),
+    dialogueFeed: documentRef.getElementById('dialogue-feed'),
     challengeBanner: documentRef.getElementById('challenge-banner'),
     challengeLabel: documentRef.getElementById('challenge-label'),
     challengeCopy: documentRef.getElementById('challenge-copy'),
@@ -800,7 +918,9 @@ export function renderApp(dom, app, layout, onToggleCard) {
 
   dom.utilityDrawer.hidden = !app.utilityOpen;
   dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy;
-  dom.autoPlayBtn.disabled = !app.currentGameId || viewState?.phase === 'finished' || app.stepBusy || Boolean(viewState?.awaitingHumanAction);
+  dom.autoPlayBtn.disabled = app.autoPlaying
+    ? !app.currentGameId
+    : !app.currentGameId || viewState?.phase === 'finished' || app.stepBusy || Boolean(viewState?.awaitingHumanAction);
   setText(dom.autoPlayBtn, app.autoPlaying ? 'stop' : 'auto');
 }
 
@@ -819,6 +939,7 @@ export function buildTextState(app, layout) {
       zones: app.attention.zones,
       variant: app.attention.variant,
     } : null,
+    currentTurnFeed: state?.currentTurnFeed || null,
     slots: SLOT_IDS.map((slotId) => {
       const playerId = layout.slots[slotId];
       const player = state?.players?.find((entry) => entry.id === playerId);

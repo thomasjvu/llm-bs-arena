@@ -147,6 +147,7 @@ export function processPlay(
     actualCards,
     wasLie,
     challengeOfferedTo: [],
+    challengeDecisions: [],
     challenged: false,
     reasoning,
     pileAfterTurn: state.pile.length,

@@ -318,6 +318,13 @@ function buildVisibleStateForPlayer(game: ActiveGame, playerId: string, pileSize
   };
 }
 
+function recordChallengeDecision(turn: Turn, playerId: string, challenge: boolean) {
+  turn.challengeOfferedTo ??= [];
+  turn.challengeOfferedTo.push(playerId);
+  turn.challengeDecisions ??= [];
+  turn.challengeDecisions.push({ playerId, challenge });
+}
+
 function acceptPendingTurn(game: ActiveGame, logPrefix: string) {
   if (!game.pendingTurn) {
     return;
@@ -450,8 +457,6 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
         const challengerId = game.challengeQueue.shift()!;
         const challenger = game.state.players.find(p => p.id === challengerId)!;
         const currentPlayer = getCurrentPlayer(game.state);
-        game.pendingTurn.challengeOfferedTo ??= [];
-        game.pendingTurn.challengeOfferedTo.push(challenger.id);
 
         console.log(`[step]   Asking ${challenger.modelId} whether to challenge...`);
         if (stream) sendSSE(res, 'thinking', { playerId: challenger.id, modelId: challenger.modelId, type: 'challenge' });
@@ -477,6 +482,7 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
           onToken
         );
         console.log(`[step]   Response in ${Date.now() - startTime}ms — ${challengeResponse.challenge ? 'CHALLENGE!' : 'pass'}`);
+        recordChallengeDecision(game.pendingTurn, challenger.id, challengeResponse.challenge);
 
         if (challengeResponse.challenge) {
           game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
@@ -622,8 +628,7 @@ async function handleHumanChallenge(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
-  game.pendingTurn.challengeOfferedTo ??= [];
-  game.pendingTurn.challengeOfferedTo.push(challengerId);
+  recordChallengeDecision(game.pendingTurn, challengerId, shouldChallenge);
 
   if (shouldChallenge) {
     game.pendingTurn.challengeResponseTimeMs = 0;
@@ -707,9 +712,6 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
     const challengerId = game.challengeQueue.shift()!;
     const challenger = game.state.players.find(p => p.id === challengerId)!;
     const currentPlayer = getCurrentPlayer(game.state);
-    game.pendingTurn.challengeOfferedTo ??= [];
-    game.pendingTurn.challengeOfferedTo.push(challenger.id);
-
     console.log(`[auto]   Asking ${challenger.modelId} to challenge...`);
 
     const visibleState = buildVisibleStateForPlayer(
@@ -731,6 +733,7 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
       game.state.experimentId
     );
     console.log(`[auto]   Response in ${Date.now() - startTime}ms — ${challengeResponse.challenge ? 'CHALLENGE!' : 'pass'}`);
+    recordChallengeDecision(game.pendingTurn, challenger.id, challengeResponse.challenge);
 
     if (challengeResponse.challenge) {
       game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;

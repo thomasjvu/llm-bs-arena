@@ -214,7 +214,7 @@ function createCardSVG(rank, suit) {
   svg += patternToPixels(suitPattern, color, 4, 22, 1);
 
   // Center suit (larger, main focus)
-  svg += patternToPixels(suitPattern, color, width / 2 - 7, height / 2 - 5, 2);
+  svg += patternToPixels(suitPattern, color, width / 2 - 14, height / 2 - 5, 2);
 
   // Bottom-right rank (rotated 180)
   if (rankPattern) {

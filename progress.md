@@ -57,3 +57,20 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Removed standby `ready` filler tags from idle seats and kept the VN strip at a fixed height under the board.
 - Rebuilt the DOM and stylesheet around the new board structure, including a portrait-mobile orientation guard that blocks the app and asks the user to switch to landscape.
 - Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/layout.js`, and `ui/app/effects.js` passed.
+
+2026-04-16
+- Increased portrait presence again and overlaid the facedown hand trays onto the lower part of each character stage so the figures dominate the columns instead of sitting above separate card rows.
+- Split seat emphasis into explicit acting vs judging states and restyled them as spotlight overlays plus outlines on a consistent white stage, instead of changing the whole column background.
+- Added a spectator-specific live feed in the bottom VN strip so autoplay surfaces the recent public events in sequence instead of only showing the player-mode narration block.
+- Added subtle round metadata to each public log entry, including the log drawer and the new spectator feed.
+- Swapped the UI font stack to bolder system display/body fonts and nudged the large center suit icon in `ui/cards.js` further left to correct the card-face centering.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, and `ui/cards.js` passed.
+
+2026-04-16
+- Added explicit per-challenger public decision history to the server turn state and exposed a `currentTurnFeed` snapshot in `buildClientGameState`, so the spectator UI no longer has to infer pass/challenge flow from recent logs.
+- Reworked spectator bottom-strip rendering to show only the current play-cycle transcript: claim, each judge pass/challenge in order, and final resolution, with the feed resetting automatically when the next play begins.
+- Removed resolved-turn portrait leakage like `holds` by making seat shouts and badges depend only on live phase state, and corrected the actor-vs-judge portrait logic for current thinking states.
+- Fixed the autoplay control so `stop` remains clickable while autoplay is running, and updated hover-reveal cards to animate left-to-right with staggered face-up flips.
+- Shifted the seat layout further toward figure-dominant columns: portraits scale larger, idle portraits fade back, footer metadata overlays at the bottom, and the old orange live spotlight treatment is gone.
+- Updated targeted tests for the new fixed-slot frontend assumptions and added server-state coverage for pending/resolved current-turn feeds including explicit pass entries.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/cards.js` and `npx vitest run src/test/server-state.test.ts src/test/frontend-ui.test.ts` all passed.

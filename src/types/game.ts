@@ -21,6 +21,11 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface ChallengeDecision {
+  playerId: string;
+  challenge: boolean;
+}
+
 export interface RunMetadata {
   logSchemaVersion: number;
   provider: string;
@@ -37,6 +42,7 @@ export interface Turn {
   actualCards: Card[];
   wasLie: boolean;
   challengeOfferedTo?: string[];
+  challengeDecisions?: ChallengeDecision[];
   challenged: boolean;
   challengerId?: string;
   challengeCorrect?: boolean;
