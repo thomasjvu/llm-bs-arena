@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Bullshit Research Stats</title>
+  <link rel="stylesheet" href="stats.css">
+  <script src="model-themes.js" defer></script>
+  <script type="module" src="stats.js"></script>
+</head>
+<body>
+  <main class="stats-shell">
+    <header class="stats-header">
+      <a class="stats-back" href="/">← back to live table</a>
+      <div class="stats-header-main">
+        <div class="stats-kicker">research stats</div>
+        <h1>Experiment Summary</h1>
+      </div>
+      <label class="stats-select">
+        <span>experiment</span>
+        <select id="experiment-select">
+          <option value="0">control</option>
+          <option value="1" selected>baseline</option>
+          <option value="2">asymmetric</option>
+          <option value="3">honesty</option>
+        </select>
+      </label>
+    </header>
+
+    <section class="stats-hero">
+      <div class="stats-hero-copy">
+        <div class="stats-kicker">selected condition</div>
+        <h2 id="experiment-title">Baseline</h2>
+        <p class="stats-summary" id="experiment-summary"></p>
+
+        <div class="stats-copy-grid">
+          <article class="stats-copy-card">
+            <div class="stats-copy-label">Prompt framing</div>
+            <p id="experiment-framing"></p>
+          </article>
+          <article class="stats-copy-card">
+            <div class="stats-copy-label">Purpose</div>
+            <p id="experiment-purpose"></p>
+          </article>
+        </div>
+      </div>
+
+      <div class="stats-meta-grid">
+        <article class="stats-metric-card">
+          <div class="stats-copy-label">Included games</div>
+          <div class="stats-metric-value" id="included-games">0</div>
+          <div class="stats-metric-note">Comparable cohort for this experiment.</div>
+        </article>
+        <article class="stats-metric-card">
+          <div class="stats-copy-label">Excluded mixed logs</div>
+          <div class="stats-metric-value" id="excluded-games">0</div>
+          <div class="stats-metric-note">Outside the dominant comparable cohort.</div>
+        </article>
+        <article class="stats-metric-card">
+          <div class="stats-copy-label">Cohort metadata</div>
+          <div class="stats-metric-note" id="cohort-meta">No comparable cohort loaded yet.</div>
+        </article>
+        <article class="stats-metric-card">
+          <div class="stats-copy-label">Table scope</div>
+          <div class="stats-metric-note" id="counts-meta">Waiting for experiment data.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="stats-context">
+      <p>
+        This page summarizes the frozen comparable cohort for the selected experiment. It is research reporting,
+        not the current live-table standings.
+      </p>
+    </section>
+
+    <section class="stats-table-section">
+      <div class="stats-section-head">
+        <div>
+          <div class="stats-kicker">model outcomes</div>
+          <h3>Per-model metrics</h3>
+        </div>
+        <div class="stats-status" id="stats-status">Loading experiment data…</div>
+      </div>
+
+      <div class="stats-empty" id="stats-empty" hidden></div>
+
+      <div class="stats-table-wrap" id="stats-table-wrap" hidden>
+        <table class="stats-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>model</th>
+              <th>win%</th>
+              <th>wins</th>
+              <th>lie freq</th>
+              <th>lie ok%</th>
+              <th>paranoia</th>
+              <th>challenge acc%</th>
+            </tr>
+          </thead>
+          <tbody id="stats-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="stats-glossary">
+      <div class="stats-kicker">metric glossary</div>
+      <div class="stats-glossary-grid">
+        <article>
+          <strong>Win%</strong>
+          <p>Share of included games won by that model.</p>
+        </article>
+        <article>
+          <strong>Lie freq</strong>
+          <p>How often the model played a false rank claim.</p>
+        </article>
+        <article>
+          <strong>Lie ok%</strong>
+          <p>How often that model’s lies survived without being correctly punished.</p>
+        </article>
+        <article>
+          <strong>Paranoia</strong>
+          <p>Rate of challenge behavior captured by the current metrics pipeline.</p>
+        </article>
+        <article>
+          <strong>Challenge acc%</strong>
+          <p>How often that model’s challenges were correct.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -12,9 +12,14 @@ window.ModelThemes = (() => {
 
   const KNOWN_IMAGE_FOLDERS = new Set(['qwen', 'minimax', 'mistral', 'glm', 'kimi']);
 
-  // Frontend asset TODOs:
-  // - nvidia/nemotron-3-super-120b-a12b: using GLM portrait set as a temporary placeholder.
-  // - any unregistered provider/model id: falls back to the GLM portrait set until dedicated art is added.
+  // Frontend asset audit:
+  // - Active folders in use by the current live cohort: qwen, minimax, mistral, glm, kimi.
+  // - Human seat uses generated art instead of a folder-backed portrait set.
+  // - nvidia/nemotron-3-super-120b-a12b currently uses the GLM folder as a temporary placeholder.
+  // - Unused image folders currently present in the repo: deepseek, gemma.
+  // - Actively used states in gameplay: default, judged, judging, thinking/raising-hand, win, lose.
+  // - Reveal-only states now available for challenge outcomes: safe-lie, safe-truth.
+  // - Any unregistered provider/model id falls back to the GLM portrait set until dedicated art is added.
   const PLACEHOLDER_THEME_IDS = new Set([
     'nvidia/nemotron-3-super-120b-a12b',
   ]);
@@ -181,6 +186,8 @@ window.ModelThemes = (() => {
     judged: 'judged',
     judging: 'judging',
     lose: 'lose',
+    'safe-lie': 'safe-lie',
+    'safe-truth': 'safe-truth',
     thinking: 'raising-hand',
     win: 'win',
   };
@@ -271,6 +278,16 @@ window.ModelThemes = (() => {
     return issues;
   }
 
+  function getAssetAudit() {
+    return {
+      activeFolders: ['qwen', 'minimax', 'mistral', 'glm', 'kimi'],
+      placeholderThemes: [...PLACEHOLDER_THEME_IDS],
+      unusedFolders: ['deepseek', 'gemma'],
+      activeStates: ['default', 'judged', 'judging', 'thinking', 'win', 'lose'],
+      revealStates: ['safe-lie', 'safe-truth'],
+    };
+  }
+
   return {
     getTheme,
     getDefault: () => defaultTheme,
@@ -279,6 +296,7 @@ window.ModelThemes = (() => {
     getFolder(modelId) {
       return getTheme(modelId).folder || null;
     },
+    getAssetAudit,
     validateRegistry,
   };
 })();

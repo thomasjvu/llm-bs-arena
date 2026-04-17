@@ -100,3 +100,18 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Corrected the spectator truth leak: the main HUD now stays public-only after unchallenged turns (`claim stands` instead of leaking `lie exposed`), while the sidebar log may show hidden truth after resolution in spectator mode.
 - Added a subtle challenge “whistle” particle effect near the challenged character’s face and pushed the synthesized audio cues toward a more playful, pronounced tone.
 - Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/audio.js`, `ui/app/storage.js`, `ui/app/api.js`, `ui/cards.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-16
+- Reskinned the right-side drawer into a full black in-game control panel with white text, white-on-black tabs, dark form controls, and matching log/stats styling.
+- Removed the sidebar runtime/status chips entirely and added an always-available experiment guide under the selector with research-accurate descriptions for all four experiment conditions.
+- Restyled the round counter as a compact top-spiral notebook card in the left HUD column while keeping the `33 / 33 / 33` header layout stable.
+- Wired the experiment guide rendering into the frontend render path so the selected experiment stays emphasized as the selector changes.
+- Light verification only: `node --check ui/app.js`, `node --check ui/app/render.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-16
+- Added a client-side challenge reveal beat: challenged resolutions now hold the table for roughly 2 seconds, with an initial objection beat followed by a stronger winner/loser result beat before autoplay continues.
+- Wired the dormant `safe-lie` / `safe-truth` portrait states into that reveal phase, added a visible dedicated whistle particle layer for challenged claimants, and reduced spectator seat trays from 6 visible cards to 5.
+- Removed the sidebar stats tab and added a dedicated `ui/stats.html` research summary page driven by the existing `/api/stats` API and shared experiment metadata.
+- Tightened the left HUD spacing so required claim sits farther from the round notebook while the round and discard cluster sit closer together.
+- Documented the current frontend asset audit in `ui/model-themes.js`, including active folders, unused folders, placeholder Nemotron behavior, and the newly used reveal-only states.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/stats.js`, `ui/model-themes.js`, and `npx vitest run src/test/frontend-ui.test.ts` all passed.

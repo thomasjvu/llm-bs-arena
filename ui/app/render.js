@@ -1,4 +1,5 @@
 import { SLOT_IDS, buildTurnRibbon } from './layout.js';
+import { EXPERIMENTS } from './experiments.js';
 
 function byRole(root, role) {
   return root.querySelector(`[data-role="${role}"]`);
@@ -63,8 +64,32 @@ function getCurrentTurnPlayerId(state) {
   return state.players[state.currentPlayerIndex]?.id ?? null;
 }
 
-function getPortraitState(player, state) {
+function getRevealShout(playerId, reveal) {
+  if (!reveal) return '';
+  if (reveal.stage === 'incoming') {
+    if (playerId === reveal.challengerId) return 'objection!!';
+    if (playerId === reveal.claimantId) return 'challenged';
+    return '';
+  }
+
+  if (playerId === reveal.winnerId) return 'wins objection';
+  if (playerId === reveal.loserId) return reveal.challengeCorrect ? 'takes pile' : 'loses challenge';
+  return '';
+}
+
+function getPortraitState(player, state, reveal = null) {
   if (!player) return 'default';
+  if (reveal) {
+    if (reveal.stage === 'incoming') {
+      if (player.id === reveal.claimantId) return 'judged';
+      if (player.id === reveal.challengerId) return 'judging';
+      return 'default';
+    }
+    if (player.id === reveal.claimantId) return reveal.artState;
+    if (player.id === reveal.winnerId) return 'win';
+    if (player.id === reveal.loserId) return 'lose';
+    return 'default';
+  }
   if (state?.phase === 'finished') return state?.winner === player.id ? 'win' : 'lose';
   if (state?.winner === player.id) return 'win';
   if (player.isEliminated) return 'lose';
@@ -75,15 +100,29 @@ function getPortraitState(player, state) {
   return 'default';
 }
 
-function getSeatStatus(player, state) {
+function getSeatStatus(player, state, reveal = null) {
   if (!player) return 'waiting';
+  if (reveal) return '';
   if (player.isEliminated) return 'out';
   return '';
 }
 
-function getSeatClasses(player, state) {
+function getSeatClasses(player, state, reveal = null) {
   const classes = [];
   if (!player) return classes;
+  if (reveal) {
+    if (player.id === reveal.challengerId || player.id === reveal.claimantId) {
+      classes.push('is-reveal-focus');
+      if (player.id === reveal.winnerId && reveal.stage === 'resolution') classes.push('is-reveal-winner');
+      if (player.id === reveal.loserId && reveal.stage === 'resolution') classes.push('is-reveal-loser');
+      if (player.id === reveal.claimantId) classes.push('is-judged');
+      if (player.id === reveal.challengerId) classes.push('is-judging-turn');
+    } else {
+      classes.push('is-inactive', 'is-reveal-muted');
+    }
+    if (player.role === 'human') classes.push('is-human');
+    return classes;
+  }
   if (state?.phase === 'finished') {
     if (state.winner === player.id) {
       classes.push('is-winner');
@@ -119,8 +158,9 @@ function getSeatClasses(player, state) {
   return classes;
 }
 
-function getSeatBadge(player, state) {
+function getSeatBadge(player, state, reveal = null) {
   if (!player || !state) return '';
+  if (reveal) return '';
   if (state.phase === 'finished') return state.winner === player.id ? 'winner' : 'lose';
   if (state.winner === player.id) return 'winner';
   if (state.awaitingHumanAction?.type === 'play' && state.awaitingHumanAction.playerId === player.id) return 'your turn';
@@ -132,8 +172,9 @@ function getSeatBadge(player, state) {
   return '';
 }
 
-function getSeatShout(player, state) {
+function getSeatShout(player, state, reveal = null) {
   if (!player || !state) return '';
+  if (reveal) return getRevealShout(player.id, reveal);
 
   if (state.phase === 'finished') return state.winner === player.id ? 'winner' : 'lose';
   if (state.winner === player.id) return 'winner';
@@ -151,7 +192,7 @@ function getSeatShout(player, state) {
 }
 
 function shouldRenderSeatShout(shoutText) {
-  return ['objection?', 'winner', 'lose'].includes(shoutText);
+  return ['objection?', 'winner', 'lose', 'objection!!', 'challenged', 'wins objection', 'takes pile', 'loses challenge'].includes(shoutText);
 }
 
 function renderCard(cardString, showFace = true) {
@@ -183,7 +224,7 @@ function renderPeekTray(container, root, slotMeta, player, state, app) {
   const alwaysVisibleBacks = !state?.interactive && player?.handVisible && player?.hand?.length;
   const peekable = canPeekSpectatorHand(player, state);
   const isOpen = peekable && app.spectatorPeekPlayerId === player.id;
-  const cards = player?.hand?.slice(0, 6) || [];
+  const cards = player?.hand?.slice(0, 5) || [];
   const overflowCount = Math.max(0, (player?.hand?.length || 0) - cards.length);
   const openSeq = isOpen ? String(app.peekRevealSeq || 0) : '0';
   const renderKey = [
@@ -331,11 +372,13 @@ function getFlashValue(app, type, targetId = '') {
 function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   const root = slotDom.root;
   const portrait = slotDom.portrait;
+  const whistle = slotDom.whistle;
   const shout = slotDom.shout;
   const peek = slotDom.peek;
   const name = slotDom.name;
   const count = slotDom.count;
   const status = slotDom.status;
+  const reveal = app.challengeReveal || null;
 
   root.className = 'cast-seat';
   root.dataset.facing = slotMeta?.facing || 'right';
@@ -354,6 +397,7 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
     root.style.removeProperty('--seat-secondary');
     root.style.removeProperty('--seat-accent-dim');
     portrait.innerHTML = '';
+    clearNode(whistle);
     clearNode(peek);
     setText(shout, '');
     setText(name, 'empty seat');
@@ -363,13 +407,16 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   }
 
   const theme = window.ModelThemes.getTheme(player.modelId);
-  const portraitState = getPortraitState(player, state);
-  const shoutText = getSeatShout(player, state);
-  const badgeText = getSeatBadge(player, state);
+  const portraitState = getPortraitState(player, state, reveal);
+  const shoutText = getSeatShout(player, state, reveal);
+  const badgeText = getSeatBadge(player, state, reveal);
   const showShout = shouldRenderSeatShout(shoutText);
+  const showWhistle = (reveal?.stage === 'incoming' && player.id === reveal.claimantId)
+    || (!reveal && state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id);
 
   root.dataset.playerId = player.id;
   root.dataset.badge = showShout ? '' : badgeText;
+  root.dataset.revealStage = reveal?.stage || '';
   root.style.setProperty('--seat-accent', theme.accent);
   root.style.setProperty('--seat-accent-bright', theme.accentBright);
   root.style.setProperty('--seat-secondary', theme.secondary);
@@ -382,12 +429,15 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
     portraitState,
     `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
   );
+  whistle.innerHTML = showWhistle
+    ? Array.from({ length: 6 }, (_, index) => `<span class="whistle-particle whistle-particle--${index + 1}"></span>`).join('')
+    : '';
   setText(shout, showShout ? shoutText : '');
   setText(name, getPlayerName(player));
   setText(count, `${player.handSize} ${player.handSize === 1 ? 'card' : 'cards'}`);
-  setText(status, getSeatStatus(player, state));
+  setText(status, getSeatStatus(player, state, reveal));
 
-  getSeatClasses(player, state).forEach((className) => root.classList.add(className));
+  getSeatClasses(player, state, reveal).forEach((className) => root.classList.add(className));
   renderPeekTray(peek, root, slotMeta, player, state, app);
 }
 
@@ -458,12 +508,38 @@ function renderPile(container, pileSize) {
   container.appendChild(icon);
 }
 
-function buildHudState(state, reveal) {
+function renderExperimentGuide(container, selectedExperimentId) {
+  if (!container) return;
+  const selectedId = String(selectedExperimentId ?? '1');
+  container.innerHTML = EXPERIMENTS.map((experiment) => {
+    const isSelected = experiment.id === selectedId;
+    return `
+      <details class="experiment-faq-item ${isSelected ? 'is-selected' : ''}" ${isSelected ? 'open' : ''}>
+        <summary class="experiment-faq-summary">
+          <span class="experiment-faq-id">exp ${experiment.id}</span>
+          <span class="experiment-faq-title">${experiment.title}</span>
+          <span class="experiment-faq-line">${experiment.summary}</span>
+        </summary>
+        <div class="experiment-faq-detail">${experiment.detail}</div>
+      </details>
+    `;
+  }).join('');
+}
+
+function buildHudState(state, reveal, challengeReveal) {
   if (!state) {
     return {
       primary: 'table quiet',
       secondary: 'choose a table mode',
       emphasizeReveal: false,
+    };
+  }
+
+  if (challengeReveal) {
+    return {
+      primary: challengeReveal.primary,
+      secondary: challengeReveal.secondary,
+      emphasizeReveal: true,
     };
   }
 
@@ -509,9 +585,9 @@ function buildHudState(state, reveal) {
   };
 }
 
-function renderHudState(primaryContainer, secondaryContainer, state, reveal) {
+function renderHudState(primaryContainer, secondaryContainer, state, reveal, challengeReveal) {
   primaryContainer.innerHTML = '';
-  const hudState = buildHudState(state, reveal);
+  const hudState = buildHudState(state, reveal, challengeReveal);
   const primary = document.createElement('div');
   primary.className = 'claim-line';
   if (hudState.emphasizeReveal) {
@@ -533,6 +609,23 @@ function buildDialogueState(app) {
       text: 'Choose how you want to experience the table.',
       banner: null,
       runtime: 'idle',
+    };
+  }
+
+  if (app.challengeReveal) {
+    return {
+      speaker: app.challengeReveal.stage === 'incoming'
+        ? app.challengeReveal.challengerName
+        : app.challengeReveal.winnerName,
+      text: app.challengeReveal.secondary,
+      banner: {
+        state: app.challengeReveal.stage === 'incoming'
+          ? 'objection'
+          : (app.challengeReveal.challengeCorrect ? 'sustained' : 'overruled'),
+        label: app.challengeReveal.primary,
+        copy: app.challengeReveal.secondary,
+      },
+      runtime: 'reveal',
     };
   }
 
@@ -690,9 +783,6 @@ function renderDialogue(dom, app) {
   const feedEntries = showSpectatorFeed ? buildSpectatorFeedEntries(state) : [];
 
   setText(dom.phaseKicker, dialogue.speaker);
-  setText(dom.modeChip, state?.interactive ? 'interactive' : (app.launcherMode || 'spectator'));
-  setText(dom.providerChip, app.provider);
-  setText(dom.runtimeChip, dialogue.runtime);
 
   dom.phaseMain.hidden = showSpectatorFeed;
   if (!showSpectatorFeed) {
@@ -818,6 +908,9 @@ function renderLog(dom, state) {
 }
 
 function renderStats(dom, statsState) {
+  if (!dom.statsMeta || !dom.statsEmpty || !dom.statsTableWrap || !dom.statsBody) {
+    return;
+  }
   setText(dom.statsMeta, statsState.meta);
   if (statsState.loading) {
     dom.statsEmpty.hidden = false;
@@ -909,6 +1002,7 @@ export function bindDom(documentRef = document) {
       return [slotId, {
         root,
         portrait: byRole(root, 'portrait'),
+        whistle: byRole(root, 'whistle'),
         shout: byRole(root, 'shout'),
         peek: byRole(root, 'peek'),
         name: byRole(root, 'name'),
@@ -926,9 +1020,6 @@ export function bindDom(documentRef = document) {
     utilityCloseBtn: documentRef.getElementById('utility-close-btn'),
     sidebarTabButtons: [...documentRef.querySelectorAll('[data-sidebar-tab]')],
     sidebarSections: [...documentRef.querySelectorAll('[data-sidebar-section]')],
-    modeChip: documentRef.getElementById('mode-chip'),
-    providerChip: documentRef.getElementById('provider-chip'),
-    runtimeChip: documentRef.getElementById('runtime-chip'),
     phaseKicker: documentRef.getElementById('phase-kicker'),
     phaseMain: documentRef.getElementById('phase-main'),
     dialogueFeed: documentRef.getElementById('dialogue-feed'),
@@ -979,6 +1070,8 @@ export function bindDom(documentRef = document) {
     autoPlayBtn: documentRef.getElementById('auto-play-btn'),
     setupToggleBtn: documentRef.getElementById('setup-toggle-btn'),
     experimentSelect: documentRef.getElementById('experiment-select'),
+    experimentGuideList: documentRef.getElementById('experiment-guide-list'),
+    researchStatsLink: documentRef.getElementById('research-stats-link'),
   };
 }
 
@@ -987,9 +1080,11 @@ export function renderApp(dom, app, layout, onToggleCard) {
   const viewState = state
     ? { ...state, thinkingPlayerId: app.ephemeralThinkingPlayerId ?? state.thinkingPlayerId }
     : null;
+  const revealLocked = Boolean(app.challengeReveal);
 
   dom.root.dataset.mode = viewState?.interactive ? 'interactive' : (app.launcherMode || 'spectator');
   dom.root.dataset.sidebarOpen = app.utilityOpen ? 'true' : 'false';
+  dom.root.dataset.challengeReveal = revealLocked ? app.challengeReveal.stage : '';
 
   renderDialogue(dom, { ...app, currentState: viewState });
   setText(dom.roundNumber, String((viewState?.totalTurns || 0) + 1));
@@ -998,8 +1093,12 @@ export function renderApp(dom, app, layout, onToggleCard) {
   dom.pendingDisplay.dataset.flash = getFlashValue(app, 'zone', 'claim');
   dom.pileDisplay.dataset.flash = getFlashValue(app, 'zone', 'pile');
   renderPile(dom.pileDisplay, viewState?.pileSize || 0);
-  renderHudState(dom.pendingDisplay, dom.pendingSubline, viewState, app.transientReveal);
+  renderHudState(dom.pendingDisplay, dom.pendingSubline, viewState, app.transientReveal, app.challengeReveal);
   renderTurnRibbon(dom.turnRibbon, viewState);
+  renderExperimentGuide(dom.experimentGuideList, dom.experimentSelect?.value);
+  if (dom.researchStatsLink) {
+    dom.researchStatsLink.href = `/stats.html?experiment=${encodeURIComponent(dom.experimentSelect?.value || '1')}`;
+  }
 
   SLOT_IDS.forEach((slotId) => {
     const playerId = layout.slots[slotId];
@@ -1018,10 +1117,10 @@ export function renderApp(dom, app, layout, onToggleCard) {
   dom.sidebarSections.forEach((section) => {
     section.hidden = section.dataset.sidebarSection !== app.sidebarTab;
   });
-  dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy;
+  dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy || revealLocked;
   dom.autoPlayBtn.disabled = app.autoPlaying
     ? !app.currentGameId
-    : !app.currentGameId || viewState?.phase === 'finished' || app.stepBusy || Boolean(viewState?.awaitingHumanAction);
+    : !app.currentGameId || viewState?.phase === 'finished' || app.stepBusy || Boolean(viewState?.awaitingHumanAction) || revealLocked;
   setText(dom.autoPlayBtn, app.autoPlaying ? 'stop' : 'auto');
 }
 

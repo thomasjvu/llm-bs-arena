@@ -1,4 +1,4 @@
-import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats, fetchGameState } from './app/api.js';
+import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats, probeGameState } from './app/api.js';
 import { createAudio } from './app/audio.js';
 import { createEffects } from './app/effects.js';
 import { DEFAULT_SLOT_ID, buildSlotLayout, getSlotForPlayer } from './app/layout.js';
@@ -34,6 +34,9 @@ const app = {
   ephemeralThinkingPlayerId: null,
   transientReveal: null,
   transientRevealTimer: null,
+  challengeReveal: null,
+  challengeRevealStageTimer: null,
+  challengeRevealClearTimer: null,
   spectatorPeekPlayerId: null,
   peekRevealSeq: 0,
   attention: null,
@@ -160,6 +163,87 @@ function setTransientReveal(cards, label = '') {
   }, 1500);
 }
 
+function clearChallengeReveal(shouldRender = true) {
+  if (app.challengeRevealStageTimer) {
+    window.clearTimeout(app.challengeRevealStageTimer);
+    app.challengeRevealStageTimer = null;
+  }
+  if (app.challengeRevealClearTimer) {
+    window.clearTimeout(app.challengeRevealClearTimer);
+    app.challengeRevealClearTimer = null;
+  }
+  app.challengeReveal = null;
+  if (shouldRender) render();
+}
+
+function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextLayout, flightCount, cards }) {
+  clearChallengeReveal(false);
+
+  const claimant = nextState.players.find((player) => player.id === resolvedTurn.playerId);
+  const challenger = nextState.players.find((player) => player.id === resolvedTurn.challengerId);
+  const winnerId = resolvedTurn.challengeCorrect ? resolvedTurn.challengerId : resolvedTurn.playerId;
+  const loserId = resolvedTurn.challengeCorrect ? resolvedTurn.playerId : resolvedTurn.challengerId;
+  const winner = nextState.players.find((player) => player.id === winnerId);
+  const loser = nextState.players.find((player) => player.id === loserId);
+  const loserSlotId = getSlotForPlayer(nextLayout, loserId) || DEFAULT_SLOT_ID;
+  const pickupCount = Math.max(1, (previousPileSize || 0) + flightCount);
+  const resultSecondary = resolvedTurn.challengeCorrect
+    ? `${getFrontendPlayerName(loser)} takes the pile.`
+    : nextState.winner === winnerId
+      ? `${getFrontendPlayerName(winner)} beats the objection and wins the table.`
+      : `${getFrontendPlayerName(winner)} beats the objection.`;
+
+  app.challengeReveal = {
+    stage: 'incoming',
+    claimantId: resolvedTurn.playerId,
+    claimantName: getFrontendPlayerName(claimant),
+    challengerId: resolvedTurn.challengerId,
+    challengerName: getFrontendPlayerName(challenger),
+    winnerId,
+    winnerName: getFrontendPlayerName(winner),
+    loserId,
+    loserName: getFrontendPlayerName(loser),
+    challengeCorrect: Boolean(resolvedTurn.challengeCorrect),
+    artState: resolvedTurn.challengeCorrect ? 'safe-lie' : 'safe-truth',
+    primary: `${getFrontendPlayerName(challenger)} calls bullshit`,
+    secondary: `Resolving ${getFrontendPlayerName(claimant)}'s ${resolvedTurn.claimedCount} x ${resolvedTurn.claimedRank}.`,
+  };
+  render();
+
+  app.challengeRevealStageTimer = window.setTimeout(() => {
+    app.challengeRevealStageTimer = null;
+    if (!app.challengeReveal) return;
+    app.challengeReveal = {
+      ...app.challengeReveal,
+      stage: 'resolution',
+      primary: `${app.challengeReveal.winnerName} wins objection`,
+      secondary: resultSecondary,
+    };
+    if (cards.length) {
+      setTransientReveal(cards, '');
+    }
+    effects.animateCardFlight(
+      dom.pileDisplay,
+      dom.slots[loserSlotId]?.root,
+      Math.min(4, Math.max(previousPileSize || 1, flightCount)),
+      210
+    );
+    setAttention({
+      playerIds: [resolvedTurn.playerId, resolvedTurn.challengerId].filter(Boolean),
+      zones: ['claim', 'pile'],
+      variant: resolvedTurn.challengeCorrect ? 'danger' : 'success',
+    }, 920);
+    effects.shakeStage(dom.main, resolvedTurn.challengeCorrect ? 'danger' : 'success');
+    audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'claim_stands');
+    audio.playPickup(pickupCount);
+    render();
+  }, 650);
+
+  app.challengeRevealClearTimer = window.setTimeout(() => {
+    clearChallengeReveal();
+  }, 2000);
+}
+
 function getPublicResolutionLabel(turn) {
   if (!turn) return '';
   if (!turn.challenged) return 'claim stands';
@@ -170,6 +254,13 @@ function normalizeCard(card) {
   if (typeof card === 'string') return card;
   if (card?.rank && card?.suit) return `${card.rank}${card.suit}`;
   return '';
+}
+
+function getFrontendPlayerName(player) {
+  if (!player) return 'Unknown';
+  if (player.displayName) return player.displayName;
+  if (player.modelId) return window.ModelThemes.getTheme(player.modelId).shortName || player.modelId;
+  return 'Unknown';
 }
 
 function normalizeState(state) {
@@ -194,6 +285,9 @@ function updateMode(mode) {
 function setCurrentState(nextState) {
   const previous = app.currentState;
   const next = normalizeState(nextState);
+  if (!previous || previous.gameId !== next.gameId) {
+    clearChallengeReveal(false);
+  }
   app.previousState = previous;
   app.currentState = next;
   app.currentGameId = next.gameId;
@@ -257,26 +351,21 @@ function handleTransition(previous, next) {
   if (previousPending && !nextPending && resolvedTurn) {
     const cards = (resolvedTurn.actualCards || []).map(normalizeCard).filter(Boolean);
     const flightCount = Math.max(resolvedTurn.claimedCount || 1, cards.length || 1);
-    const pickupCount = Math.max(1, (previous?.pileSize || 0) + flightCount);
-    if (cards.length) {
-      setTransientReveal(cards, getPublicResolutionLabel(resolvedTurn));
-    }
-
     effects.animateCardFlight(dom.pendingDisplay, dom.pileDisplay, flightCount);
 
     if (resolvedTurn.challenged) {
-      const loserId = resolvedTurn.challengeCorrect ? resolvedTurn.playerId : resolvedTurn.challengerId;
-      const loserSlotId = getSlotForPlayer(nextLayout, loserId) || DEFAULT_SLOT_ID;
-      effects.animateCardFlight(dom.pileDisplay, dom.slots[loserSlotId]?.root, Math.min(4, Math.max(previous?.pileSize || 1, flightCount)), 210);
-      setAttention({
-        playerIds: [resolvedTurn.playerId, resolvedTurn.challengerId].filter(Boolean),
-        zones: ['claim', 'pile'],
-        variant: resolvedTurn.challengeCorrect ? 'danger' : 'success',
-      }, 720);
-      effects.shakeStage(dom.main, resolvedTurn.challengeCorrect ? 'danger' : 'success');
-      audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'claim_stands');
-      audio.playPickup(pickupCount);
+      startChallengeReveal({
+        nextState: next,
+        resolvedTurn,
+        previousPileSize: previous?.pileSize || 0,
+        nextLayout,
+        flightCount,
+        cards,
+      });
     } else {
+      if (cards.length) {
+        setTransientReveal(cards, getPublicResolutionLabel(resolvedTurn));
+      }
       setAttention({
         playerIds: [resolvedTurn.playerId].filter(Boolean),
         zones: ['claim', 'pile'],
@@ -286,7 +375,7 @@ function handleTransition(previous, next) {
     }
   }
 
-  if (next.winner && next.winner !== previous?.winner) {
+  if (next.winner && next.winner !== previous?.winner && !resolvedTurn?.challenged) {
     setAttention({
       playerIds: [next.winner],
       zones: ['claim', 'pile'],
@@ -322,6 +411,7 @@ async function startNewGame() {
   app.resumeAutoPlay = false;
   clearAttention(false);
   resetTransientReveal();
+  clearChallengeReveal(false);
   stopAutoPlay(false);
   render();
 
@@ -407,6 +497,12 @@ async function startAutoPlay() {
         break;
       }
       if (app.currentState?.phase === 'finished' || app.currentState?.awaitingHumanAction) {
+        break;
+      }
+      while (app.autoPlaying && app.challengeReveal) {
+        await window.advanceTime(80);
+      }
+      if (!app.autoPlaying || app.currentState?.phase === 'finished' || app.currentState?.awaitingHumanAction) {
         break;
       }
 
@@ -515,8 +611,13 @@ async function restoreGameSessionOnLoad() {
   }
 
   try {
-    const state = await fetchGameState(preferences.activeGameId);
+    const probe = await probeGameState(preferences.activeGameId);
+    if (!probe?.found || !probe.state) {
+      throw new Error('Game not found');
+    }
+    const state = probe.state;
     app.launcherOpen = false;
+    clearChallengeReveal(false);
     setCurrentState(state);
 
     if (!state.interactive && preferences.resumeAutoPlay && state.phase !== 'finished' && !state.awaitingHumanAction) {
@@ -630,9 +731,6 @@ dom.sidebarTabButtons.forEach((button) => {
     app.utilityOpen = true;
     app.sidebarTab = button.dataset.sidebarTab || 'utility';
     render();
-    if (app.sidebarTab === 'stats') {
-      void refreshStats();
-    }
   });
 });
 
@@ -674,14 +772,14 @@ dom.passBtn.addEventListener('click', () => {
   void submitChallengeDecision(false);
 });
 
-dom.statsRefreshBtn.addEventListener('click', () => {
-  void refreshStats();
-});
+if (dom.statsRefreshBtn) {
+  dom.statsRefreshBtn.addEventListener('click', () => {
+    void refreshStats();
+  });
+}
 
 dom.experimentSelect.addEventListener('change', () => {
-  if (app.sidebarTab === 'stats') {
-    void refreshStats();
-  }
+  render();
 });
 
 dom.soundToggleBtn.addEventListener('click', () => {

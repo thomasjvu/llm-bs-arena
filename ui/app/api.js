@@ -99,6 +99,13 @@ export async function fetchGameState(gameId) {
   return parseJson(response);
 }
 
+export async function probeGameState(gameId) {
+  const response = await fetch(`${API_BASE}/game/${gameId}/state?soft=1`, {
+    method: 'GET',
+  });
+  return parseJson(response);
+}
+
 export async function submitHumanPlay(gameId, cardsToPlay) {
   const response = await fetch(`${API_BASE}/game/${gameId}/human/play`, {
     method: 'POST',

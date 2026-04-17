@@ -548,13 +548,17 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
 }
 
 // Get current game state
-function handleGetGameState(res: http.ServerResponse, gameId: string) {
+function handleGetGameState(res: http.ServerResponse, gameId: string, softMissing = false) {
   const game = activeGames.get(gameId);
   if (!game) {
+    if (softMissing) {
+      sendJSON(res, { found: false, gameId });
+      return;
+    }
     sendJSON(res, { error: 'Game not found' }, 404);
     return;
   }
-  sendJSON(res, getFullGameState(game));
+  sendJSON(res, softMissing ? { found: true, state: getFullGameState(game) } : getFullGameState(game));
 }
 
 async function handleHumanPlay(req: http.IncomingMessage, res: http.ServerResponse, gameId: string) {
@@ -835,7 +839,7 @@ const server = http.createServer(async (req, res) => {
         await handleStartGame(req, res);
       } else if (apiPath.match(/^\/game\/[^/]+\/state$/) && req.method === 'GET') {
         const gameId = apiPath.split('/')[2];
-        handleGetGameState(res, gameId);
+        handleGetGameState(res, gameId, parsedUrl.query.soft === '1');
       } else if (apiPath.match(/^\/game\/[^/]+\/human\/play$/) && req.method === 'POST') {
         const gameId = apiPath.split('/')[2];
         await handleHumanPlay(req, res, gameId);
