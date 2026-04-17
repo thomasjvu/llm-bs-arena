@@ -1,4 +1,5 @@
-import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats } from './app/api.js';
+import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats, fetchGameState } from './app/api.js';
+import { createAudio } from './app/audio.js';
 import { createEffects } from './app/effects.js';
 import { DEFAULT_SLOT_ID, buildSlotLayout, getSlotForPlayer } from './app/layout.js';
 import { bindDom, renderApp, buildTextState } from './app/render.js';
@@ -6,16 +7,16 @@ import { loadPreferences, savePreferences } from './app/storage.js';
 
 const dom = bindDom(document);
 const effects = createEffects();
+const preferences = loadPreferences();
+const audio = createAudio({ enabled: preferences.soundEnabled });
 const themeIssues = window.ModelThemes?.validateRegistry?.() || [];
 
 if (themeIssues.length) {
   console.warn('[frontend] theme registry issues:\n' + themeIssues.join('\n'));
 }
 
-const preferences = loadPreferences();
-
 const app = {
-  currentGameId: null,
+  currentGameId: preferences.activeGameId || null,
   currentState: null,
   previousState: null,
   launcherMode: preferences.mode || 'spectator',
@@ -26,7 +27,7 @@ const app = {
   launcherBusy: false,
   launcherError: '',
   utilityOpen: false,
-  logOpen: false,
+  sidebarTab: 'utility',
   stepBusy: false,
   autoPlaying: false,
   selectedCards: new Set(),
@@ -34,11 +35,13 @@ const app = {
   transientReveal: null,
   transientRevealTimer: null,
   spectatorPeekPlayerId: null,
+  peekRevealSeq: 0,
   attention: null,
   attentionTimer: null,
   attentionSeq: 0,
+  soundEnabled: preferences.soundEnabled !== false,
+  resumeAutoPlay: preferences.resumeAutoPlay === true,
   stats: {
-    open: false,
     loading: false,
     error: '',
     meta: 'Open stats to load the current comparable cohort.',
@@ -64,6 +67,9 @@ function setSpectatorPeek(playerId) {
   const nextPlayerId = canOpenSpectatorPeek(playerId) ? playerId : null;
   if (app.spectatorPeekPlayerId === nextPlayerId) return;
   app.spectatorPeekPlayerId = nextPlayerId;
+  if (nextPlayerId) {
+    app.peekRevealSeq += 1;
+  }
   render();
 }
 
@@ -104,10 +110,23 @@ function persistPreferences() {
     mode: app.launcherMode,
     provider: app.provider,
     humanName: app.humanName,
+    soundEnabled: app.soundEnabled,
+    activeGameId: app.currentGameId,
+    resumeAutoPlay: !app.currentState?.interactive && app.resumeAutoPlay === true,
   });
   app.launcherMode = next.mode || app.launcherMode;
   app.provider = next.provider;
   app.humanName = next.humanName;
+  app.soundEnabled = next.soundEnabled;
+  app.currentGameId = next.activeGameId;
+  app.resumeAutoPlay = next.resumeAutoPlay;
+  audio.setEnabled(app.soundEnabled);
+}
+
+function clearStoredGameSession() {
+  app.currentGameId = null;
+  app.resumeAutoPlay = false;
+  persistPreferences();
 }
 
 function syncWindowState() {
@@ -141,6 +160,12 @@ function setTransientReveal(cards, label = '') {
   }, 1500);
 }
 
+function getPublicResolutionLabel(turn) {
+  if (!turn) return '';
+  if (!turn.challenged) return 'claim stands';
+  return turn.challengeCorrect ? 'lie exposed' : 'truth revealed';
+}
+
 function normalizeCard(card) {
   if (typeof card === 'string') return card;
   if (card?.rank && card?.suit) return `${card.rank}${card.suit}`;
@@ -172,6 +197,8 @@ function setCurrentState(nextState) {
   app.previousState = previous;
   app.currentState = next;
   app.currentGameId = next.gameId;
+  app.launcherMode = next.interactive ? 'interactive' : 'spectator';
+  app.provider = next.provider || app.provider;
   app.ephemeralThinkingPlayerId = null;
 
   if (next.interactive || !next.players?.some((player) => player.id === app.spectatorPeekPlayerId)) {
@@ -179,13 +206,39 @@ function setCurrentState(nextState) {
   }
 
   handleTransition(previous, next);
+  if (next.phase === 'finished') {
+    app.resumeAutoPlay = false;
+  }
+  persistPreferences();
   render();
+}
+
+function getNewFeedEntries(previous, next) {
+  const previousFeed = previous?.currentTurnFeed;
+  const nextFeed = next?.currentTurnFeed;
+  if (!nextFeed?.entries?.length) return [];
+  if (!previousFeed || previousFeed.turnNumber !== nextFeed.turnNumber) {
+    return nextFeed.entries;
+  }
+  return nextFeed.entries.slice(previousFeed.entries.length);
 }
 
 function handleTransition(previous, next) {
   const previousPending = previous?.pendingTurn;
   const nextPending = next?.pendingTurn;
   const nextLayout = buildSlotLayout(next);
+  const newFeedEntries = previous ? getNewFeedEntries(previous, next) : [];
+  const challengeEntry = newFeedEntries.find((entry) => entry.type === 'challenge');
+
+  if (challengeEntry) {
+    setAttention({
+      playerIds: [challengeEntry.playerId, challengeEntry.targetPlayerId].filter(Boolean),
+      zones: ['claim'],
+      variant: 'danger',
+    }, 720);
+    effects.shakeStage(dom.main, 'danger');
+    audio.playChallenge();
+  }
 
   if (!previousPending && nextPending) {
     const slotId = getSlotForPlayer(nextLayout, nextPending.playerId) || DEFAULT_SLOT_ID;
@@ -204,8 +257,9 @@ function handleTransition(previous, next) {
   if (previousPending && !nextPending && resolvedTurn) {
     const cards = (resolvedTurn.actualCards || []).map(normalizeCard).filter(Boolean);
     const flightCount = Math.max(resolvedTurn.claimedCount || 1, cards.length || 1);
+    const pickupCount = Math.max(1, (previous?.pileSize || 0) + flightCount);
     if (cards.length) {
-      setTransientReveal(cards, resolvedTurn.wasLie ? 'lie exposed' : 'truth revealed');
+      setTransientReveal(cards, getPublicResolutionLabel(resolvedTurn));
     }
 
     effects.animateCardFlight(dom.pendingDisplay, dom.pileDisplay, flightCount);
@@ -219,12 +273,16 @@ function handleTransition(previous, next) {
         zones: ['claim', 'pile'],
         variant: resolvedTurn.challengeCorrect ? 'danger' : 'success',
       }, 720);
+      effects.shakeStage(dom.main, resolvedTurn.challengeCorrect ? 'danger' : 'success');
+      audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'claim_stands');
+      audio.playPickup(pickupCount);
     } else {
       setAttention({
         playerIds: [resolvedTurn.playerId].filter(Boolean),
         zones: ['claim', 'pile'],
         variant: 'turn',
       });
+      audio.playResolution('claim_stands');
     }
   }
 
@@ -234,6 +292,7 @@ function handleTransition(previous, next) {
       zones: ['claim', 'pile'],
       variant: 'winner',
     }, 900);
+    effects.shakeStage(dom.main, 'success');
   }
 
   if (next.awaitingHumanAction?.type !== 'play') {
@@ -258,7 +317,9 @@ async function startNewGame() {
   app.launcherError = '';
   app.selectedCards.clear();
   app.spectatorPeekPlayerId = null;
+  app.peekRevealSeq = 0;
   app.utilityOpen = false;
+  app.resumeAutoPlay = false;
   clearAttention(false);
   resetTransientReveal();
   stopAutoPlay(false);
@@ -280,6 +341,8 @@ async function startNewGame() {
 
     if (state.phase !== 'finished' && !state.awaitingHumanAction) {
       void startAutoPlay();
+    } else {
+      persistPreferences();
     }
   } catch (error) {
     app.launcherBusy = false;
@@ -309,6 +372,9 @@ async function stepOnce() {
     return true;
   } catch (error) {
     app.launcherError = error instanceof Error ? error.message : String(error);
+    if (String(app.launcherError).includes('Game not found')) {
+      clearStoredGameSession();
+    }
     render();
     return false;
   } finally {
@@ -321,6 +387,8 @@ async function stepOnce() {
 async function startAutoPlay() {
   if (app.autoPlaying || !app.currentGameId) return;
   app.autoPlaying = true;
+  app.resumeAutoPlay = !app.currentState?.interactive;
+  persistPreferences();
   render();
 
   try {
@@ -351,12 +419,16 @@ async function startAutoPlay() {
     }
   } finally {
     app.autoPlaying = false;
+    app.resumeAutoPlay = false;
+    persistPreferences();
     render();
   }
 }
 
 function stopAutoPlay(shouldRender = true) {
   app.autoPlaying = false;
+  app.resumeAutoPlay = false;
+  persistPreferences();
   if (shouldRender) render();
 }
 
@@ -375,6 +447,9 @@ async function submitPlay() {
     }
   } catch (error) {
     app.launcherError = error instanceof Error ? error.message : String(error);
+    if (String(app.launcherError).includes('Game not found')) {
+      clearStoredGameSession();
+    }
     render();
   }
 }
@@ -393,6 +468,9 @@ async function submitChallengeDecision(challenge) {
     }
   } catch (error) {
     app.launcherError = error instanceof Error ? error.message : String(error);
+    if (String(app.launcherError).includes('Game not found')) {
+      clearStoredGameSession();
+    }
     render();
   } finally {
     dom.challengeBtn.disabled = false;
@@ -403,7 +481,6 @@ async function submitChallengeDecision(challenge) {
 async function refreshStats() {
   app.stats.loading = true;
   app.stats.error = '';
-  app.stats.open = true;
   app.stats.meta = `Loading experiment ${dom.experimentSelect.value} leaderboard...`;
   render();
 
@@ -428,6 +505,33 @@ async function refreshStats() {
   }
 }
 
+async function restoreGameSessionOnLoad() {
+  render();
+
+  if (!preferences.activeGameId) {
+    app.launcherOpen = true;
+    render();
+    return;
+  }
+
+  try {
+    const state = await fetchGameState(preferences.activeGameId);
+    app.launcherOpen = false;
+    setCurrentState(state);
+
+    if (!state.interactive && preferences.resumeAutoPlay && state.phase !== 'finished' && !state.awaitingHumanAction) {
+      void startAutoPlay();
+    }
+  } catch (_error) {
+    clearStoredGameSession();
+    app.currentState = null;
+    app.previousState = null;
+    app.launcherOpen = true;
+    app.launcherError = '';
+    render();
+  }
+}
+
 Object.values(dom.slots).forEach(({ root }) => {
   root.addEventListener('pointerenter', () => {
     if (!supportsHoverPeek()) return;
@@ -447,6 +551,9 @@ Object.values(dom.slots).forEach(({ root }) => {
     if (!canPeek) return;
 
     app.spectatorPeekPlayerId = canPeek && app.spectatorPeekPlayerId !== playerId ? playerId : null;
+    if (app.spectatorPeekPlayerId) {
+      app.peekRevealSeq += 1;
+    }
     render();
     event.stopPropagation();
   });
@@ -458,14 +565,15 @@ document.addEventListener('click', (event) => {
       clearSpectatorPeek();
     }
   }
-
-  if (!event.target.closest('#utility-drawer') && !event.target.closest('#utility-toggle-btn')) {
-    if (app.utilityOpen) {
-      app.utilityOpen = false;
-      render();
-    }
-  }
 });
+
+document.addEventListener('pointerdown', () => {
+  void audio.unlock();
+}, { passive: true });
+
+document.addEventListener('keydown', () => {
+  void audio.unlock();
+}, { passive: true });
 
 dom.launcherModeButtons.forEach((button) => {
   button.addEventListener('click', () => updateMode(button.dataset.launchMode));
@@ -517,6 +625,17 @@ dom.setupToggleBtn.addEventListener('click', () => {
   render();
 });
 
+dom.sidebarTabButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    app.utilityOpen = true;
+    app.sidebarTab = button.dataset.sidebarTab || 'utility';
+    render();
+    if (app.sidebarTab === 'stats') {
+      void refreshStats();
+    }
+  });
+});
+
 dom.newGameBtn.addEventListener('click', () => {
   if (!app.launcherMode) {
     app.launcherOpen = true;
@@ -555,42 +674,23 @@ dom.passBtn.addEventListener('click', () => {
   void submitChallengeDecision(false);
 });
 
-dom.logToggleBtn.addEventListener('click', () => {
-  app.logOpen = !app.logOpen;
-  render();
-});
-
-dom.logCloseBtn.addEventListener('click', () => {
-  app.logOpen = false;
-  render();
-});
-
-dom.statsToggleBtn.addEventListener('click', () => {
-  app.stats.open = !app.stats.open;
-  render();
-  if (app.stats.open) {
-    void refreshStats();
-  }
-});
-
-dom.statsCloseBtn.addEventListener('click', () => {
-  app.stats.open = false;
-  render();
-});
-
 dom.statsRefreshBtn.addEventListener('click', () => {
   void refreshStats();
 });
 
 dom.experimentSelect.addEventListener('change', () => {
-  if (app.stats.open) {
+  if (app.sidebarTab === 'stats') {
     void refreshStats();
   }
 });
 
-window.addEventListener('load', () => {
+dom.soundToggleBtn.addEventListener('click', () => {
+  app.soundEnabled = !app.soundEnabled;
+  audio.setEnabled(app.soundEnabled);
+  persistPreferences();
   render();
-  if (preferences.mode) {
-    void startNewGame();
-  }
+});
+
+window.addEventListener('load', () => {
+  void restoreGameSessionOnLoad();
 });

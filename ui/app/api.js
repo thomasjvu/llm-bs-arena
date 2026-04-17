@@ -92,6 +92,13 @@ export async function stepGame(gameId, handlers = {}) {
   return parseJson(response);
 }
 
+export async function fetchGameState(gameId) {
+  const response = await fetch(`${API_BASE}/game/${gameId}/state`, {
+    method: 'GET',
+  });
+  return parseJson(response);
+}
+
 export async function submitHumanPlay(gameId, cardsToPlay) {
   const response = await fetch(`${API_BASE}/game/${gameId}/human/play`, {
     method: 'POST',

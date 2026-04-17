@@ -211,10 +211,10 @@ function createCardSVG(rank, suit) {
 
   // Corner suit (top-left, below rank)
   const suitPattern = SUIT_PATTERNS[suitInfo.name];
-  svg += patternToPixels(suitPattern, color, 4, 22, 1);
+  svg += patternToPixels(suitPattern, color, 7, 22, 1);
 
   // Center suit (larger, main focus)
-  svg += patternToPixels(suitPattern, color, width / 2 - 14, height / 2 - 5, 2);
+  svg += patternToPixels(suitPattern, color, width / 2 - 15, height / 2 - 5, 2);
 
   // Bottom-right rank (rotated 180)
   if (rankPattern) {
@@ -224,7 +224,7 @@ function createCardSVG(rank, suit) {
 
   // Bottom-right suit
   const flippedSuit = suitPattern.map(r => [...r].reverse().join('')).reverse();
-  svg += patternToPixels(flippedSuit, color, width - 16, height - 32, 1);
+  svg += patternToPixels(flippedSuit, color, width - 19, height - 32, 1);
 
   svg += '</svg>';
   return svg;

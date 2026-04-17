@@ -11,211 +11,221 @@
 </head>
 <body>
   <div class="app-shell" id="app-shell">
-    <button class="utility-toggle" id="utility-toggle-btn" type="button" aria-label="Open menu">
-      <span></span>
-      <span></span>
-      <span></span>
-    </button>
+    <div class="app-main">
+      <button class="utility-toggle" id="utility-toggle-btn" type="button" aria-label="Open menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
 
-    <section class="screen-hud">
-      <div class="hud-claim">
-        <span class="table-label">required claim</span>
-        <div class="claim-row">
-          <strong class="pending-rank" id="current-rank">A</strong>
-          <div class="pending-display" id="pending-display"></div>
-        </div>
-      </div>
-
-      <div class="hud-turn-order">
-        <span class="table-label">turn order</span>
-        <div class="turn-ribbon" id="turn-ribbon"></div>
-      </div>
-
-      <div class="hud-side">
-        <div class="hud-chip-panel">
-          <span class="table-label">round</span>
-          <strong class="table-value" id="round-number">1</strong>
-        </div>
-
-        <div class="hud-chip-panel hud-chip-panel--discard">
-          <div class="hud-chip-header">
-            <span class="table-label">discard</span>
-            <span class="panel-meta" id="pile-count">0 cards</span>
-          </div>
-          <div class="pile-display" id="pile-display"></div>
-        </div>
-      </div>
-    </section>
-
-    <main class="cinema-stage">
-      <section class="cast-grid">
-        <section class="cast-seat" data-slot="cast-0">
-          <div class="seat-avatar" data-role="portrait"></div>
-          <div class="seat-shout" data-role="shout"></div>
-          <div class="seat-peek-tray" data-role="peek"></div>
-          <div class="seat-footer">
-            <div class="seat-name" data-role="name">empty seat</div>
-            <div class="seat-chip-row">
-              <span class="seat-chip" data-role="count">0 cards</span>
-              <span class="seat-chip" data-role="status"></span>
+      <section class="screen-hud">
+        <div class="hud-claim">
+          <div class="claim-row">
+            <div class="claim-stack">
+              <strong class="pending-rank" id="current-rank">A</strong>
+              <span class="table-label claim-caption">required claim</span>
             </div>
-          </div>
-        </section>
 
-        <section class="cast-seat" data-slot="cast-1">
-          <div class="seat-avatar" data-role="portrait"></div>
-          <div class="seat-shout" data-role="shout"></div>
-          <div class="seat-peek-tray" data-role="peek"></div>
-          <div class="seat-footer">
-            <div class="seat-name" data-role="name">empty seat</div>
-            <div class="seat-chip-row">
-              <span class="seat-chip" data-role="count">0 cards</span>
-              <span class="seat-chip" data-role="status"></span>
-            </div>
-          </div>
-        </section>
-
-        <section class="cast-seat" data-slot="cast-2">
-          <div class="seat-avatar" data-role="portrait"></div>
-          <div class="seat-shout" data-role="shout"></div>
-          <div class="seat-peek-tray" data-role="peek"></div>
-          <div class="seat-footer">
-            <div class="seat-name" data-role="name">empty seat</div>
-            <div class="seat-chip-row">
-              <span class="seat-chip" data-role="count">0 cards</span>
-              <span class="seat-chip" data-role="status"></span>
-            </div>
-          </div>
-        </section>
-
-        <section class="cast-seat" data-slot="cast-3">
-          <div class="seat-avatar" data-role="portrait"></div>
-          <div class="seat-shout" data-role="shout"></div>
-          <div class="seat-peek-tray" data-role="peek"></div>
-          <div class="seat-footer">
-            <div class="seat-name" data-role="name">empty seat</div>
-            <div class="seat-chip-row">
-              <span class="seat-chip" data-role="count">0 cards</span>
-              <span class="seat-chip" data-role="status"></span>
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <section class="dialogue-bar">
-        <div class="dialogue-box">
-          <div class="dialogue-header">
-            <span class="phase-kicker" id="phase-kicker">launcher</span>
-          </div>
-
-          <div class="phase-main" id="phase-main">Choose how you want to experience the table.</div>
-
-          <div class="challenge-banner" id="challenge-banner" hidden>
-            <span class="challenge-label" id="challenge-label">challenge window</span>
-            <span class="challenge-copy" id="challenge-copy"></span>
-          </div>
-
-          <div class="dialogue-feed" id="dialogue-feed" hidden></div>
-
-          <div class="dialogue-command-panel" id="command-panel" hidden>
-            <div class="command-head">
-              <div>
-                <div class="command-kicker" id="human-action-title">your move</div>
-                <div class="command-rank" id="human-action-rank"></div>
+            <div class="hud-claim-meta">
+              <div class="hud-chip-panel">
+                <span class="table-label">round</span>
+                <strong class="table-value" id="round-number">1</strong>
               </div>
-              <div class="command-mode" id="human-action-mode">manual</div>
-            </div>
 
-            <div class="command-copy" id="human-action-copy"></div>
-            <div class="dialogue-hand" id="dialogue-hand"></div>
-            <div class="selected-cards" id="selected-cards"></div>
-
-            <div class="command-buttons" id="human-play-buttons">
-              <button class="control-btn control-btn-primary" id="submit-play-btn" disabled type="button">play selected cards</button>
-              <button class="control-btn" id="clear-play-btn" disabled type="button">clear</button>
-            </div>
-
-            <div class="command-buttons" id="human-challenge-buttons" hidden>
-              <button class="control-btn control-btn-primary" id="challenge-btn" type="button">call bullshit</button>
-              <button class="control-btn" id="pass-btn" type="button">pass</button>
+              <div class="hud-chip-panel hud-chip-panel--discard">
+                <div class="pile-display" id="pile-display"></div>
+                <div class="hud-chip-header">
+                  <span class="table-label">discard</span>
+                  <span class="panel-meta" id="pile-count">0 cards</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </section>
-    </main>
 
-    <aside class="drawer utility-drawer" id="utility-drawer" hidden>
-      <div class="drawer-header">
-        <span>utility</span>
-        <button class="control-btn" id="utility-close-btn" type="button">close</button>
+        <div class="hud-state">
+          <div class="pending-display" id="pending-display"></div>
+          <div class="pending-subline" id="pending-subline"></div>
+        </div>
+
+        <div class="hud-turn-order">
+          <div class="turn-ribbon" id="turn-ribbon"></div>
+        </div>
+      </section>
+
+      <main class="cinema-stage">
+        <section class="cast-grid">
+          <section class="cast-seat" data-slot="cast-0">
+            <div class="seat-avatar" data-role="portrait"></div>
+            <div class="seat-shout" data-role="shout"></div>
+            <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-footer">
+              <div class="seat-name" data-role="name">empty seat</div>
+              <div class="seat-chip-row">
+                <span class="seat-chip" data-role="count">0 cards</span>
+                <span class="seat-chip" data-role="status"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="cast-seat" data-slot="cast-1">
+            <div class="seat-avatar" data-role="portrait"></div>
+            <div class="seat-shout" data-role="shout"></div>
+            <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-footer">
+              <div class="seat-name" data-role="name">empty seat</div>
+              <div class="seat-chip-row">
+                <span class="seat-chip" data-role="count">0 cards</span>
+                <span class="seat-chip" data-role="status"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="cast-seat" data-slot="cast-2">
+            <div class="seat-avatar" data-role="portrait"></div>
+            <div class="seat-shout" data-role="shout"></div>
+            <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-footer">
+              <div class="seat-name" data-role="name">empty seat</div>
+              <div class="seat-chip-row">
+                <span class="seat-chip" data-role="count">0 cards</span>
+                <span class="seat-chip" data-role="status"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="cast-seat" data-slot="cast-3">
+            <div class="seat-avatar" data-role="portrait"></div>
+            <div class="seat-shout" data-role="shout"></div>
+            <div class="seat-peek-tray" data-role="peek"></div>
+            <div class="seat-footer">
+              <div class="seat-name" data-role="name">empty seat</div>
+              <div class="seat-chip-row">
+                <span class="seat-chip" data-role="count">0 cards</span>
+                <span class="seat-chip" data-role="status"></span>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="dialogue-bar">
+          <div class="dialogue-box">
+            <div class="dialogue-header">
+              <span class="phase-kicker" id="phase-kicker">launcher</span>
+            </div>
+
+            <div class="phase-main" id="phase-main">Choose how you want to experience the table.</div>
+
+            <div class="challenge-banner" id="challenge-banner" hidden>
+              <span class="challenge-label" id="challenge-label">challenge window</span>
+              <span class="challenge-copy" id="challenge-copy"></span>
+            </div>
+
+            <div class="dialogue-feed" id="dialogue-feed" hidden></div>
+
+            <div class="dialogue-command-panel" id="command-panel" hidden>
+              <div class="command-head">
+                <div>
+                  <div class="command-kicker" id="human-action-title">your move</div>
+                  <div class="command-rank" id="human-action-rank"></div>
+                </div>
+                <div class="command-mode" id="human-action-mode">manual</div>
+              </div>
+
+              <div class="command-copy" id="human-action-copy"></div>
+              <div class="dialogue-hand" id="dialogue-hand"></div>
+              <div class="selected-cards" id="selected-cards"></div>
+
+              <div class="command-buttons" id="human-play-buttons">
+                <button class="control-btn control-btn-primary" id="submit-play-btn" disabled type="button">play selected cards</button>
+                <button class="control-btn" id="clear-play-btn" disabled type="button">clear</button>
+              </div>
+
+              <div class="command-buttons" id="human-challenge-buttons" hidden>
+                <button class="control-btn control-btn-primary" id="challenge-btn" type="button">call bullshit</button>
+                <button class="control-btn" id="pass-btn" type="button">pass</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="side-panel" id="utility-drawer" aria-label="Table menu">
+      <div class="drawer-header side-panel-header">
+        <span>menu</span>
+        <button class="control-btn side-panel-close" id="utility-close-btn" type="button">close</button>
       </div>
-      <div class="drawer-meta">
+
+      <div class="drawer-meta side-panel-meta">
         <div class="status-cluster utility-status">
           <span class="status-chip" id="mode-chip">spectator</span>
           <span class="status-chip" id="provider-chip">mock</span>
           <span class="status-chip" id="runtime-chip">idle</span>
         </div>
       </div>
-      <div class="drawer-body utility-body">
-        <label class="control-select">
-          <span>experiment</span>
-          <select id="experiment-select">
-            <option value="0">control</option>
-            <option value="1" selected>baseline</option>
-            <option value="2">asymmetric</option>
-            <option value="3">honesty</option>
-          </select>
-        </label>
 
-        <div class="utility-actions">
-          <button class="control-btn control-btn-primary" id="new-game-btn" type="button">new game</button>
-          <button class="control-btn" id="step-btn" disabled type="button">step</button>
-          <button class="control-btn" id="auto-play-btn" disabled type="button">auto</button>
-          <button class="control-btn" id="setup-toggle-btn" type="button">setup</button>
-          <button class="control-btn" id="log-toggle-btn" type="button">log</button>
-          <button class="control-btn" id="stats-toggle-btn" type="button">stats</button>
-        </div>
+      <div class="side-tabs">
+        <button class="side-tab" data-sidebar-tab="utility" type="button">utility</button>
+        <button class="side-tab" data-sidebar-tab="log" type="button">log</button>
+        <button class="side-tab" data-sidebar-tab="stats" type="button">stats</button>
       </div>
-    </aside>
 
-    <aside class="drawer" id="log-drawer" hidden>
-      <div class="drawer-header">
-        <span>table log</span>
-        <button class="control-btn" id="log-close-btn" type="button">close</button>
-      </div>
-      <div class="drawer-body" id="log-list">
-        <div class="drawer-empty">Start a game to see the public action log.</div>
-      </div>
-    </aside>
+      <div class="side-panel-scroll">
+        <section class="side-section" data-sidebar-section="utility">
+          <label class="control-select">
+            <span>experiment</span>
+            <select id="experiment-select">
+              <option value="0">control</option>
+              <option value="1" selected>baseline</option>
+              <option value="2">asymmetric</option>
+              <option value="3">honesty</option>
+            </select>
+          </label>
 
-    <aside class="drawer drawer--wide" id="stats-drawer" hidden>
-      <div class="drawer-header">
-        <span>leaderboard</span>
-        <div class="drawer-actions">
-          <button class="control-btn" id="stats-refresh-btn" type="button">refresh</button>
-          <button class="control-btn" id="stats-close-btn" type="button">close</button>
-        </div>
-      </div>
-      <div class="drawer-meta" id="stats-meta">Open stats to load the current comparable cohort.</div>
-      <div class="drawer-body">
-        <div class="drawer-empty" id="stats-empty">No leaderboard loaded yet.</div>
-        <div class="stats-table-wrap" id="stats-table-wrap" hidden>
-          <table class="stats-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>model</th>
-                <th>win%</th>
-                <th>wins</th>
-                <th>lies</th>
-                <th>lie ok%</th>
-                <th>challenge%</th>
-                <th>challenge acc%</th>
-              </tr>
-            </thead>
-            <tbody id="stats-body"></tbody>
-          </table>
-        </div>
+          <div class="utility-actions">
+            <button class="control-btn control-btn-primary" id="new-game-btn" type="button">new game</button>
+            <button class="control-btn" id="step-btn" disabled type="button">step</button>
+            <button class="control-btn" id="auto-play-btn" disabled type="button">auto</button>
+            <button class="control-btn" id="setup-toggle-btn" type="button">setup</button>
+            <button class="control-btn" id="sound-toggle-btn" type="button">sound on</button>
+          </div>
+        </section>
+
+        <section class="side-section" data-sidebar-section="log" hidden>
+          <div class="side-section-title">table log</div>
+          <div class="side-section-body" id="log-list">
+            <div class="drawer-empty">Start a game to see the public action log.</div>
+          </div>
+        </section>
+
+        <section class="side-section" data-sidebar-section="stats" hidden>
+          <div class="side-section-top">
+            <span class="side-section-title">leaderboard</span>
+            <button class="control-btn" id="stats-refresh-btn" type="button">refresh</button>
+          </div>
+          <div class="drawer-meta" id="stats-meta">Open stats to load the current comparable cohort.</div>
+          <div class="side-section-body">
+            <div class="drawer-empty" id="stats-empty">No leaderboard loaded yet.</div>
+            <div class="stats-table-wrap" id="stats-table-wrap" hidden>
+              <table class="stats-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>model</th>
+                    <th>win%</th>
+                    <th>wins</th>
+                    <th>lies</th>
+                    <th>lie ok%</th>
+                    <th>challenge%</th>
+                    <th>challenge acc%</th>
+                  </tr>
+                </thead>
+                <tbody id="stats-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
     </aside>
 

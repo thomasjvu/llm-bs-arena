@@ -74,3 +74,29 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Shifted the seat layout further toward figure-dominant columns: portraits scale larger, idle portraits fade back, footer metadata overlays at the bottom, and the old orange live spotlight treatment is gone.
 - Updated targeted tests for the new fixed-slot frontend assumptions and added server-state coverage for pending/resolved current-turn feeds including explicit pass entries.
 - Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/cards.js` and `npx vitest run src/test/server-state.test.ts src/test/frontend-ui.test.ts` all passed.
+
+2026-04-16
+- Reworked the live shell into a real two-column app layout: the hamburger now opens a right-side panel that pushes the board left instead of layering popup utility, log, and stats drawers on top of the stage.
+- Updated the top HUD to a `25 / 50 / 25` composition so required claim, turn order, and round/discard align more cleanly with the four-seat board below.
+- Switched the turn ribbon to frontend short names and kept the larger portrait-over-name tile format with arrows between seats.
+- Added a lightweight Web Audio feedback layer for objections, resolutions, and pile pickups, with a persisted `soundEnabled` preference and sidebar toggle.
+- Added restrained stage shake on challenge and resolution impacts, without bringing back fullscreen objection overlays.
+- Fixed the spectator hover-rerender bug by stabilizing peek-tray render keys so an already-open tray does not re-flip on unrelated state updates.
+- Replaced the last ambiguous `hold it!` / `defense` seat copy with literal live-state labels like `challenged` and `judge`.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/audio.js`, `ui/app/effects.js`, `ui/cards.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-16
+- Reshaped the HUD again around clearer table-state scanning: the center column now shows the live table state (`2 x 7 on table`, `A required`, `winner decided`) plus a secondary action line, while the turn ribbon moved into the right header column above round/discard.
+- Increased portrait scale further so the character art fills more of each column and removed the footer background overlay so name/card metadata sits directly on the stage art.
+- Adjusted finished-game seat logic so the winner screen shows `winner` for the winning player and `lose` for everyone else instead of leaving live turn/judge/challenged language behind.
+- Nudged the small corner suit icons in `ui/cards.js` inward on both the top-left and bottom-right corners to better center them beside the rank markers.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/cards.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-16
+- Rebuilt the top HUD into strict `33 / 33 / 33`: left column now combines the oversized required claim with round/discard to its right, the middle column is a larger live table-state readout, and the right column is turn order only with no heading.
+- Extended frontend persistence to track `activeGameId` and spectator autoplay resume intent, and switched load behavior from blind `startNewGame()` to reconnecting through the existing `GET /api/game/:id/state` route when possible.
+- Fixed the refresh mismatch bug by restoring the existing game state on load, resuming spectator autoplay only when it was previously active, and clearing stale stored sessions when the server no longer has the game.
+- Cleaned up seat emphasis so inactive seats fade as a whole, routine live-state labels are badge-only, footer status chips no longer duplicate `judge`/`acting`/`challenged`, and finished tables show only `winner` or `lose`.
+- Corrected the spectator truth leak: the main HUD now stays public-only after unchallenged turns (`claim stands` instead of leaking `lie exposed`), while the sidebar log may show hidden truth after resolution in spectator mode.
+- Added a subtle challenge “whistle” particle effect near the challenged character’s face and pushed the synthesized audio cues toward a more playful, pronounced tone.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/app/audio.js`, `ui/app/storage.js`, `ui/app/api.js`, `ui/cards.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.

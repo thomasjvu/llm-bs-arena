@@ -1,4 +1,6 @@
 export function createEffects() {
+  let shakeTimer = null;
+
   function animateCardFlight(fromEl, toEl, count = 1, delay = 0) {
     if (!fromEl || !toEl || !window.CardRenderer) return;
 
@@ -48,8 +50,28 @@ export function createEffects() {
     }, 1400);
   }
 
+  function shakeStage(targetEl, variant = 'danger') {
+    if (!targetEl) return;
+
+    if (shakeTimer) {
+      window.clearTimeout(shakeTimer);
+      shakeTimer = null;
+    }
+
+    targetEl.classList.remove('is-shaking', 'is-shaking-danger', 'is-shaking-success');
+    void targetEl.offsetWidth;
+    targetEl.classList.add('is-shaking');
+    targetEl.classList.add(variant === 'success' ? 'is-shaking-success' : 'is-shaking-danger');
+
+    shakeTimer = window.setTimeout(() => {
+      targetEl.classList.remove('is-shaking', 'is-shaking-danger', 'is-shaking-success');
+      shakeTimer = null;
+    }, 280);
+  }
+
   return {
     animateCardFlight,
     showBurst,
+    shakeStage,
   };
 }
