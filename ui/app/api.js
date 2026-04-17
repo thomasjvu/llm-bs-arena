@@ -128,3 +128,10 @@ export async function fetchStats(experimentId) {
   const response = await fetch(`${API_BASE}/stats?experiment=${experimentId}`);
   return parseJson(response);
 }
+
+export async function fetchRuntimeStatus() {
+  const response = await fetch(`${API_BASE}/runtime`, {
+    method: 'GET',
+  });
+  return parseJson(response);
+}

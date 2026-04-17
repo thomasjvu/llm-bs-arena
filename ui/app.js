@@ -1,4 +1,4 @@
-import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats, probeGameState } from './app/api.js';
+import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats, probeGameState, fetchRuntimeStatus } from './app/api.js';
 import { createAudio } from './app/audio.js';
 import { createEffects } from './app/effects.js';
 import { DEFAULT_SLOT_ID, buildSlotLayout, getSlotForPlayer } from './app/layout.js';
@@ -10,6 +10,8 @@ const effects = createEffects();
 const preferences = loadPreferences();
 const audio = createAudio({ enabled: preferences.soundEnabled });
 const themeIssues = window.ModelThemes?.validateRegistry?.() || [];
+const FIXED_HUMAN_NAME = 'You';
+const MASKED_SERVER_KEY = '••••••••';
 
 if (themeIssues.length) {
   console.warn('[frontend] theme registry issues:\n' + themeIssues.join('\n'));
@@ -21,8 +23,9 @@ const app = {
   previousState: null,
   launcherMode: preferences.mode || 'spectator',
   provider: preferences.provider || 'mock',
-  humanName: preferences.humanName || 'you',
+  humanName: FIXED_HUMAN_NAME,
   apiKey: '',
+  serverApiKeyAvailable: false,
   launcherOpen: !preferences.mode,
   launcherBusy: false,
   launcherError: '',
@@ -44,6 +47,10 @@ const app = {
   attentionSeq: 0,
   soundEnabled: preferences.soundEnabled !== false,
   resumeAutoPlay: preferences.resumeAutoPlay === true,
+  serverTimeOffsetMs: 0,
+  messageTimerKey: '',
+  messageTimerStartedAt: 0,
+  messageTimerNow: 0,
   stats: {
     loading: false,
     error: '',
@@ -51,6 +58,109 @@ const app = {
     data: null,
   },
 };
+
+function computeMessageTimerKey() {
+  if (app.challengeReveal) {
+    return [
+      'reveal',
+      app.challengeReveal.stage,
+      app.challengeReveal.primary,
+      app.challengeReveal.secondary,
+    ].join('|');
+  }
+
+  const state = app.currentState;
+  if (!state) return '';
+
+  if (state.phase === 'finished') {
+    return `finished|${state.gameId}|${state.winner}|${state.totalTurns}`;
+  }
+
+  if (state.awaitingHumanAction?.type === 'play') {
+    return [
+      'manual-play',
+      state.gameId,
+      state.awaitingHumanAction.playerId,
+      state.awaitingHumanAction.currentRank,
+      state.totalTurns,
+    ].join('|');
+  }
+
+  if (state.awaitingHumanAction?.type === 'challenge') {
+    const pendingPlay = state.awaitingHumanAction.pendingPlay || {};
+    return [
+      'manual-challenge',
+      state.gameId,
+      state.awaitingHumanAction.playerId,
+      pendingPlay.playerId || '',
+      pendingPlay.claimedCount || '',
+      pendingPlay.claimedRank || '',
+      state.totalTurns,
+    ].join('|');
+  }
+
+  if (state.phase === 'challenging' && state.pendingTurn) {
+    return [
+      'challenge-window',
+      state.gameId,
+      state.pendingTurn.playerId,
+      state.pendingTurn.claimedCount,
+      state.pendingTurn.claimedRank,
+      state.thinkingPlayerId || '',
+      state.totalTurns,
+    ].join('|');
+  }
+
+  const latestTurn = state.turns?.[state.turns.length - 1];
+  if (latestTurn?.challenged) {
+    return [
+      'resolved-challenge',
+      state.gameId,
+      latestTurn.turnNumber || state.totalTurns,
+      latestTurn.playerId,
+      latestTurn.challengerId || '',
+      latestTurn.challengeCorrect ? 'correct' : 'wrong',
+    ].join('|');
+  }
+
+  const thinkerId = app.ephemeralThinkingPlayerId || state.thinkingPlayerId || '';
+  if (thinkerId) {
+    return ['thinking', state.gameId, thinkerId, state.totalTurns].join('|');
+  }
+
+  return [
+    'live',
+    state.gameId,
+    state.players?.[state.currentPlayerIndex]?.id || '',
+    state.currentRank || '',
+    state.totalTurns,
+  ].join('|');
+}
+
+function getServerAlignedNow() {
+  return Date.now() + app.serverTimeOffsetMs;
+}
+
+function getVisibleMessageStartTime() {
+  if (app.challengeReveal?.stageStartedAt) {
+    return app.challengeReveal.stageStartedAt;
+  }
+  return app.currentState?.phaseStartedAt || 0;
+}
+
+function formatMessageTimerText() {
+  if (!app.messageTimerKey || !app.messageTimerStartedAt || app.messageTimerNow < app.messageTimerStartedAt) {
+    return '';
+  }
+  return `${((app.messageTimerNow - app.messageTimerStartedAt) / 1000).toFixed(1)}s`;
+}
+
+function syncMessageTimer() {
+  const nextKey = computeMessageTimerKey();
+  app.messageTimerKey = nextKey;
+  app.messageTimerStartedAt = nextKey ? getVisibleMessageStartTime() : 0;
+  app.messageTimerNow = nextKey ? getServerAlignedNow() : 0;
+}
 
 function supportsHoverPeek() {
   return window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
@@ -120,7 +230,7 @@ function persistPreferences() {
   const next = savePreferences({
     mode: app.launcherMode,
     provider: app.provider,
-    humanName: app.humanName,
+    humanName: FIXED_HUMAN_NAME,
     soundEnabled: app.soundEnabled,
     activeGameId: app.currentGameId,
     resumeAutoPlay: !app.currentState?.interactive && app.resumeAutoPlay === true,
@@ -132,6 +242,25 @@ function persistPreferences() {
   app.currentGameId = next.activeGameId;
   app.resumeAutoPlay = next.resumeAutoPlay;
   audio.setEnabled(app.soundEnabled);
+}
+
+async function hydrateRuntimeStatus() {
+  try {
+    const status = await fetchRuntimeStatus();
+    app.serverApiKeyAvailable = status?.hasServerApiKey === true;
+
+    if (
+      preferences.mode == null &&
+      preferences.provider === 'mock' &&
+      status?.defaultProvider === 'nim' &&
+      !app.currentGameId
+    ) {
+      app.provider = 'nim';
+    }
+    render();
+  } catch (_error) {
+    app.serverApiKeyAvailable = false;
+  }
 }
 
 function clearStoredGameSession() {
@@ -147,6 +276,7 @@ function syncWindowState() {
 }
 
 function render() {
+  syncMessageTimer();
   const layout = buildSlotLayout(app.currentState);
   renderApp(dom, app, layout, toggleSelectedCard);
   syncWindowState();
@@ -203,6 +333,7 @@ function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextL
 
   app.challengeReveal = {
     stage: 'incoming',
+    stageStartedAt: nextState.serverNow || getServerAlignedNow(),
     claimantId: resolvedTurn.playerId,
     claimantName: getFrontendPlayerName(claimant),
     challengerId: resolvedTurn.challengerId,
@@ -212,7 +343,8 @@ function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextL
     loserId,
     loserName: getFrontendPlayerName(loser),
     challengeCorrect: Boolean(resolvedTurn.challengeCorrect),
-    artState: resolvedTurn.challengeCorrect ? 'safe-lie' : 'safe-truth',
+    claimantState: resolvedTurn.challengeCorrect ? 'lose' : 'objection_safe',
+    challengerState: resolvedTurn.challengeCorrect ? 'objection_correct' : 'lose',
     primary: `${getFrontendPlayerName(challenger)} calls bullshit`,
     secondary: `Resolving ${getFrontendPlayerName(claimant)}'s ${resolvedTurn.claimedCount} x ${resolvedTurn.claimedRank}.`,
   };
@@ -224,6 +356,7 @@ function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextL
     app.challengeReveal = {
       ...app.challengeReveal,
       stage: 'resolution',
+      stageStartedAt: getServerAlignedNow(),
       primary: `${app.challengeReveal.winnerName} wins objection`,
       secondary: resultSecondary,
     };
@@ -245,11 +378,11 @@ function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextL
     audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'claim_stands');
     audio.playPickup(pickupCount);
     render();
-  }, 650);
+  }, 1150);
 
   app.challengeRevealClearTimer = window.setTimeout(() => {
     clearChallengeReveal();
-  }, 2000);
+  }, 2500);
 }
 
 function getPublicResolutionLabel(turn) {
@@ -279,6 +412,8 @@ function normalizeState(state) {
     awaitingHumanAction: state?.awaitingHumanAction ?? null,
     thinkingPlayerId: state?.thinkingPlayerId ?? null,
     winnerName: state?.winnerName ?? null,
+    phaseStartedAt: Number(state?.phaseStartedAt) || 0,
+    serverNow: Number(state?.serverNow) || 0,
   };
 }
 
@@ -298,6 +433,9 @@ function setCurrentState(nextState) {
   }
   app.previousState = previous;
   app.currentState = next;
+  if (next.serverNow > 0) {
+    app.serverTimeOffsetMs = next.serverNow - Date.now();
+  }
   app.currentGameId = next.gameId;
   app.launcherMode = next.interactive ? 'interactive' : 'spectator';
   app.provider = next.provider || app.provider;
@@ -695,15 +833,22 @@ dom.providerSelect.addEventListener('change', () => {
   render();
 });
 
-dom.humanNameInput.addEventListener('input', () => {
-  app.humanName = dom.humanNameInput.value.trim() || 'you';
-  persistPreferences();
-  render();
+dom.apiKeyInput.addEventListener('input', () => {
+  app.apiKey = dom.apiKeyInput.value === MASKED_SERVER_KEY ? '' : dom.apiKeyInput.value;
+  app.launcherError = '';
 });
 
-dom.apiKeyInput.addEventListener('input', () => {
-  app.apiKey = dom.apiKeyInput.value;
-  app.launcherError = '';
+dom.apiKeyInput.addEventListener('focus', () => {
+  if (app.provider !== 'nim') return;
+  if (app.apiKey) return;
+  if (!app.serverApiKeyAvailable) return;
+  if (dom.apiKeyInput.value === MASKED_SERVER_KEY) {
+    dom.apiKeyInput.value = '';
+  }
+});
+
+dom.apiKeyInput.addEventListener('blur', () => {
+  if (!app.apiKey) render();
 });
 
 dom.launchButton.addEventListener('click', () => {
@@ -798,5 +943,15 @@ dom.soundToggleBtn.addEventListener('click', () => {
 });
 
 window.addEventListener('load', () => {
+  void hydrateRuntimeStatus();
   void restoreGameSessionOnLoad();
 });
+
+window.setInterval(() => {
+  if (document.hidden) return;
+  if (!app.currentState && !app.messageTimerKey) return;
+  syncMessageTimer();
+  if (dom.phaseTimer) {
+    dom.phaseTimer.textContent = formatMessageTimerText();
+  }
+}, 100);

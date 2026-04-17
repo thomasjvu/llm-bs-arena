@@ -6,6 +6,7 @@ export interface ServerGameSnapshot {
   phase: 'waiting' | 'playing' | 'challenging' | 'finished';
   pendingTurn: Turn | null;
   challengeQueue: string[];
+  lastUpdate: number;
   humanPlayerId: string | null;
   hidePrivateState: boolean;
   provider: string;
@@ -215,6 +216,8 @@ export function buildClientGameState(game: ServerGameSnapshot) {
     gameId: state.gameId,
     experimentId: state.experimentId,
     phase: game.phase,
+    phaseStartedAt: game.lastUpdate,
+    serverNow: Date.now(),
     players: state.players.map((player, index) => ({
       id: player.id,
       modelId: player.modelId,

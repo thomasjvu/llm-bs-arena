@@ -23,7 +23,7 @@ const PORT = 3001;
 const UI_DIR = path.join(process.cwd(), 'ui');
 const LOGS_DIR = path.join(process.cwd(), 'logs/games');
 const HUMAN_MODEL_ID = 'human/player';
-const DEFAULT_HUMAN_NAME = 'you';
+const DEFAULT_HUMAN_NAME = 'You';
 const MODEL_SET = new Set<string>(MODELS as readonly string[]);
 
 // Active games with step-by-step execution
@@ -157,6 +157,14 @@ function sendJSON(res: http.ServerResponse, data: any, status = 200) {
     'Access-Control-Allow-Origin': '*',
   });
   res.end(JSON.stringify(data));
+}
+
+function handleGetRuntimeStatus(res: http.ServerResponse) {
+  sendJSON(res, {
+    defaultProvider: detectProvider(),
+    hasServerApiKey: Boolean(process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY),
+    hasServerBaseUrl: Boolean(process.env.NVIDIA_NIM_BASE_URL),
+  });
 }
 
 // SSE helpers for streaming
@@ -871,6 +879,8 @@ const server = http.createServer(async (req, res) => {
         handleGetGame(res, gameId);
       } else if (apiPath === '/stats' && req.method === 'GET') {
         handleGetStats(res, parsedUrl.query.experiment as string);
+      } else if (apiPath === '/runtime' && req.method === 'GET') {
+        handleGetRuntimeStatus(res);
       } else {
         sendJSON(res, { error: 'Not found' }, 404);
       }

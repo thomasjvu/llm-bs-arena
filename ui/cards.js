@@ -236,26 +236,24 @@ function createCardBackSVG() {
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">`;
 
-  svg += `<defs>
-    <pattern id="dots" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
-      <circle cx="4" cy="4" r="1" fill="#000000" opacity="0.2"/>
-    </pattern>
-  </defs>`;
-
   svg += `<rect x="2" y="2" width="${width - 4}" height="${height - 4}" fill="#ffffff" rx="2" ry="2" stroke="#000000" stroke-width="2"/>`;
-
-  // Dot pattern
-  svg += `<rect x="6" y="6" width="${width - 12}" height="${height - 12}" fill="url(#dots)" rx="2"/>`;
 
   // Border decorations
   svg += `<rect x="4" y="4" width="${width - 8}" height="${height - 8}" fill="none" stroke="#000000" stroke-width="1.5" rx="2"/>`;
-  svg += `<rect x="8" y="8" width="${width - 16}" height="${height - 16}" fill="none" stroke="#000000" stroke-width="1" rx="2" stroke-dasharray="4 2"/>`;
 
-  // Center decoration - X pattern
-  const cx = width / 2;
-  const cy = height / 2;
-  svg += `<line x1="${cx - 8}" y1="${cy - 12}" x2="${cx + 8}" y2="${cy + 12}" stroke="#000000" stroke-width="2"/>`;
-  svg += `<line x1="${cx + 8}" y1="${cy - 12}" x2="${cx - 8}" y2="${cy + 12}" stroke="#000000" stroke-width="2"/>`;
+  // Center decoration - diamond sigil
+  svg += `
+    <g transform="translate(8 20)">
+      <path
+        fill="#000000"
+        stroke="#000000"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="1.2"
+        d="M33.75 14.25L24 4.5l-9.75 9.75v19.5L24 43.5l9.75-9.75z"
+      />
+    </g>
+  `;
 
   svg += '</svg>';
   return svg;

@@ -18,7 +18,7 @@ window.ModelThemes = (() => {
   // - nvidia/nemotron-3-super-120b-a12b currently uses the GLM folder as a temporary placeholder.
   // - Unused image folders currently present in the repo: deepseek, gemma.
   // - Actively used states in gameplay: default, judged, judging, thinking/raising-hand, win, lose.
-  // - Reveal-only states now available for challenge outcomes: safe-lie, safe-truth.
+  // - Reveal-only states now available for challenge outcomes: objection_safe, objection_correct.
   // - Any unregistered provider/model id falls back to the GLM portrait set until dedicated art is added.
   const PLACEHOLDER_THEME_IDS = new Set([
     'nvidia/nemotron-3-super-120b-a12b',
@@ -186,8 +186,8 @@ window.ModelThemes = (() => {
     judged: 'judged',
     judging: 'judging',
     lose: 'lose',
-    'safe-lie': 'safe-lie',
-    'safe-truth': 'safe-truth',
+    objection_safe: 'objection_safe',
+    objection_correct: 'objection_correct',
     thinking: 'raising-hand',
     win: 'win',
   };
@@ -284,7 +284,7 @@ window.ModelThemes = (() => {
       placeholderThemes: [...PLACEHOLDER_THEME_IDS],
       unusedFolders: ['deepseek', 'gemma'],
       activeStates: ['default', 'judged', 'judging', 'thinking', 'win', 'lose'],
-      revealStates: ['safe-lie', 'safe-truth'],
+      revealStates: ['objection_safe', 'objection_correct'],
     };
   }
 

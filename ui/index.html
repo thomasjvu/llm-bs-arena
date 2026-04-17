@@ -26,28 +26,26 @@
               <span class="table-label claim-caption">required claim</span>
             </div>
 
-            <div class="hud-claim-meta">
-              <div class="hud-chip-panel hud-chip-panel--round">
-                <div class="round-notebook">
-                  <strong class="table-value round-value" id="round-number">1</strong>
-                  <span class="table-label round-caption">round</span>
-                </div>
+            <div class="hud-chip-panel hud-chip-panel--round">
+              <div class="round-notebook">
+                <strong class="table-value round-value" id="round-number">1</strong>
+                <span class="table-label round-caption">round</span>
               </div>
+            </div>
 
-              <div class="hud-chip-panel hud-chip-panel--discard">
-                <div class="pile-display" id="pile-display"></div>
-                <div class="hud-chip-header">
-                  <span class="table-label">discard</span>
-                  <span class="panel-meta" id="pile-count">0 cards</span>
-                </div>
+            <div class="hud-chip-panel hud-chip-panel--discard">
+              <div class="pile-display" id="pile-display"></div>
+              <div class="hud-chip-header">
+                <span class="table-label">discard</span>
+                <span class="panel-meta" id="pile-count">0 cards</span>
               </div>
             </div>
           </div>
         </div>
 
         <div class="hud-state">
-          <div class="pending-display" id="pending-display"></div>
           <div class="pending-subline" id="pending-subline"></div>
+          <div class="pending-display" id="pending-display"></div>
         </div>
 
         <div class="hud-turn-order">
@@ -60,6 +58,7 @@
           <section class="cast-seat" data-slot="cast-0">
             <div class="seat-avatar" data-role="portrait"></div>
             <div class="seat-whistle" data-role="whistle"></div>
+            <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
             <div class="seat-footer">
@@ -74,6 +73,7 @@
           <section class="cast-seat" data-slot="cast-1">
             <div class="seat-avatar" data-role="portrait"></div>
             <div class="seat-whistle" data-role="whistle"></div>
+            <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
             <div class="seat-footer">
@@ -88,6 +88,7 @@
           <section class="cast-seat" data-slot="cast-2">
             <div class="seat-avatar" data-role="portrait"></div>
             <div class="seat-whistle" data-role="whistle"></div>
+            <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
             <div class="seat-footer">
@@ -102,6 +103,7 @@
           <section class="cast-seat" data-slot="cast-3">
             <div class="seat-avatar" data-role="portrait"></div>
             <div class="seat-whistle" data-role="whistle"></div>
+            <div class="seat-think" data-role="judge-fx"></div>
             <div class="seat-shout" data-role="shout"></div>
             <div class="seat-peek-tray" data-role="peek"></div>
             <div class="seat-footer">
@@ -118,6 +120,7 @@
           <div class="dialogue-box">
             <div class="dialogue-header">
               <span class="phase-kicker" id="phase-kicker">launcher</span>
+              <span class="phase-timer" id="phase-timer"></span>
             </div>
 
             <div class="phase-main" id="phase-main">Choose how you want to experience the table.</div>
@@ -237,10 +240,8 @@
             </select>
           </label>
 
-          <label class="launcher-field" id="human-name-field" hidden>
-            <span>player name</span>
-            <input id="human-name-input" type="text" placeholder="you">
-          </label>
+          <input id="human-name-input" type="hidden" value="You">
+          <div id="human-name-field" hidden></div>
 
           <label class="launcher-field" id="api-key-field" hidden>
             <span>api key</span>

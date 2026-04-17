@@ -110,7 +110,7 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 
 2026-04-16
 - Added a client-side challenge reveal beat: challenged resolutions now hold the table for roughly 2 seconds, with an initial objection beat followed by a stronger winner/loser result beat before autoplay continues.
-- Wired the dormant `safe-lie` / `safe-truth` portrait states into that reveal phase, added a visible dedicated whistle particle layer for challenged claimants, and reduced spectator seat trays from 6 visible cards to 5.
+- Wired the dormant objection-resolution portrait states into that reveal phase, added a visible dedicated whistle particle layer for challenged claimants, and reduced spectator seat trays from 6 visible cards to 5.
 - Removed the sidebar stats tab and added a dedicated `ui/stats.html` research summary page driven by the existing `/api/stats` API and shared experiment metadata.
 - Tightened the left HUD spacing so required claim sits farther from the round notebook while the round and discard cluster sit closer together.
 - Documented the current frontend asset audit in `ui/model-themes.js`, including active folders, unused folders, placeholder Nemotron behavior, and the newly used reveal-only states.
@@ -118,6 +118,13 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 
 2026-04-17
 - Fixed the manual-play surface layout so the human hand row gets dedicated space in the bottom strip instead of being clipped by the narration/banner rows inside the fixed-height dialogue box.
+- Fixed the manual cross-examination grammar so the human seat now reads `You are...` instead of `You is...`.
+- Replaced the temporary judge `?` cue with the supplied animated scribble SVG and moved it slightly higher above the judging character.
+- Rebalanced the top HUD so required claim sits left, the notebook round card is centered, discard sits right, and the middle status subtitle now sits above a larger main state line.
+- Flattened the card back further by removing the dot pattern and switching the center diamond sigil to a filled black mark.
+- Removed the remaining dashed inner border from the card back, increased seat tray previews from 5 to 6 cards, and kept multi-row stacking only for the human player’s fully revealed tray.
+- Added a subtle pulse to the actively thinking actor and a small live timer in the dialogue header so each message beat shows how long it has been on screen.
+- Renamed the objection-resolution portrait assets to `objection_safe` / `objection_correct`, and updated reveal logic so objection outcomes use those dedicated poses plus `lose` instead of incorrectly reusing the game-winning `win` pose.
 - Added explicit bottom-strip render modes (`manual-play`, `manual-challenge`, `spectator-feed`, `idle`) and used them to hide redundant narration while human action panels are open.
 - Made manual play render the human hand whenever the hand array is present, added a fallback `hand unavailable` message if it is empty, and slightly enlarged the visible cards in play mode.
 - Compressed the launcher into a shorter `spectator` / `manual` picker with tighter copy, smaller cards, a smaller heading, a denser control row, and a shorter launch button label.
@@ -134,3 +141,30 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Updated interactive seat trays so manual mode always shows facedown cards for every player column instead of hiding trays entirely.
 - Kept hover/tap reveal privacy-preserving in manual mode: only the human seat can flip face-up, while opponent trays stay facedown.
 - Targeted verification only: `node --check ui/app.js`, `node --check ui/app/render.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-17
+- Moved the `*whistle*` layer closer to the challenged portrait and shortened its drift so it reads as attached to the character instead of floating off-column.
+- Added a seat-level judge-thinking FX layer: the current judge now gets a fast spinning scribble-ball above their head during the live challenge window.
+- Increased manual action-strip space again, collapsed the empty hand row in challenge mode, and let the human seat reveal the full hand on hover/tap instead of capping at five face-up cards.
+- Extended the incoming objection beat before the result state by roughly half a second and lengthened the total reveal window to preserve result readability.
+- Targeted verification only: `node --check ui/app/render.js`, `node --check ui/app.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-17
+- Changed the judge cue from the spinning scribble-ball to a simpler floating question mark above the active judge’s head.
+- Updated the human full-hand reveal tray so an opened manual tray lays out cards in a 5-column grid with additional rows instead of forcing one long row.
+- Tightened the round notebook to a fixed 100px width so the top spiral shows exactly four coils, and centered the round number/caption within the card.
+- Replaced the card-back center `X` mark with the provided diamond SVG motif.
+- Targeted verification only: `node --check ui/app/render.js`, `node --check ui/cards.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-17
+- Moved the timer source of truth into the server snapshot by exposing `phaseStartedAt` and `serverNow`, then aligned the frontend timer to that clock so refresh restores the elapsed beat instead of restarting locally.
+- Increased timer cadence to `100ms` while updating only the timer text node between renders, so it reads continuously without forcing a full app rerender every tenth of a second.
+- Tightened the required-claim / round spacing in the left HUD column and kept discard anchored to the far right edge of that same row.
+- Re-enabled the scribble cue for actively thinking actors, made the scribble animation much more obvious with a continuous spin layer, and nudged the whistle text slightly farther right again.
+
+2026-04-17
+- Slowed the `*whistle*` drift so the challenge effect feels less frantic, moved the whistle layer slightly higher on the portrait, and shortened the travel distance so the text stays more attached to the character.
+- Simplified the scribble cue further by removing the conflicting bob+spin transform stack and using a much faster clean spin on the SVG plus faster internal path jitter so the animation actually reads in motion.
+
+2026-04-17
+- Removed the CSS spin/jitter overrides from the scribble cue so the judge/actor thinking mark now relies on the embedded SVG `animate` path morph itself, matching the reference behavior of staying in place while the scribble shape changes.
