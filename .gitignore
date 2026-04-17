@@ -46,6 +46,7 @@ coverage/
 
 # Temporary files
 .cache/
+temp/
 *.tmp
 *.temp
 *.log

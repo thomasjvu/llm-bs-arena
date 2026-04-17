@@ -227,6 +227,18 @@ function formatPhaseTimer(startedAt, now) {
   return `${(elapsedMs / 1000).toFixed(1)}s`;
 }
 
+function formatRoundKicker(state) {
+  if (!state) return 'launcher';
+  const roundNumber = (state.totalTurns || 0) + 1;
+  const actorId = state.pendingTurn?.playerId
+    || state.awaitingHumanAction?.pendingPlay?.playerId
+    || state.players?.[state.currentPlayerIndex]?.id
+    || '';
+  const actor = getPlayerById(state, actorId);
+  const actorName = actor ? getPlayerName(actor).toUpperCase() : 'TABLE';
+  return `ROUND ${roundNumber}: ${actorName}`;
+}
+
 
 function getCrossExaminationText(playerName, claimedCount, claimedRank) {
   const subject = playerName?.toLowerCase?.() === 'you'
@@ -490,49 +502,100 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
 }
 
 function renderTurnRibbon(container, state) {
-  container.innerHTML = '';
   const queue = buildTurnRibbon(state);
   if (!queue.length) {
     container.innerHTML = '<div class="turn-pill">waiting</div>';
     return;
   }
 
+  const previousRects = new Map();
+  const existingNodes = new Map();
+  [...container.children].forEach((node) => {
+    const key = node.dataset?.key;
+    if (!key) return;
+    previousRects.set(key, node.getBoundingClientRect());
+    existingNodes.set(key, node);
+  });
+
+  const nextNodes = [];
+
   queue.forEach((entry, index) => {
-    const pill = document.createElement('div');
+    const pillKey = `pill:${entry.id}`;
+    const pill = existingNodes.get(pillKey) || document.createElement('div');
+    pill.dataset.key = pillKey;
     pill.className = 'turn-pill';
     if (entry.isLead) pill.classList.add('is-lead', 'is-current');
     if (entry.isAwaitingHuman) pill.classList.add('is-awaiting-human');
     if (entry.isEliminated) pill.classList.add('is-eliminated');
+    pill.setAttribute('aria-label', getShortModelName(entry.modelId, entry.name));
+    pill.title = getShortModelName(entry.modelId, entry.name);
 
-    const order = document.createElement('span');
+    let order = pill.querySelector('.turn-index');
+    if (!order) {
+      order = document.createElement('span');
+      pill.appendChild(order);
+    }
     order.className = 'turn-index';
     order.textContent = String(entry.order);
 
-    const thumbFrame = document.createElement('span');
+    let thumbFrame = pill.querySelector('.turn-thumb-frame');
+    if (!thumbFrame) {
+      thumbFrame = document.createElement('span');
+      pill.appendChild(thumbFrame);
+    }
     thumbFrame.className = 'turn-thumb-frame';
 
-    const thumb = document.createElement('img');
+    let thumb = thumbFrame.querySelector('.turn-thumb');
+    if (!thumb) {
+      thumb = document.createElement('img');
+      thumbFrame.appendChild(thumb);
+    }
     thumb.className = 'turn-thumb';
     thumb.src = window.ModelThemes.getThumbnail(entry.modelId);
     thumb.alt = getShortModelName(entry.modelId, entry.name);
 
-    const label = document.createElement('span');
-    label.className = 'turn-label';
-    label.textContent = getShortModelName(entry.modelId, shortenName(entry.name));
-
-    pill.appendChild(order);
-    thumbFrame.appendChild(thumb);
-    pill.appendChild(thumbFrame);
-    pill.appendChild(label);
-    container.appendChild(pill);
+    const label = pill.querySelector('.turn-label');
+    if (label) {
+      label.remove();
+    }
+    nextNodes.push(pill);
 
     if (index < queue.length - 1) {
-      const arrow = document.createElement('div');
+      const arrowKey = `arrow:${index}`;
+      const arrow = existingNodes.get(arrowKey) || document.createElement('div');
+      arrow.dataset.key = arrowKey;
       arrow.className = 'turn-arrow';
       arrow.setAttribute('aria-hidden', 'true');
       arrow.textContent = '➜';
-      container.appendChild(arrow);
+      nextNodes.push(arrow);
     }
+  });
+
+  container.replaceChildren(...nextNodes);
+
+  nextNodes.forEach((node) => {
+    const key = node.dataset?.key;
+    const previousRect = key ? previousRects.get(key) : null;
+    node.style.transition = 'none';
+    node.style.transform = '';
+    node.style.opacity = '';
+    if (!previousRect) {
+      return;
+    }
+
+    const nextRect = node.getBoundingClientRect();
+    const deltaX = previousRect.left - nextRect.left;
+    const deltaY = previousRect.top - nextRect.top;
+    if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
+      node.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    }
+  });
+
+  window.requestAnimationFrame(() => {
+    nextNodes.forEach((node) => {
+      node.style.transition = 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)';
+      node.style.transform = '';
+    });
   });
 }
 
@@ -891,7 +954,8 @@ function renderDialogue(dom, app) {
   const showSpectatorFeed = Boolean(state && !state.interactive);
   const feedEntries = showSpectatorFeed ? buildSpectatorFeedEntries(state) : [];
 
-  setText(dom.phaseKicker, dialogue.speaker);
+  dom.phaseKicker.hidden = false;
+  setText(dom.phaseKicker, showSpectatorFeed ? formatRoundKicker(state) : dialogue.speaker);
   setText(dom.phaseTimer, formatPhaseTimer(app.messageTimerStartedAt, app.messageTimerNow));
 
   dom.phaseMain.hidden = showSpectatorFeed;
@@ -994,6 +1058,31 @@ function mountCommandPanel(dom, layout, state) {
   if (target && dom.commandPanel.parentElement !== target) {
     target.appendChild(dom.commandPanel);
   }
+}
+
+export function renderPeekPanels(dom, app, layout) {
+  const state = app.currentState;
+  const viewState = state
+    ? { ...state, thinkingPlayerId: app.ephemeralThinkingPlayerId ?? state.thinkingPlayerId }
+    : null;
+
+  SLOT_IDS.forEach((slotId) => {
+    const slotDom = dom.slots?.[slotId];
+    if (!slotDom) return;
+    const playerId = layout?.slots?.[slotId];
+    const player = viewState?.players?.find((entry) => entry.id === playerId) ?? null;
+
+    if (!player) {
+      slotDom.root.dataset.peekable = 'false';
+      slotDom.root.dataset.peekOpen = 'false';
+      slotDom.root.dataset.cardsVisible = 'false';
+      slotDom.root.dataset.peekRenderKey = '';
+      slotDom.peek.innerHTML = '';
+      return;
+    }
+
+    renderPeekTray(slotDom.peek, slotDom.root, layout?.slotMeta?.[slotId], player, viewState, app);
+  });
 }
 
 function renderLog(dom, state) {

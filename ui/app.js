@@ -2,7 +2,7 @@ import { startGame, stepGame, submitHumanPlay, submitHumanChallenge, fetchStats,
 import { createAudio } from './app/audio.js';
 import { createEffects } from './app/effects.js';
 import { DEFAULT_SLOT_ID, buildSlotLayout, getSlotForPlayer } from './app/layout.js';
-import { bindDom, renderApp, buildTextState } from './app/render.js';
+import { bindDom, renderApp, buildTextState, renderPeekPanels } from './app/render.js';
 import { loadPreferences, savePreferences } from './app/storage.js';
 
 const dom = bindDom(document);
@@ -291,13 +291,13 @@ function setSpectatorPeek(playerId) {
   if (nextPlayerId) {
     app.peekRevealSeq += 1;
   }
-  render();
+  renderPeekPanels(dom, app, buildSlotLayout(app.currentState));
 }
 
 function clearSpectatorPeek() {
   if (!app.spectatorPeekPlayerId) return;
   app.spectatorPeekPlayerId = null;
-  render();
+  renderPeekPanels(dom, app, buildSlotLayout(app.currentState));
 }
 
 function clearAttention(shouldRender = true) {
@@ -476,7 +476,7 @@ function startChallengeReveal({ nextState, resolvedTurn, previousPileSize, nextL
       variant: resolvedTurn.challengeCorrect ? 'danger' : 'success',
     }, 920);
     effects.shakeStage(dom.main, resolvedTurn.challengeCorrect ? 'danger' : 'success');
-    audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'claim_stands');
+    audio.playResolution(resolvedTurn.challengeCorrect ? 'lie_exposed' : 'false_challenge');
     audio.playPickup(pickupCount);
     render();
   }, 2000);
@@ -569,6 +569,7 @@ function handleTransition(previous, next) {
   const nextPending = next?.pendingTurn;
   const nextLayout = buildSlotLayout(next);
   const newFeedEntries = previous ? getNewFeedEntries(previous, next) : [];
+  const passEntries = newFeedEntries.filter((entry) => entry.type === 'pass');
   const challengeEntry = newFeedEntries.find((entry) => entry.type === 'challenge');
   const roundAdvanced = Boolean(previous && next.totalTurns > previous.totalTurns);
 
@@ -587,6 +588,12 @@ function handleTransition(previous, next) {
     }, 720);
     effects.shakeStage(dom.main, 'danger');
     audio.playChallenge();
+  }
+
+  if (passEntries.length) {
+    passEntries.forEach((_entry, index) => {
+      audio.playPass(index * 0.07);
+    });
   }
 
   if (!previousPending && nextPending) {

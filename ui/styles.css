@@ -121,9 +121,9 @@ svg {
   grid-template-columns: minmax(0, 25%) minmax(0, 50%) minmax(0, 25%);
   gap: 22px;
   align-items: end;
-  min-height: 164px;
-  padding-right: 40px;
-  padding-bottom: 20px;
+  min-height: 132px;
+  padding-right: 0;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -142,14 +142,15 @@ svg {
 
 .hud-state {
   padding: 0 20px;
-  border-left: 1px solid var(--line);
-  border-right: 1px solid var(--line);
   justify-items: center;
   text-align: center;
 }
 
 .hud-turn-order {
-  padding-left: 14px;
+  width: 100%;
+  padding-left: 0;
+  justify-self: center;
+  justify-items: center;
 }
 
 .hud-chip-panel {
@@ -160,13 +161,14 @@ svg {
 .hud-chip-panel--round {
   justify-items: center;
   justify-self: center;
+  transform: translateX(-8px);
 }
 
 .hud-chip-panel--discard {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 18px;
   justify-self: end;
   margin-left: 22px;
 }
@@ -201,7 +203,7 @@ svg {
 
 .pending-rank {
   font-family: var(--display);
-  font-size: clamp(4.8rem, 8vw, 7.2rem);
+  font-size: clamp(4.3rem, 7.2vw, 6.6rem);
   font-weight: 900;
   letter-spacing: -0.08em;
   line-height: 0.78;
@@ -268,13 +270,17 @@ svg {
 }
 
 .hud-turn-order {
-  display: grid;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
   align-content: end;
 }
 
 .hud-turn-order .turn-ribbon {
   gap: 5px;
   padding-bottom: 0;
+  justify-content: center;
+  margin-inline: auto;
 }
 
 .round-notebook[data-flash^="turn"] {
@@ -291,6 +297,7 @@ svg {
   min-width: 110px;
   padding-top: 18px;
   opacity: 0.56;
+  will-change: transform;
 }
 
 .turn-pill.is-current,
@@ -326,9 +333,9 @@ svg {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 24%;
-  transform: scale(1.82);
-  transform-origin: center 24%;
+  object-position: center 38%;
+  transform: scale(2.52);
+  transform-origin: center 38%;
 }
 
 .turn-label {
@@ -352,12 +359,13 @@ svg {
   font-size: 0.76rem;
   font-weight: 900;
   letter-spacing: 0;
+  will-change: transform;
 }
 
 .hud-turn-order .turn-pill {
-  flex-basis: 84px;
-  min-width: 84px;
-  gap: 6px;
+  flex-basis: 68px;
+  min-width: 68px;
+  gap: 4px;
 }
 
 .hud-turn-order .turn-thumb-frame {
@@ -366,13 +374,9 @@ svg {
 }
 
 .hud-turn-order .turn-thumb {
-  object-position: center 26%;
-  transform: scale(1.96);
-  transform-origin: center 26%;
-}
-
-.hud-turn-order .turn-label {
-  font-size: 0.68rem;
+  object-position: center 18%;
+  transform: scale(3.16);
+  transform-origin: center 18%;
 }
 
 .table-value {
@@ -417,7 +421,7 @@ svg {
 }
 
 .round-value {
-  font-size: clamp(2.2rem, 3.2vw, 3rem);
+  font-size: clamp(1.96rem, 2.8vw, 2.72rem);
   justify-self: center;
   text-align: center;
 }
@@ -873,7 +877,7 @@ svg {
 .seat-name {
   overflow: hidden;
   font-family: var(--marker);
-  font-size: clamp(0.94rem, 1.2vw, 1.16rem);
+  font-size: clamp(1.04rem, 1.42vw, 1.34rem);
   font-weight: 400;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -999,7 +1003,7 @@ svg {
   gap: 10px;
   height: 224px;
   min-height: 224px;
-  padding: 18px 20px 34px;
+  padding: 18px 20px 18px;
   border-top: 1px solid var(--line);
   background: #111111;
   color: #ffffff;
@@ -1022,7 +1026,7 @@ svg {
 .dialogue-header {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 12px;
 }
 
@@ -1031,11 +1035,8 @@ svg {
 }
 
 .phase-timer {
-  position: absolute;
-  right: 20px;
-  bottom: 16px;
+  position: static;
   flex: 0 0 auto;
-  pointer-events: none;
   color: rgba(255, 255, 255, 0.42);
   font-family: var(--mono);
   font-size: 0.72rem;
@@ -1083,7 +1084,7 @@ svg {
 }
 
 .dialogue-feed-entry--danger .dialogue-feed-title {
-  color: #ffaca4;
+  color: #e2685d;
 }
 
 .dialogue-feed-entry--success .dialogue-feed-title {
@@ -1152,7 +1153,7 @@ svg {
 
 .challenge-banner[data-state="objection"] .challenge-label,
 .challenge-banner[data-state="objection"] .challenge-copy {
-  color: #ff9f95;
+  color: var(--danger);
 }
 
 .challenge-banner[data-state="sustained"] .challenge-label,

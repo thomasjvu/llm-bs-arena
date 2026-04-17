@@ -79,23 +79,34 @@ export function createAudio({ enabled = true } = {}) {
     oscillator.stop(now + duration + 0.03);
   }
 
+  function playPass(when = 0) {
+    playTone({ frequency: 880, sweepTo: 1040, duration: 0.08, type: 'triangle', volume: 0.034, when, attack: 0.003, release: 0.035 });
+    playTone({ frequency: 1180, sweepTo: 1320, duration: 0.06, type: 'sine', volume: 0.02, when: when + 0.018, attack: 0.002, release: 0.028 });
+  }
+
   function playChallenge() {
-    playTone({ frequency: 240, sweepTo: 132, duration: 0.22, type: 'sawtooth', volume: 0.075, attack: 0.005, release: 0.08 });
-    playTone({ frequency: 640, sweepTo: 410, duration: 0.16, type: 'square', volume: 0.06, when: 0.025, attack: 0.004, release: 0.05 });
-    playTone({ frequency: 860, sweepTo: 720, duration: 0.09, type: 'triangle', volume: 0.028, when: 0.065, attack: 0.002, release: 0.03 });
+    playTone({ frequency: 960, sweepTo: 720, duration: 0.11, type: 'square', volume: 0.074, attack: 0.002, release: 0.034 });
+    playTone({ frequency: 1440, sweepTo: 980, duration: 0.095, type: 'triangle', volume: 0.046, when: 0.018, attack: 0.002, release: 0.03 });
+    playTone({ frequency: 620, sweepTo: 430, duration: 0.13, type: 'sawtooth', volume: 0.03, when: 0.012, attack: 0.003, release: 0.04 });
   }
 
   function playResolution(kind = 'claim_stands') {
     if (kind === 'lie_exposed') {
-      playTone({ frequency: 340, sweepTo: 156, duration: 0.24, type: 'triangle', volume: 0.068, attack: 0.004, release: 0.08 });
-      playTone({ frequency: 188, sweepTo: 96, duration: 0.28, type: 'square', volume: 0.052, when: 0.02, attack: 0.004, release: 0.08 });
-      playTone({ frequency: 124, sweepTo: 86, duration: 0.18, type: 'sawtooth', volume: 0.03, when: 0.08, attack: 0.003, release: 0.04 });
+      playTone({ frequency: 420, sweepTo: 220, duration: 0.2, type: 'square', volume: 0.07, attack: 0.003, release: 0.06 });
+      playTone({ frequency: 620, sweepTo: 340, duration: 0.16, type: 'triangle', volume: 0.046, when: 0.016, attack: 0.002, release: 0.04 });
+      playTone({ frequency: 180, sweepTo: 110, duration: 0.24, type: 'sawtooth', volume: 0.032, when: 0.05, attack: 0.003, release: 0.05 });
       return;
     }
 
-    playTone({ frequency: 360, sweepTo: 560, duration: 0.18, type: 'triangle', volume: 0.062, attack: 0.004, release: 0.06 });
-    playTone({ frequency: 520, sweepTo: 760, duration: 0.2, type: 'square', volume: 0.052, when: 0.02, attack: 0.004, release: 0.06 });
-    playTone({ frequency: 740, sweepTo: 930, duration: 0.1, type: 'triangle', volume: 0.026, when: 0.07, attack: 0.002, release: 0.03 });
+    if (kind === 'false_challenge') {
+      playTone({ frequency: 420, sweepTo: 620, duration: 0.12, type: 'triangle', volume: 0.05, attack: 0.002, release: 0.04 });
+      playTone({ frequency: 660, sweepTo: 980, duration: 0.11, type: 'square', volume: 0.05, when: 0.02, attack: 0.002, release: 0.04 });
+      playTone({ frequency: 980, sweepTo: 1260, duration: 0.09, type: 'sine', volume: 0.026, when: 0.046, attack: 0.002, release: 0.03 });
+      return;
+    }
+
+    playTone({ frequency: 520, sweepTo: 700, duration: 0.12, type: 'triangle', volume: 0.038, attack: 0.003, release: 0.04 });
+    playTone({ frequency: 760, sweepTo: 980, duration: 0.09, type: 'sine', volume: 0.02, when: 0.022, attack: 0.002, release: 0.03 });
   }
 
   function playPickup(cardCount = 1) {
@@ -121,6 +132,7 @@ export function createAudio({ enabled = true } = {}) {
   return {
     unlock,
     setEnabled,
+    playPass,
     playChallenge,
     playResolution,
     playPickup,
