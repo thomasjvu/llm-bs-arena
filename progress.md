@@ -115,3 +115,22 @@ Original prompt: the game frontend isn't working. nothing is happening. and the 
 - Tightened the left HUD spacing so required claim sits farther from the round notebook while the round and discard cluster sit closer together.
 - Documented the current frontend asset audit in `ui/model-themes.js`, including active folders, unused folders, placeholder Nemotron behavior, and the newly used reveal-only states.
 - Light verification only: `node --check ui/app.js`, `ui/app/render.js`, `ui/stats.js`, `ui/model-themes.js`, and `npx vitest run src/test/frontend-ui.test.ts` all passed.
+
+2026-04-17
+- Fixed the manual-play surface layout so the human hand row gets dedicated space in the bottom strip instead of being clipped by the narration/banner rows inside the fixed-height dialogue box.
+- Added explicit bottom-strip render modes (`manual-play`, `manual-challenge`, `spectator-feed`, `idle`) and used them to hide redundant narration while human action panels are open.
+- Made manual play render the human hand whenever the hand array is present, added a fallback `hand unavailable` message if it is empty, and slightly enlarged the visible cards in play mode.
+- Compressed the launcher into a shorter `spectator` / `manual` picker with tighter copy, smaller cards, a smaller heading, a denser control row, and a shorter launch button label.
+- Light verification only: `node --check ui/app.js`, `ui/app/render.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.
+
+2026-04-17
+- Replaced the gray whistle particles with a right-side drifting monospace `*whistle*` text effect that only appears while a claimant is actively under challenge.
+- Fixed the manual action strip again so human turns dominate the bottom panel: manual challenge now suppresses the banner above it, manual play renders from `humanPlayerId`, and the play/challenge panels get more dedicated height.
+- Extended `ChallengeDecision` to store per-judge reasoning and sanitized that reasoning in client state, so spectator mode can render each pass/challenge explanation in order without leaking model traces into manual mode.
+- Rebuilt the sidebar log into grouped turn traces: claim, each judge response, and final resolution now render as separate rows per turn, with reasoning notes only in spectator mode.
+- Targeted verification only: `node --check ui/app/render.js` and `npx vitest run src/test/server-state.test.ts src/test/frontend-ui.test.ts` passed.
+
+2026-04-17
+- Updated interactive seat trays so manual mode always shows facedown cards for every player column instead of hiding trays entirely.
+- Kept hover/tap reveal privacy-preserving in manual mode: only the human seat can flip face-up, while opponent trays stay facedown.
+- Targeted verification only: `node --check ui/app.js`, `node --check ui/app/render.js`, and `npx vitest run src/test/frontend-ui.test.ts` passed.

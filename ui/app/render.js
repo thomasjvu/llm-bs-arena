@@ -48,6 +48,10 @@ function getPlayerById(state, playerId) {
   return state?.players?.find((entry) => entry.id === playerId) ?? null;
 }
 
+function getHumanPlayer(state) {
+  return state?.players?.find((entry) => entry.id === state?.humanPlayerId) ?? null;
+}
+
 function getHumanAction(state) {
   return state?.awaitingHumanAction || null;
 }
@@ -216,32 +220,46 @@ function renderSelectableHand(container, cards, selectedCards, onToggleCard) {
   });
 }
 
-function canPeekSpectatorHand(player, state) {
-  return Boolean(!state?.interactive && player?.handVisible && player?.hand?.length);
+function canPeekPlayerHand(player, state) {
+  if (!player || !state) return false;
+  if (!player.handVisible || !player.hand?.length) return false;
+  if (!state.interactive) {
+    return true;
+  }
+  return state.humanPlayerId === player.id;
 }
 
 function renderPeekTray(container, root, slotMeta, player, state, app) {
-  const alwaysVisibleBacks = !state?.interactive && player?.handVisible && player?.hand?.length;
-  const peekable = canPeekSpectatorHand(player, state);
+  const visibleCount = Math.min(
+    5,
+    state?.interactive
+      ? (player?.handSize || 0)
+      : (player?.hand?.length || 0)
+  );
+  const peekable = canPeekPlayerHand(player, state);
   const isOpen = peekable && app.spectatorPeekPlayerId === player.id;
-  const cards = player?.hand?.slice(0, 5) || [];
-  const overflowCount = Math.max(0, (player?.hand?.length || 0) - cards.length);
+  const faceCards = player?.hand?.slice(0, 5) || [];
+  const cards = isOpen ? faceCards : Array.from({ length: visibleCount }, () => null);
+  const totalCount = isOpen
+    ? (player?.hand?.length || 0)
+    : (state?.interactive ? (player?.handSize || 0) : (player?.hand?.length || 0));
+  const overflowCount = Math.max(0, totalCount - cards.length);
   const openSeq = isOpen ? String(app.peekRevealSeq || 0) : '0';
   const renderKey = [
-    alwaysVisibleBacks ? 'show' : 'hide',
+    visibleCount > 0 ? 'show' : 'hide',
     peekable ? 'peek' : 'static',
     isOpen ? 'open' : 'closed',
-    player?.hand?.length || 0,
-    cards.join(','),
+    totalCount,
+    isOpen ? faceCards.join(',') : 'backs',
     overflowCount,
     openSeq,
   ].join('|');
 
   root.dataset.peekable = peekable ? 'true' : 'false';
   root.dataset.peekOpen = isOpen ? 'true' : 'false';
-  root.dataset.cardsVisible = alwaysVisibleBacks ? 'true' : 'false';
+  root.dataset.cardsVisible = visibleCount > 0 ? 'true' : 'false';
 
-  if (!alwaysVisibleBacks && !isOpen) {
+  if (!visibleCount && !isOpen) {
     root.dataset.peekRenderKey = '';
     root.dataset.peekAnimatedSeq = '';
     container.innerHTML = '';
@@ -261,7 +279,7 @@ function renderPeekTray(container, root, slotMeta, player, state, app) {
   container.innerHTML = '';
 
   cards.forEach((card, index) => {
-    const cardEl = renderCard(card, isOpen);
+    const cardEl = renderCard(card || '', isOpen && Boolean(card));
     cardEl.style.setProperty('--peek-order', String(index));
     if (isOpen && shouldAnimate) {
       cardEl.classList.add('is-peek-revealed');
@@ -411,8 +429,7 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
   const shoutText = getSeatShout(player, state, reveal);
   const badgeText = getSeatBadge(player, state, reveal);
   const showShout = shouldRenderSeatShout(shoutText);
-  const showWhistle = (reveal?.stage === 'incoming' && player.id === reveal.claimantId)
-    || (!reveal && state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id);
+  const showWhistle = !reveal && state?.phase === 'challenging' && state.pendingTurn?.playerId === player.id;
 
   root.dataset.playerId = player.id;
   root.dataset.badge = showShout ? '' : badgeText;
@@ -430,7 +447,7 @@ function renderSeat(slotDom, slotId, slotMeta, player, state, app) {
     `${state?.totalTurns || 0}-${portraitState}-${player.handSize}`
   );
   whistle.innerHTML = showWhistle
-    ? Array.from({ length: 6 }, (_, index) => `<span class="whistle-particle whistle-particle--${index + 1}"></span>`).join('')
+    ? Array.from({ length: 3 }, (_, index) => `<span class="whistle-text whistle-text--${index + 1}">*whistle*</span>`).join('')
     : '';
   setText(shout, showShout ? shoutText : '');
   setText(name, getPlayerName(player));
@@ -727,45 +744,102 @@ function buildDialogueState(app) {
   };
 }
 
-function buildLogEntries(state) {
-  const entries = [];
-  if (!state) return entries;
-  const includeNotes = !state.interactive;
-  const turns = state.turns || [];
+function buildTurnTrace(state, turn, options = {}) {
+  if (!turn) return null;
+  const includeNotes = !state?.interactive;
+  const isPending = options.pending === true;
+  const actor = getPlayerById(state, turn.playerId);
+  const actorName = getPlayerName(actor);
+  const rows = [{
+    label: 'claim',
+    tone: isPending ? 'live' : 'neutral',
+    title: `${actorName} claims ${turn.claimedCount} x ${turn.claimedRank}.`,
+    detail: isPending ? 'Face-down cards hit the table.' : 'Claim entered the table.',
+    note: includeNotes ? cleanReasoning(turn.reasoning) : '',
+  }];
 
-  if (state.pendingTurn) {
-    entries.push({
-      tone: 'live',
-      round: (state.totalTurns || 0) + 1,
-      title: `${getPlayerName(state.players.find((player) => player.id === state.pendingTurn.playerId))} claims ${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank}`,
-      detail: state.awaitingHumanAction?.type === 'challenge'
-        ? 'Objection window is open.'
-        : 'Challenge checks are in progress.',
-      note: includeNotes ? cleanReasoning(state.pendingTurn.reasoning) : '',
+  for (const decision of turn.challengeDecisions || []) {
+    const judge = getPlayerById(state, decision.playerId);
+    const judgeName = getPlayerName(judge);
+    rows.push({
+      label: decision.challenge ? 'challenge' : 'pass',
+      tone: decision.challenge ? 'danger' : 'neutral',
+      title: decision.challenge
+        ? `${judgeName} calls bullshit.`
+        : `${judgeName} passes.`,
+      detail: decision.challenge
+        ? `Objecting to ${actorName}'s ${turn.claimedCount} x ${turn.claimedRank}.`
+        : `No objection to ${actorName}'s ${turn.claimedCount} x ${turn.claimedRank}.`,
+      note: includeNotes ? cleanReasoning(decision.reasoning) : '',
     });
   }
 
-  [...turns].reverse().forEach((turn, reverseIndex) => {
-    const playerName = getPlayerName(state.players.find((player) => player.id === turn.playerId));
-    const challengerName = getPlayerName(state.players.find((player) => player.id === turn.challengerId));
+  if (isPending) {
+    const activeJudge = state.awaitingHumanAction?.type === 'challenge'
+      ? getPlayerById(state, state.awaitingHumanAction.playerId)
+      : getPlayerById(state, state.thinkingPlayerId);
+    rows.push({
+      label: 'status',
+      tone: 'live',
+      title: activeJudge ? `${getPlayerName(activeJudge)} is up next.` : 'Challenge window open.',
+      detail: activeJudge
+        ? `Waiting on ${getPlayerName(activeJudge)} to pass or object.`
+        : 'Waiting for objections to resolve.',
+      note: '',
+    });
+  } else {
+    const challenger = getPlayerById(state, turn.challengerId);
+    const challengerName = getPlayerName(challenger);
     const truthNote = includeNotes && Array.isArray(turn.actualCards) && turn.actualCards.length
       ? `hidden truth: ${turn.wasLie ? 'lie' : 'truth'}`
       : '';
-    const reasoningNote = includeNotes ? (cleanReasoning(turn.reasoning) || cleanReasoning(turn.challengeReasoning)) : '';
-    entries.push({
-      tone: turn.challenged ? (turn.challengeCorrect ? 'danger' : 'success') : 'neutral',
-      round: turns.length - reverseIndex,
-      title: turn.challenged
-        ? `${challengerName} challenged ${playerName}`
-        : `${playerName} claimed ${turn.claimedCount} x ${turn.claimedRank}`,
-      detail: turn.challenged
-        ? `${challengerName} was ${turn.challengeCorrect ? 'right' : 'wrong'}.`
-        : 'No one challenged.',
-      note: [truthNote, reasoningNote].filter(Boolean).join(' • '),
-    });
-  });
+    const resolutionNote = includeNotes
+      ? [truthNote, cleanReasoning(turn.challengeReasoning)].filter(Boolean).join(' • ')
+      : '';
 
-  return entries.slice(0, 18);
+    rows.push({
+      label: 'result',
+      tone: turn.challenged ? (turn.challengeCorrect ? 'danger' : 'success') : 'success',
+      title: !turn.challenged
+        ? `${actorName}'s claim stands.`
+        : turn.challengeCorrect
+          ? `${challengerName} exposes the lie.`
+          : `${actorName} beats the objection.`,
+      detail: !turn.challenged
+        ? 'No one challenged.'
+        : turn.challengeCorrect
+          ? `${actorName} takes the pile.`
+          : `${challengerName} takes the pile.`,
+      note: resolutionNote,
+    });
+  }
+
+  return {
+    turnNumber: turn.turnNumber || ((state?.totalTurns || 0) + 1),
+    headline: `${actorName} · ${turn.claimedCount} x ${turn.claimedRank}`,
+    tone: isPending
+      ? 'live'
+      : turn.challenged
+        ? (turn.challengeCorrect ? 'danger' : 'success')
+        : 'neutral',
+    rows,
+  };
+}
+
+function buildLogTurns(state) {
+  if (!state) return [];
+  const turns = [];
+  if (state.pendingTurn) {
+    const pendingTrace = buildTurnTrace(state, state.pendingTurn, { pending: true });
+    if (pendingTrace) turns.push(pendingTrace);
+  }
+
+  for (const turn of [...(state.turns || [])].reverse()) {
+    const trace = buildTurnTrace(state, turn);
+    if (trace) turns.push(trace);
+  }
+
+  return turns.slice(0, 8);
 }
 
 function createStatRows(statsObj) {
@@ -780,12 +854,14 @@ function renderDialogue(dom, app) {
   const state = app.currentState;
   const dialogue = buildDialogueState(app);
   const showSpectatorFeed = Boolean(state && !state.interactive);
+  const commandType = state?.awaitingHumanAction?.type || '';
+  const showManualCommand = commandType === 'play' || commandType === 'challenge';
   const feedEntries = showSpectatorFeed ? buildSpectatorFeedEntries(state) : [];
 
   setText(dom.phaseKicker, dialogue.speaker);
 
-  dom.phaseMain.hidden = showSpectatorFeed;
-  if (!showSpectatorFeed) {
+  dom.phaseMain.hidden = showSpectatorFeed || showManualCommand;
+  if (!showSpectatorFeed && !showManualCommand) {
     setText(dom.phaseMain, dialogue.text);
   }
 
@@ -807,13 +883,13 @@ function renderDialogue(dom, app) {
   }
 
   if (dialogue.banner) {
-    dom.challengeBanner.hidden = showSpectatorFeed;
+    dom.challengeBanner.hidden = showSpectatorFeed || showManualCommand;
     dom.challengeBanner.classList.remove('is-empty');
     dom.challengeBanner.dataset.state = dialogue.banner.state;
     setText(dom.challengeLabel, dialogue.banner.label);
     setText(dom.challengeCopy, dialogue.banner.copy);
   } else {
-    dom.challengeBanner.hidden = showSpectatorFeed;
+    dom.challengeBanner.hidden = true;
     dom.challengeBanner.classList.add('is-empty');
     dom.challengeBanner.dataset.state = '';
     setText(dom.challengeLabel, '');
@@ -824,6 +900,7 @@ function renderDialogue(dom, app) {
 function renderCommandPanel(dom, app, onToggleCard) {
   const state = app.currentState;
   const awaitingHumanAction = getHumanAction(state);
+  const humanPlayer = getHumanPlayer(state);
   dom.commandPanel.hidden = !awaitingHumanAction;
   dom.dialogueHand.innerHTML = '';
 
@@ -832,10 +909,9 @@ function renderCommandPanel(dom, app, onToggleCard) {
     return;
   }
 
-  setText(dom.commandMode, state.provider || app.provider);
+  setText(dom.commandMode, state?.interactive ? 'manual' : (state?.provider || app.provider));
 
   if (awaitingHumanAction.type === 'play') {
-    const humanPlayer = state.players.find((player) => player.id === awaitingHumanAction.playerId);
     setText(dom.commandTitle, 'your play');
     setText(dom.commandRank, `claim ${awaitingHumanAction.currentRank}`);
     setText(dom.commandCopy, 'Pick 1 to 4 cards. The audience only sees the count and claimed rank.');
@@ -844,8 +920,12 @@ function renderCommandPanel(dom, app, onToggleCard) {
     dom.submitPlayBtn.disabled = app.selectedCards.size < 1 || app.selectedCards.size > 4;
     dom.clearPlayBtn.disabled = app.selectedCards.size === 0;
 
-    if (humanPlayer?.handVisible) {
+    if (humanPlayer?.id === awaitingHumanAction.playerId && Array.isArray(humanPlayer.hand) && humanPlayer.hand.length) {
       renderSelectableHand(dom.dialogueHand, humanPlayer.hand, app.selectedCards, onToggleCard);
+    } else if (Array.isArray(humanPlayer?.hand) && humanPlayer.hand.length) {
+      renderSelectableHand(dom.dialogueHand, humanPlayer.hand, app.selectedCards, onToggleCard);
+    } else {
+      dom.dialogueHand.innerHTML = '<span class="selected-pill selected-pill--muted">hand unavailable</span>';
     }
 
     dom.selectedCards.innerHTML = app.selectedCards.size
@@ -869,40 +949,65 @@ function renderCommandPanel(dom, app, onToggleCard) {
 }
 
 function renderLog(dom, state) {
-  const entries = buildLogEntries(state);
-  if (!entries.length) {
+  const turns = buildLogTurns(state);
+  if (!turns.length) {
     dom.logList.innerHTML = '<div class="drawer-empty">Start a game to see the public action log.</div>';
     return;
   }
 
   dom.logList.innerHTML = '';
-  entries.forEach((entry) => {
+  turns.forEach((turn) => {
     const item = document.createElement('article');
-    item.className = `log-entry log-entry--${entry.tone}`;
+    item.className = `log-turn log-turn--${turn.tone}`;
 
-    const title = document.createElement('div');
-    title.className = 'log-title';
-    title.textContent = entry.title;
+    const header = document.createElement('div');
+    header.className = 'log-turn-header';
 
-    const detail = document.createElement('div');
-    detail.className = 'log-detail';
-    detail.textContent = entry.detail;
-
-    item.appendChild(title);
-    item.appendChild(detail);
-
-    if (entry.note) {
-      const note = document.createElement('div');
-      note.className = 'log-note';
-      note.textContent = entry.note;
-      item.appendChild(note);
-    }
+    const headline = document.createElement('div');
+    headline.className = 'log-title';
+    headline.textContent = turn.headline;
 
     const meta = document.createElement('div');
     meta.className = 'log-meta';
-    meta.textContent = `turn ${entry.round}`;
-    item.appendChild(meta);
+    meta.textContent = `turn ${turn.turnNumber}`;
 
+    header.appendChild(headline);
+    header.appendChild(meta);
+    item.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'log-turn-body';
+
+    turn.rows.forEach((row) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = `log-trace-row log-trace-row--${row.tone}`;
+
+      const label = document.createElement('div');
+      label.className = 'log-trace-label';
+      label.textContent = row.label;
+      rowEl.appendChild(label);
+
+      const title = document.createElement('div');
+      title.className = 'log-trace-title';
+      title.textContent = row.title;
+      rowEl.appendChild(title);
+
+      const detail = document.createElement('div');
+      detail.className = 'log-detail';
+      detail.textContent = row.detail;
+      rowEl.appendChild(detail);
+
+      if (row.note) {
+        const note = document.createElement('div');
+        note.className = 'log-note';
+        note.textContent = row.note;
+        rowEl.appendChild(note);
+      }
+
+      body.appendChild(rowEl);
+    });
+
+    item.appendChild(body);
     dom.logList.appendChild(item);
   });
 }
@@ -982,15 +1087,15 @@ function renderLauncher(dom, app) {
     setText(
       dom.launcherNote,
       app.provider === 'nim'
-        ? 'Live play uses a session-scoped API key. If the server already has a configured key, this field can stay blank.'
-        : 'Mock mode lets you rehearse the interaction flow without live model calls.'
+        ? 'Session API key. Leave blank if the server already has one.'
+        : 'Mock table for practicing manual turns.'
     );
   } else {
     setText(
       dom.launcherNote,
       app.provider === 'mock'
-        ? 'Watch Demo starts a self-running mock table immediately.'
-        : 'Spectator mode will autoplay the live cohort while keeping the browser UI passive.'
+        ? 'Self-running mock table.'
+        : 'Live spectator table with the frozen cohort.'
     );
   }
 }
@@ -1015,6 +1120,7 @@ export function bindDom(documentRef = document) {
   return {
     root: documentRef.getElementById('app-shell'),
     main: documentRef.querySelector('.app-main'),
+    dialogueBox: documentRef.querySelector('.dialogue-box'),
     utilityDrawer: documentRef.getElementById('utility-drawer'),
     utilityToggleBtn: documentRef.getElementById('utility-toggle-btn'),
     utilityCloseBtn: documentRef.getElementById('utility-close-btn'),
@@ -1081,10 +1187,23 @@ export function renderApp(dom, app, layout, onToggleCard) {
     ? { ...state, thinkingPlayerId: app.ephemeralThinkingPlayerId ?? state.thinkingPlayerId }
     : null;
   const revealLocked = Boolean(app.challengeReveal);
+  const awaitingHumanAction = viewState?.awaitingHumanAction || null;
+  const dialogueMode = awaitingHumanAction?.type === 'play'
+    ? 'manual-play'
+    : awaitingHumanAction?.type === 'challenge'
+      ? 'manual-challenge'
+      : !viewState
+        ? 'idle'
+        : viewState.interactive
+          ? 'idle'
+          : 'spectator-feed';
 
   dom.root.dataset.mode = viewState?.interactive ? 'interactive' : (app.launcherMode || 'spectator');
   dom.root.dataset.sidebarOpen = app.utilityOpen ? 'true' : 'false';
   dom.root.dataset.challengeReveal = revealLocked ? app.challengeReveal.stage : '';
+  if (dom.dialogueBox) {
+    dom.dialogueBox.dataset.commandMode = dialogueMode;
+  }
 
   renderDialogue(dom, { ...app, currentState: viewState });
   setText(dom.roundNumber, String((viewState?.totalTurns || 0) + 1));

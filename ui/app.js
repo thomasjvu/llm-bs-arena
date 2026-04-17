@@ -58,12 +58,20 @@ function supportsHoverPeek() {
 
 function canOpenSpectatorPeek(playerId) {
   const state = app.currentState;
-  if (!playerId || !state || state.interactive) {
+  if (!playerId || !state) {
     return false;
   }
 
   const player = state.players?.find((entry) => entry.id === playerId);
-  return Boolean(player?.handVisible && player?.hand?.length);
+  if (!player?.handVisible || !player?.hand?.length) {
+    return false;
+  }
+
+  if (!state.interactive) {
+    return true;
+  }
+
+  return state.humanPlayerId === playerId;
 }
 
 function setSpectatorPeek(playerId) {

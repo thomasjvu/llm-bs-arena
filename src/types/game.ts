@@ -24,6 +24,7 @@ export interface TokenUsage {
 export interface ChallengeDecision {
   playerId: string;
   challenge: boolean;
+  reasoning: string;
 }
 
 export interface RunMetadata {

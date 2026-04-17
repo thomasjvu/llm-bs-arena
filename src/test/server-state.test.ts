@@ -94,7 +94,7 @@ describe('server client state shaping', () => {
     state.currentRank = actor.hand[0].rank;
 
     const turn = processPlay(state, actor.id, [actor.hand[0]], 1, 'claim');
-    turn.challengeDecisions?.push({ playerId: state.players[1].id, challenge: false });
+    turn.challengeDecisions?.push({ playerId: state.players[1].id, challenge: false, reasoning: 'Seems fine to me.' });
     turn.challengeOfferedTo?.push(state.players[1].id);
 
     const clientState = buildClientGameState({
@@ -128,6 +128,13 @@ describe('server client state shaping', () => {
         },
       ],
     });
+    expect(clientState.pendingTurn?.challengeDecisions).toEqual([
+      {
+        playerId: state.players[1].id,
+        challenge: false,
+        reasoning: 'Seems fine to me.',
+      },
+    ]);
   });
 
   it('builds a resolved current-turn feed for successful challenges', () => {
@@ -144,7 +151,7 @@ describe('server client state shaping', () => {
 
     const lieCard = actor.hand.find((card) => card.rank !== state.currentRank)!;
     const turn = processPlay(state, actor.id, [lieCard], 1, 'lie');
-    turn.challengeDecisions?.push({ playerId: challenger.id, challenge: true });
+    turn.challengeDecisions?.push({ playerId: challenger.id, challenge: true, reasoning: 'That count is suspicious.' });
     turn.challengeOfferedTo?.push(challenger.id);
     processChallenge(state, turn, challenger.id, 'caught you');
     advanceTurn(state, turn);
@@ -190,5 +197,61 @@ describe('server client state shaping', () => {
         },
       ],
     });
+    expect(clientState.turns[0].challengeDecisions).toEqual([
+      {
+        playerId: challenger.id,
+        challenge: true,
+        reasoning: 'That count is suspicious.',
+      },
+    ]);
+  });
+
+  it('sanitizes per-judge reasoning in interactive mode', () => {
+    const state = createGameState('interactive-ui-decisions', 1, [
+      { modelId: 'human/player', displayName: 'you', role: 'human' },
+      { modelId: 'model-a' },
+      { modelId: 'model-b' },
+      { modelId: 'model-c' },
+    ], 13);
+
+    const human = state.players.find((player) => player.role === 'human')!;
+    const actor = state.players.find((player) => player.id !== human.id)!;
+    state.currentPlayerIndex = state.players.findIndex((player) => player.id === actor.id);
+    state.currentRank = actor.hand[0].rank;
+
+    const turn = processPlay(state, actor.id, [actor.hand[0]], 1, 'Private actor reasoning');
+    turn.challengeDecisions?.push({
+      playerId: human.id,
+      challenge: false,
+      reasoning: 'I think this is safe.',
+    });
+    turn.challengeDecisions?.push({
+      playerId: state.players[2].id,
+      challenge: true,
+      reasoning: 'Private judge reasoning',
+    });
+
+    const clientState = buildClientGameState({
+      state,
+      phase: 'challenging',
+      pendingTurn: turn,
+      challengeQueue: [state.players[2].id],
+      humanPlayerId: human.id,
+      hidePrivateState: true,
+      provider: 'mock',
+    });
+
+    expect(clientState.pendingTurn?.challengeDecisions).toEqual([
+      {
+        playerId: human.id,
+        challenge: false,
+        reasoning: 'I think this is safe.',
+      },
+      {
+        playerId: state.players[2].id,
+        challenge: true,
+        reasoning: '',
+      },
+    ]);
   });
 });

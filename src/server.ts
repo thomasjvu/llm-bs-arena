@@ -318,11 +318,11 @@ function buildVisibleStateForPlayer(game: ActiveGame, playerId: string, pileSize
   };
 }
 
-function recordChallengeDecision(turn: Turn, playerId: string, challenge: boolean) {
+function recordChallengeDecision(turn: Turn, playerId: string, challenge: boolean, reasoning: string) {
   turn.challengeOfferedTo ??= [];
   turn.challengeOfferedTo.push(playerId);
   turn.challengeDecisions ??= [];
-  turn.challengeDecisions.push({ playerId, challenge });
+  turn.challengeDecisions.push({ playerId, challenge, reasoning });
 }
 
 function acceptPendingTurn(game: ActiveGame, logPrefix: string) {
@@ -482,7 +482,12 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
           onToken
         );
         console.log(`[step]   Response in ${Date.now() - startTime}ms — ${challengeResponse.challenge ? 'CHALLENGE!' : 'pass'}`);
-        recordChallengeDecision(game.pendingTurn, challenger.id, challengeResponse.challenge);
+        recordChallengeDecision(
+          game.pendingTurn,
+          challenger.id,
+          challengeResponse.challenge,
+          challengeResponse.reasoning
+        );
 
         if (challengeResponse.challenge) {
           game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
@@ -632,7 +637,7 @@ async function handleHumanChallenge(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
-  recordChallengeDecision(game.pendingTurn, challengerId, shouldChallenge);
+  recordChallengeDecision(game.pendingTurn, challengerId, shouldChallenge, reasoning);
 
   if (shouldChallenge) {
     game.pendingTurn.challengeResponseTimeMs = 0;
@@ -737,7 +742,12 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
       game.state.experimentId
     );
     console.log(`[auto]   Response in ${Date.now() - startTime}ms — ${challengeResponse.challenge ? 'CHALLENGE!' : 'pass'}`);
-    recordChallengeDecision(game.pendingTurn, challenger.id, challengeResponse.challenge);
+    recordChallengeDecision(
+      game.pendingTurn,
+      challenger.id,
+      challengeResponse.challenge,
+      challengeResponse.reasoning
+    );
 
     if (challengeResponse.challenge) {
       game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;

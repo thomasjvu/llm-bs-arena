@@ -83,7 +83,11 @@ function sanitizeTurnForClient(game: ServerGameSnapshot, turn: Turn, allowPrivat
     challengeResponseTimeMs: turn.challengeResponseTimeMs,
     challengeTokenUsage: turn.challengeTokenUsage,
     challengeOfferedTo: turn.challengeOfferedTo,
-    challengeDecisions: turn.challengeDecisions ?? [],
+    challengeDecisions: (turn.challengeDecisions ?? []).map((decision) => ({
+      playerId: decision.playerId,
+      challenge: decision.challenge,
+      reasoning: sanitizeReasoning(game, decision.playerId, decision.reasoning),
+    })),
   };
 
   if (!game.hidePrivateState || turn.challenged || allowPrivateCards) {
