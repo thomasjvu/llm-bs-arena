@@ -723,9 +723,8 @@ svg {
   background: #111111;
 }
 
-.cast-seat.is-thinking .seat-shout,
 .cast-seat.is-judging-turn .seat-shout {
-  background: #555555;
+  background: var(--danger);
 }
 
 .cast-seat.is-winner .seat-shout {
@@ -754,7 +753,7 @@ svg {
 .seat-think {
   position: absolute;
   left: 50%;
-  top: calc(1% + 4px);
+  top: calc(1% + 8px);
   width: 54px;
   height: 54px;
   z-index: 10;

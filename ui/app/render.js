@@ -197,7 +197,7 @@ function getSeatShout(player, state, reveal = null) {
 }
 
 function shouldRenderSeatShout(shoutText) {
-  return ['objection?', 'winner', 'lose', 'objection!!', 'challenged', 'wins objection', 'takes pile', 'loses challenge'].includes(shoutText);
+  return ['objection?', 'winner', 'lose', 'objection!!', 'challenged', 'wins objection', 'takes pile', 'loses challenge', 'acting', 'judge'].includes(shoutText);
 }
 
 function renderCard(cardString, showFace = true) {
