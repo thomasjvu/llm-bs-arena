@@ -20,6 +20,7 @@ import { calculateAllStats, calculateCompareStatsRows } from './metrics/player-s
 import { normalizePlaySelection } from './engine/play-rules.js';
 
 const PORT = 3001;
+const RESEARCH_APP_URL = process.env.RESEARCH_APP_URL || 'http://localhost:3002';
 const UI_DIR = path.join(process.cwd(), 'ui');
 const LOGS_DIR = path.join(process.cwd(), 'logs/games');
 const FROZEN_ARTIFACTS_DIR = path.join(process.cwd(), 'paper/arxiv/artifacts/frozen');
@@ -105,6 +106,14 @@ const mimeTypes: Record<string, string> = {
 
 function isHumanPlayer(player: { modelId: string; role?: string }): boolean {
   return player.role === 'human' || player.modelId === HUMAN_MODEL_ID;
+}
+
+function sendRedirect(res: http.ServerResponse, location: string, statusCode = 302): void {
+  res.writeHead(statusCode, {
+    Location: location,
+    'Cache-Control': 'no-store',
+  });
+  res.end();
 }
 
 function shuffleArray<T>(items: readonly T[]): T[] {
@@ -1117,6 +1126,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Static files
+  if (pathname === '/stats.html') {
+    sendRedirect(res, `${RESEARCH_APP_URL}/`);
+    return;
+  }
+
+  if (pathname === '/research' || pathname === '/research/' || pathname.startsWith('/research/')) {
+    const redirectedPath = pathname === '/research' ? '/' : pathname.slice('/research'.length) || '/';
+    const target = new URL(`${redirectedPath}${parsedUrl.search || ''}`, `${RESEARCH_APP_URL.replace(/\/$/, '')}/`);
+    sendRedirect(res, target.toString());
+    return;
+  }
+
   let filepath = pathname === '/' ? '/index.html' : pathname;
   filepath = path.join(UI_DIR, filepath);
 

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BS-Bench Research Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Permanent+Marker&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./research.css">
+  <script type="module" src="./research.js"></script>
+</head>
+<body>
+  <main class="research-shell">
+    <header class="research-toolbar">
+      <div class="research-brand">
+        <div class="research-kicker">frozen paper cohort</div>
+        <h1>BS-Bench Research Dashboard</h1>
+        <p class="research-toolbar-copy" id="toolbar-copy">Loading frozen 600-game cohort…</p>
+      </div>
+
+      <div class="research-scope-tabs" role="tablist" aria-label="Experiment scope">
+        <button class="research-scope-tab is-active" data-scope="all" type="button">all</button>
+        <button class="research-scope-tab" data-scope="0" type="button">exp0</button>
+        <button class="research-scope-tab" data-scope="1" type="button">exp1</button>
+        <button class="research-scope-tab" data-scope="2" type="button">exp2</button>
+        <button class="research-scope-tab" data-scope="3" type="button">exp3</button>
+      </div>
+    </header>
+
+    <section class="research-stage">
+      <div class="research-stage-top">
+        <div class="research-view-tabs" role="tablist" aria-label="Research views">
+          <button class="research-view-tab is-active" data-panel="overview" type="button">overview</button>
+          <button class="research-view-tab" data-panel="charts" type="button">charts</button>
+          <button class="research-view-tab" data-panel="cast" type="button">cast</button>
+        </div>
+        <div class="research-status" id="research-status">Loading frozen cohort…</div>
+      </div>
+
+      <div class="research-chart-tabs" id="research-chart-tabs" hidden>
+        <button class="research-chart-tab is-active" data-chart-view="ranking" type="button">win rate</button>
+        <button class="research-chart-tab" data-chart-view="lie-win" type="button">lie vs win</button>
+        <button class="research-chart-tab" data-chart-view="paranoia-win" type="button">challenge vs win</button>
+      </div>
+
+      <div class="research-empty" id="research-empty" hidden></div>
+
+      <div class="research-panels">
+        <section class="research-panel is-active" data-panel-content="overview">
+          <div class="research-overview-grid">
+            <article class="research-card research-card--summary">
+              <div class="research-card-kicker" id="scope-kicker">all</div>
+              <div class="research-summary-head">
+                <div class="research-summary-copy">
+                  <h2 id="scope-title">All Experiments</h2>
+                  <p class="research-summary-line" id="scope-summary"></p>
+                  <p class="research-summary-detail" id="scope-detail"></p>
+                </div>
+                <div class="research-top-model" id="research-top-model"></div>
+              </div>
+
+              <div class="research-metric-row">
+                <article class="research-metric-card">
+                  <div class="research-metric-label">included games</div>
+                  <div class="research-metric-value" id="included-games">0</div>
+                </article>
+                <article class="research-metric-card">
+                  <div class="research-metric-label">excluded logs</div>
+                  <div class="research-metric-value" id="excluded-games">0</div>
+                </article>
+                <article class="research-metric-card">
+                  <div class="research-metric-label">models</div>
+                  <div class="research-metric-value" id="model-count">0</div>
+                </article>
+                <article class="research-metric-card">
+                  <div class="research-metric-label">top win rate</div>
+                  <div class="research-metric-value" id="top-win-rate">0.0%</div>
+                </article>
+              </div>
+
+              <div class="research-meta-strip" id="scope-meta"></div>
+            </article>
+
+            <article class="research-card">
+              <div class="research-panel-head">
+                <div>
+                  <div class="research-card-kicker">overview ranking</div>
+                  <h3>Win Rate Snapshot</h3>
+                </div>
+              </div>
+              <div class="research-mini-ranking" id="overview-ranking"></div>
+            </article>
+
+            <article class="research-card">
+              <div class="research-panel-head">
+                <div>
+                  <div class="research-card-kicker">overview scatter</div>
+                  <h3>Lie vs Win</h3>
+                </div>
+              </div>
+              <div class="research-mini-scatter" id="overview-lie-scatter"></div>
+            </article>
+
+            <article class="research-card">
+              <div class="research-panel-head">
+                <div>
+                  <div class="research-card-kicker">overview scatter</div>
+                  <h3>Challenge vs Win</h3>
+                </div>
+              </div>
+              <div class="research-mini-scatter" id="overview-challenge-scatter"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="research-panel" data-panel-content="charts" hidden>
+          <article class="research-card research-card--chart">
+            <div class="research-panel-head research-panel-head--chart">
+              <div>
+                <div class="research-card-kicker" id="chart-kicker">win-rate ranking</div>
+                <h3 id="chart-title">Who clears out most often?</h3>
+                <p class="research-chart-copy" id="chart-copy">Aggregate view across the frozen 600-game cohort.</p>
+              </div>
+              <div class="research-chart-legend" id="chart-legend"></div>
+            </div>
+            <div class="research-chart-canvas" id="chart-canvas"></div>
+            <div class="research-chart-inspector" id="chart-inspector">Hover a point to inspect the model-condition row.</div>
+          </article>
+        </section>
+
+        <section class="research-panel" data-panel-content="cast" hidden>
+          <article class="research-card research-card--cast">
+            <div class="research-panel-head">
+              <div>
+                <div class="research-card-kicker">dense cast view</div>
+                <h3>Model Cards</h3>
+              </div>
+            </div>
+            <div class="research-cast-grid" id="research-cast-grid"></div>
+          </article>
+        </section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

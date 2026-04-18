@@ -1,0 +1,11 @@
+{
+  "name": "llm-bullshit-research",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "build:data": "node ../../scripts/build-research-bundle.mjs",
+    "check": "node --check server.mjs && node --check research.js && node --check model-registry.js"
+  }
+}
