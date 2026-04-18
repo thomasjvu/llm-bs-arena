@@ -175,6 +175,48 @@ export function compareExperiments(
   };
 }
 
+export interface CompareStatsRow {
+  experimentId: number;
+  modelId: string;
+  gamesPlayed: number;
+  wins: number;
+  winRate: number;
+  lieFrequency: number;
+  lieSuccessRate: number;
+  paranoiaFrequency: number;
+  challengeAccuracy: number;
+}
+
+export function calculateCompareStatsRows(
+  modelIds: readonly string[],
+  games: GameLog[],
+  experimentIds: readonly number[] = [0, 1, 2, 3]
+): CompareStatsRow[] {
+  const rows: CompareStatsRow[] = [];
+
+  for (const experimentId of experimentIds) {
+    const experimentGames = games.filter((game) => game.experimentId === experimentId);
+    const stats = calculateAllStats([...modelIds], experimentGames, experimentId);
+
+    for (const modelId of modelIds) {
+      const modelStats = stats.get(modelId) ?? calculatePlayerStats(modelId, [], experimentId);
+      rows.push({
+        experimentId,
+        modelId,
+        gamesPlayed: modelStats.gamesPlayed,
+        wins: modelStats.wins,
+        winRate: modelStats.winRate,
+        lieFrequency: modelStats.lieFrequency,
+        lieSuccessRate: modelStats.lieSuccessRate,
+        paranoiaFrequency: modelStats.paranoiaFrequency,
+        challengeAccuracy: modelStats.challengeAccuracy,
+      });
+    }
+  }
+
+  return rows;
+}
+
 /**
  * Generates a summary report for an experiment
  */

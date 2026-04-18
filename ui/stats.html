@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LLM Bullshit Research Stats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&family=Permanent+Marker&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="stats.css">
   <script src="model-themes.js" defer></script>
   <script type="module" src="stats.js"></script>
@@ -14,120 +17,135 @@
       <a class="stats-back" href="/">← back to live table</a>
       <div class="stats-header-main">
         <div class="stats-kicker">research stats</div>
-        <h1>Experiment Summary</h1>
+        <h1>BS-Bench Lab</h1>
+        <p class="stats-header-copy">
+          Frozen 600-game paper cohort across EXP0-EXP3.
+        </p>
       </div>
       <label class="stats-select">
-        <span>experiment</span>
-        <select id="experiment-select">
-          <option value="0">control</option>
-          <option value="1" selected>baseline</option>
-          <option value="2">asymmetric</option>
-          <option value="3">honesty</option>
+        <select id="experiment-select" aria-label="Experiment">
+          <option value="0">EXP0: CONTROL</option>
+          <option value="1" selected>EXP1: BASELINE</option>
+          <option value="2">EXP2: ASYMMETRIC</option>
+          <option value="3">EXP3: HONESTY</option>
         </select>
       </label>
     </header>
 
-    <section class="stats-hero">
-      <div class="stats-hero-copy">
-        <div class="stats-kicker">selected condition</div>
-        <h2 id="experiment-title">Baseline</h2>
-        <p class="stats-summary" id="experiment-summary"></p>
+    <section class="stats-dashboard">
+      <aside class="stats-rail">
+        <article class="stats-card stats-card--experiment">
+          <div class="stats-kicker">selected condition</div>
+          <div class="stats-experiment-title-row">
+            <span class="stats-experiment-id" id="experiment-id">EXP1</span>
+            <h2 id="experiment-title">Baseline</h2>
+          </div>
+          <p class="stats-summary" id="experiment-summary"></p>
+          <div class="stats-copy-grid stats-copy-grid--stacked">
+            <article class="stats-copy-card">
+              <div class="stats-copy-label">Prompt framing</div>
+              <p id="experiment-framing"></p>
+            </article>
+            <article class="stats-copy-card">
+              <div class="stats-copy-label">Purpose</div>
+              <p id="experiment-purpose"></p>
+            </article>
+          </div>
+        </article>
 
-        <div class="stats-copy-grid">
-          <article class="stats-copy-card">
-            <div class="stats-copy-label">Prompt framing</div>
-            <p id="experiment-framing"></p>
+        <div class="stats-rail-grid">
+          <article class="stats-card stats-metric-card">
+            <div class="stats-copy-label">Included games</div>
+            <div class="stats-metric-value" id="included-games">0</div>
+            <div class="stats-metric-note">Comparable cohort for this condition.</div>
           </article>
-          <article class="stats-copy-card">
-            <div class="stats-copy-label">Purpose</div>
-            <p id="experiment-purpose"></p>
+          <article class="stats-card stats-metric-card">
+            <div class="stats-copy-label">Excluded mixed logs</div>
+            <div class="stats-metric-value" id="excluded-games">0</div>
+            <div class="stats-metric-note">Outside the dominant comparable cohort.</div>
+          </article>
+          <article class="stats-card stats-metric-card stats-metric-card--wide">
+            <div class="stats-copy-label">Cohort metadata</div>
+            <div class="stats-metric-note" id="cohort-meta">No comparable cohort loaded yet.</div>
+          </article>
+          <article class="stats-card stats-metric-card stats-metric-card--wide">
+            <div class="stats-copy-label">Table scope</div>
+            <div class="stats-metric-note" id="counts-meta">Waiting for experiment data.</div>
           </article>
         </div>
-      </div>
+      </aside>
 
-      <div class="stats-meta-grid">
-        <article class="stats-metric-card">
-          <div class="stats-copy-label">Included games</div>
-          <div class="stats-metric-value" id="included-games">0</div>
-          <div class="stats-metric-note">Comparable cohort for this experiment.</div>
-        </article>
-        <article class="stats-metric-card">
-          <div class="stats-copy-label">Excluded mixed logs</div>
-          <div class="stats-metric-value" id="excluded-games">0</div>
-          <div class="stats-metric-note">Outside the dominant comparable cohort.</div>
-        </article>
-        <article class="stats-metric-card">
-          <div class="stats-copy-label">Cohort metadata</div>
-          <div class="stats-metric-note" id="cohort-meta">No comparable cohort loaded yet.</div>
-        </article>
-        <article class="stats-metric-card">
-          <div class="stats-copy-label">Table scope</div>
-          <div class="stats-metric-note" id="counts-meta">Waiting for experiment data.</div>
-        </article>
-      </div>
-    </section>
-
-    <section class="stats-context">
-      <p>
-        This page summarizes the frozen comparable cohort for the selected experiment. It is research reporting,
-        not the current live-table standings.
-      </p>
-    </section>
-
-    <section class="stats-table-section">
-      <div class="stats-section-head">
-        <div>
-          <div class="stats-kicker">model outcomes</div>
-          <h3>Per-model metrics</h3>
+      <section class="stats-stage">
+        <div class="stats-stage-top">
+          <div class="stats-view-tabs" role="tablist" aria-label="Stats views">
+            <button class="stats-view-tab is-active" data-stats-panel="overview" type="button">overview</button>
+            <button class="stats-view-tab" data-stats-panel="charts" type="button">charts</button>
+            <button class="stats-view-tab" data-stats-panel="cast" type="button">cast</button>
+          </div>
+          <div class="stats-status" id="stats-status">Loading experiment data…</div>
         </div>
-        <div class="stats-status" id="stats-status">Loading experiment data…</div>
-      </div>
 
-      <div class="stats-empty" id="stats-empty" hidden></div>
+        <div class="stats-chart-tabs" id="chart-tabs" hidden>
+          <button class="stats-chart-tab is-active" data-chart-view="ranking" type="button">win rate</button>
+          <button class="stats-chart-tab" data-chart-view="lie-win" type="button">lie vs win</button>
+          <button class="stats-chart-tab" data-chart-view="paranoia-win" type="button">challenge vs win</button>
+        </div>
 
-      <div class="stats-table-wrap" id="stats-table-wrap" hidden>
-        <table class="stats-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>model</th>
-              <th>win%</th>
-              <th>wins</th>
-              <th>lie freq</th>
-              <th>lie ok%</th>
-              <th>paranoia</th>
-              <th>challenge acc%</th>
-            </tr>
-          </thead>
-          <tbody id="stats-body"></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="stats-empty" id="stats-empty" hidden></div>
 
-    <section class="stats-glossary">
-      <div class="stats-kicker">metric glossary</div>
-      <div class="stats-glossary-grid">
-        <article>
-          <strong>Win%</strong>
-          <p>Share of included games won by that model.</p>
-        </article>
-        <article>
-          <strong>Lie freq</strong>
-          <p>How often the model played a false rank claim.</p>
-        </article>
-        <article>
-          <strong>Lie ok%</strong>
-          <p>How often that model’s lies survived without being correctly punished.</p>
-        </article>
-        <article>
-          <strong>Paranoia</strong>
-          <p>Rate of challenge behavior captured by the current metrics pipeline.</p>
-        </article>
-        <article>
-          <strong>Challenge acc%</strong>
-          <p>How often that model’s challenges were correct.</p>
-        </article>
-      </div>
+        <div class="stats-panels">
+          <section class="stats-panel is-active" data-panel-content="overview">
+            <div class="stats-overview-grid">
+              <article class="stats-card stats-card--podium">
+                <div class="stats-panel-head">
+                  <div>
+                    <div class="stats-kicker">standout cast</div>
+                    <h3>Podium</h3>
+                  </div>
+                </div>
+                <div class="stats-podium" id="stats-podium"></div>
+              </article>
+
+              <article class="stats-card stats-card--snapshot">
+                <div class="stats-panel-head">
+                  <div>
+                    <div class="stats-kicker">quick reads</div>
+                    <h3>At a glance</h3>
+                  </div>
+                </div>
+                <div class="stats-snapshot-grid" id="stats-snapshot-grid"></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="stats-panel" data-panel-content="charts" hidden>
+            <article class="stats-card stats-card--chart">
+              <div class="stats-panel-head stats-panel-head--chart">
+                <div>
+                  <div class="stats-kicker" id="chart-kicker">win-rate chart</div>
+                  <h3 id="chart-title">Who clears out most often?</h3>
+                  <p class="stats-chart-copy" id="chart-copy">Current selected experiment only.</p>
+                </div>
+                <div class="stats-chart-legend" id="chart-legend"></div>
+              </div>
+              <div class="stats-chart-canvas" id="chart-canvas"></div>
+              <div class="stats-chart-inspector" id="chart-inspector">Hover a point to inspect the model-condition row.</div>
+            </article>
+          </section>
+
+          <section class="stats-panel" data-panel-content="cast" hidden>
+            <article class="stats-card stats-card--cast">
+              <div class="stats-panel-head">
+                <div>
+                  <div class="stats-kicker">full cast breakdown</div>
+                  <h3>Character cards</h3>
+                </div>
+              </div>
+              <div class="stats-model-grid" id="stats-model-grid"></div>
+            </article>
+          </section>
+        </div>
+      </section>
     </section>
   </main>
 </body>

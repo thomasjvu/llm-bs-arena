@@ -16,12 +16,13 @@ import {
   ProviderRuntimeConfig,
 } from './llm/provider.js';
 import { GameLogger, selectComparableGameCohort } from './logging/game-logger.js';
-import { calculateAllStats } from './metrics/player-stats.js';
+import { calculateAllStats, calculateCompareStatsRows } from './metrics/player-stats.js';
 import { normalizePlaySelection } from './engine/play-rules.js';
 
 const PORT = 3001;
 const UI_DIR = path.join(process.cwd(), 'ui');
 const LOGS_DIR = path.join(process.cwd(), 'logs/games');
+const FROZEN_ARTIFACTS_DIR = path.join(process.cwd(), 'paper/arxiv/artifacts/frozen');
 const HUMAN_MODEL_ID = 'human/player';
 const DEFAULT_HUMAN_NAME = 'You';
 const MODEL_SET = new Set<string>(MODELS as readonly string[]);
@@ -44,7 +45,51 @@ interface ActiveGame {
   persistLog: boolean;
 }
 
+interface FrozenResearchManifest {
+  totalGamesFound: number;
+  comparableCohort: {
+    schemaVersion: number;
+    provider: string;
+    promptVersion?: string;
+    promptHash?: string;
+    size: number;
+  };
+  countsByExperiment: Record<string, {
+    included: number;
+    excludedMixedCohort: number;
+    excludedTurnCap: number;
+  }>;
+  excludedGamesByReason?: Record<string, string[]>;
+}
+
+interface FrozenResearchRow {
+  experimentId: number;
+  modelId: string;
+  gamesPlayed: number;
+  wins: number;
+  winRate: number;
+  totalPlays: number;
+  totalLies: number;
+  lieFrequency: number;
+  successfulLies: number;
+  lieSuccessRate: number;
+  challengesMade: number;
+  challengeOpportunities: number;
+  paranoiaFrequency: number;
+  correctChallenges: number;
+  challengeAccuracy: number;
+  instructionViolations: number | null;
+  instructionViolationRate: number | null;
+}
+
+interface FrozenResearchCache {
+  manifest: FrozenResearchManifest;
+  rowsByExperiment: Record<string, FrozenResearchRow[]>;
+  compareRows: FrozenResearchRow[];
+}
+
 const activeGames = new Map<string, ActiveGame>();
+let frozenResearchCache: FrozenResearchCache | null = null;
 
 // MIME types
 const mimeTypes: Record<string, string> = {
@@ -165,6 +210,76 @@ function handleGetRuntimeStatus(res: http.ServerResponse) {
     hasServerApiKey: Boolean(process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY),
     hasServerBaseUrl: Boolean(process.env.NVIDIA_NIM_BASE_URL),
   });
+}
+
+function parseCsvRows(csvText: string): string[][] {
+  return csvText
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.split(','));
+}
+
+function parseNullableNumber(value: string | undefined): number | null {
+  if (value == null || value === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseRequiredNumber(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function loadFrozenResearchData(): FrozenResearchCache {
+  if (frozenResearchCache) {
+    return frozenResearchCache;
+  }
+
+  const manifestPath = path.join(FROZEN_ARTIFACTS_DIR, 'cohort_manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as FrozenResearchManifest;
+  const rowsByExperiment: Record<string, FrozenResearchRow[]> = {};
+  const compareRows: FrozenResearchRow[] = [];
+
+  for (const experimentId of ['0', '1', '2', '3']) {
+    const csvPath = path.join(FROZEN_ARTIFACTS_DIR, `player_stats_exp${experimentId}.csv`);
+    const csv = fs.readFileSync(csvPath, 'utf8');
+    const [headerRow, ...dataRows] = parseCsvRows(csv);
+    const columnIndex = Object.fromEntries(headerRow.map((name, index) => [name, index]));
+
+    const rows = dataRows.map((cells) => ({
+      experimentId: Number(experimentId),
+      modelId: cells[columnIndex.model_id] || '',
+      gamesPlayed: parseRequiredNumber(cells[columnIndex.games_played]),
+      wins: parseRequiredNumber(cells[columnIndex.wins]),
+      winRate: parseRequiredNumber(cells[columnIndex.win_rate]),
+      totalPlays: parseRequiredNumber(cells[columnIndex.total_plays]),
+      totalLies: parseRequiredNumber(cells[columnIndex.total_lies]),
+      lieFrequency: parseRequiredNumber(cells[columnIndex.lie_frequency]),
+      successfulLies: parseRequiredNumber(cells[columnIndex.successful_lies]),
+      lieSuccessRate: parseRequiredNumber(cells[columnIndex.lie_success_rate]),
+      challengesMade: parseRequiredNumber(cells[columnIndex.challenges_made]),
+      challengeOpportunities: parseRequiredNumber(cells[columnIndex.challenge_opportunities]),
+      paranoiaFrequency: parseRequiredNumber(cells[columnIndex.paranoia_frequency]),
+      correctChallenges: parseRequiredNumber(cells[columnIndex.correct_challenges]),
+      challengeAccuracy: parseRequiredNumber(cells[columnIndex.challenge_accuracy]),
+      instructionViolations: parseNullableNumber(cells[columnIndex.instruction_violations]),
+      instructionViolationRate: parseNullableNumber(cells[columnIndex.instruction_violation_rate]),
+    }));
+
+    rowsByExperiment[experimentId] = rows;
+    compareRows.push(...rows);
+  }
+
+  frozenResearchCache = {
+    manifest,
+    rowsByExperiment,
+    compareRows,
+  };
+
+  return frozenResearchCache;
 }
 
 // SSE helpers for streaming
@@ -803,6 +918,7 @@ function handleGetStats(res: http.ServerResponse, experiment?: string) {
     const selection = selectComparableGameCohort(rawGames);
     const games = selection.games;
     const counts = logger.getGameCounts();
+    const includedCount = games.filter((game) => game.terminationReason !== 'turn_cap').length;
 
     if (games.length === 0) {
       const placeholderStats: Record<string, any> = {};
@@ -821,14 +937,117 @@ function handleGetStats(res: http.ServerResponse, experiment?: string) {
     const statsObj: Record<string, any> = {};
     stats.forEach((v, k) => statsObj[k] = v);
 
-    sendJSON(res, {
+      sendJSON(res, {
       stats: statsObj,
       cohort: selection.cohort,
       excludedGames: selection.excludedGames,
+      includedCount,
       counts: { ...counts, total: Object.values(counts).reduce((a, b) => a + b, 0) },
     });
   } catch (e) {
     sendJSON(res, { error: 'Failed to load stats' }, 500);
+  }
+}
+
+function handleGetStatsCompare(res: http.ServerResponse) {
+  try {
+    const rawGames = logger.loadAllLogs();
+    const selection = selectComparableGameCohort(rawGames);
+    const games = selection.games;
+    const totalCounts = logger.getGameCounts();
+    const includedCounts: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0 };
+
+    if (games.length === 0) {
+      sendJSON(res, {
+        rows: [],
+        cohort: null,
+        excludedGames: 0,
+        counts: {
+          includedByExperiment: includedCounts,
+          totalByExperiment: totalCounts,
+          total: Object.values(totalCounts).reduce((sum, value) => sum + value, 0),
+        },
+      });
+      return;
+    }
+
+    for (const experimentId of [0, 1, 2, 3]) {
+      includedCounts[experimentId] = games.filter(
+        (game) => game.experimentId === experimentId && game.terminationReason !== 'turn_cap'
+      ).length;
+    }
+
+    sendJSON(res, {
+      rows: calculateCompareStatsRows(MODELS, games),
+      cohort: selection.cohort,
+      excludedGames: selection.excludedGames,
+      counts: {
+        includedByExperiment: includedCounts,
+        totalByExperiment: totalCounts,
+        total: Object.values(totalCounts).reduce((sum, value) => sum + value, 0),
+      },
+    });
+  } catch (e) {
+    sendJSON(res, { error: 'Failed to load compare stats' }, 500);
+  }
+}
+
+function handleGetResearchStats(res: http.ServerResponse, experiment?: string) {
+  try {
+    const experimentId = ['0', '1', '2', '3'].includes(String(experiment)) ? String(experiment) : '1';
+    const frozen = loadFrozenResearchData();
+    const rows = frozen.rowsByExperiment[experimentId] || [];
+    const statsObj: Record<string, Omit<FrozenResearchRow, 'experimentId'>> = {};
+
+    for (const row of rows) {
+      const { experimentId: _ignored, ...stat } = row;
+      statsObj[row.modelId] = stat;
+    }
+
+    const experimentCounts = frozen.manifest.countsByExperiment[experimentId];
+    const excludedGames = (experimentCounts?.excludedMixedCohort || 0) + (experimentCounts?.excludedTurnCap || 0);
+    const countsByExperiment = Object.fromEntries(
+      Object.entries(frozen.manifest.countsByExperiment).map(([key, value]) => [key, value.included])
+    );
+
+    sendJSON(res, {
+      source: 'frozen-paper-cohort',
+      stats: statsObj,
+      cohort: frozen.manifest.comparableCohort,
+      includedCount: experimentCounts?.included || 0,
+      excludedGames,
+      counts: {
+        ...countsByExperiment,
+        total: frozen.manifest.totalGamesFound,
+      },
+    });
+  } catch (e) {
+    console.error('research stats error:', e);
+    sendJSON(res, { error: 'Failed to load frozen research stats' }, 500);
+  }
+}
+
+function handleGetResearchCompare(res: http.ServerResponse) {
+  try {
+    const frozen = loadFrozenResearchData();
+    const includedByExperiment = Object.fromEntries(
+      Object.entries(frozen.manifest.countsByExperiment).map(([key, value]) => [key, value.included])
+    );
+
+    sendJSON(res, {
+      source: 'frozen-paper-cohort',
+      rows: frozen.compareRows,
+      cohort: frozen.manifest.comparableCohort,
+      excludedGames: 0,
+      counts: {
+        includedByExperiment,
+        totalByExperiment: includedByExperiment,
+        total: frozen.manifest.totalGamesFound,
+      },
+    });
+  } catch (e) {
+    console.error('research compare error:', e);
+    sendJSON(res, { error: 'Failed to load frozen research comparison data' }, 500);
   }
 }
 
@@ -879,6 +1098,12 @@ const server = http.createServer(async (req, res) => {
         handleGetGame(res, gameId);
       } else if (apiPath === '/stats' && req.method === 'GET') {
         handleGetStats(res, parsedUrl.query.experiment as string);
+      } else if (apiPath === '/stats/compare' && req.method === 'GET') {
+        handleGetStatsCompare(res);
+      } else if (apiPath === '/research/stats' && req.method === 'GET') {
+        handleGetResearchStats(res, parsedUrl.query.experiment as string);
+      } else if (apiPath === '/research/compare' && req.method === 'GET') {
+        handleGetResearchCompare(res);
       } else if (apiPath === '/runtime' && req.method === 'GET') {
         handleGetRuntimeStatus(res);
       } else {

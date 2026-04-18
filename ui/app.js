@@ -11,7 +11,6 @@ const preferences = loadPreferences();
 const audio = createAudio({ enabled: preferences.soundEnabled });
 const themeIssues = window.ModelThemes?.validateRegistry?.() || [];
 const FIXED_HUMAN_NAME = 'You';
-const MASKED_SERVER_KEY = '••••••••';
 
 if (themeIssues.length) {
   console.warn('[frontend] theme registry issues:\n' + themeIssues.join('\n'));
@@ -964,17 +963,8 @@ dom.providerSelect.addEventListener('change', () => {
 });
 
 dom.apiKeyInput.addEventListener('input', () => {
-  app.apiKey = dom.apiKeyInput.value === MASKED_SERVER_KEY ? '' : dom.apiKeyInput.value;
+  app.apiKey = dom.apiKeyInput.value;
   app.launcherError = '';
-});
-
-dom.apiKeyInput.addEventListener('focus', () => {
-  if (app.provider !== 'nim') return;
-  if (app.apiKey) return;
-  if (!app.serverApiKeyAvailable) return;
-  if (dom.apiKeyInput.value === MASKED_SERVER_KEY) {
-    dom.apiKeyInput.value = '';
-  }
 });
 
 dom.apiKeyInput.addEventListener('blur', () => {

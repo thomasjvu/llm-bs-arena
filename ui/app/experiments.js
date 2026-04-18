@@ -36,3 +36,8 @@ export const EXPERIMENTS = [
 export function getExperimentMeta(experimentId) {
   return EXPERIMENTS.find((experiment) => experiment.id === String(experimentId)) || EXPERIMENTS[1];
 }
+
+export function getQuotedExperimentSummary(experimentId) {
+  const experiment = getExperimentMeta(experimentId);
+  return `"${experiment.summary}"`;
+}

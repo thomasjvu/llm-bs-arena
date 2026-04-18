@@ -129,6 +129,21 @@ export async function fetchStats(experimentId) {
   return parseJson(response);
 }
 
+export async function fetchStatsCompare() {
+  const response = await fetch(`${API_BASE}/stats/compare`);
+  return parseJson(response);
+}
+
+export async function fetchResearchStats(experimentId) {
+  const response = await fetch(`${API_BASE}/research/stats?experiment=${experimentId}`);
+  return parseJson(response);
+}
+
+export async function fetchResearchCompare() {
+  const response = await fetch(`${API_BASE}/research/compare`);
+  return parseJson(response);
+}
+
 export async function fetchRuntimeStatus() {
   const response = await fetch(`${API_BASE}/runtime`, {
     method: 'GET',

@@ -14,7 +14,7 @@ import {
 import { TurnManager, LLMAdapter } from '../engine/turn-manager.js';
 import { combinations, createTournamentConfig, generateMatchups, resolveMatchupShard, shuffleSeating } from '../tournament/matchup-generator.js';
 import { formatTournamentGameCompletion, TournamentRunner } from '../tournament/tournament-runner.js';
-import { calculatePlayerStats, calculateParanoia } from '../metrics/player-stats.js';
+import { calculatePlayerStats, calculateParanoia, calculateCompareStatsRows } from '../metrics/player-stats.js';
 import { parsePlayResponse, parseChallengeResponse, extractJSON } from '../llm/response-parser.js';
 import { MODELS, BASELINE_MODELS, RANKS, Card, GameLog } from '../types/game.js';
 import { GameLogger, selectComparableGameCohort, buildCohortManifest } from '../logging/game-logger.js';
@@ -968,6 +968,29 @@ describe('Metrics', () => {
     const stats = calculatePlayerStats('model-a', [exp3Log], 3);
     expect(stats.instructionViolations).toBe(1);
     expect(stats.instructionViolationRate).toBe(1);
+  });
+
+  it('should build compare rows for every model and experiment pair', () => {
+    const exp0Log: GameLog = {
+      ...mockGameLog,
+      gameId: 'exp0-game',
+      experimentId: 0,
+      winner: 'player_0',
+    };
+    const exp1Log: GameLog = {
+      ...mockGameLog,
+      gameId: 'exp1-game',
+      experimentId: 1,
+      winner: 'player_1',
+    };
+
+    const rows = calculateCompareStatsRows(['model-a', 'model-b'], [exp0Log, exp1Log], [0, 1]);
+
+    expect(rows).toHaveLength(4);
+    expect(rows.find((row) => row.experimentId === 0 && row.modelId === 'model-a')?.wins).toBe(1);
+    expect(rows.find((row) => row.experimentId === 1 && row.modelId === 'model-b')?.wins).toBe(1);
+    expect(rows.find((row) => row.experimentId === 0 && row.modelId === 'model-b')?.gamesPlayed).toBe(1);
+    expect(rows.find((row) => row.experimentId === 1 && row.modelId === 'model-a')?.gamesPlayed).toBe(1);
   });
 });
 
