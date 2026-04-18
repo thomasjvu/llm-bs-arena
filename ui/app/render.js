@@ -312,6 +312,10 @@ function renderPeekTray(container, root, slotMeta, player, state, app) {
   }
 
   container.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'peek-card-wrap';
+  const strip = document.createElement('div');
+  strip.className = 'peek-card-strip';
 
   cards.forEach((card, index) => {
     const cardEl = renderCard(card || '', isOpen && Boolean(card));
@@ -319,15 +323,19 @@ function renderPeekTray(container, root, slotMeta, player, state, app) {
     if (isOpen && shouldAnimate) {
       cardEl.classList.add('is-peek-revealed');
     }
-    container.appendChild(cardEl);
+    strip.appendChild(cardEl);
   });
+
+  wrap.appendChild(strip);
 
   if (overflowCount > 0) {
     const extra = document.createElement('div');
     extra.className = 'hand-overflow';
     extra.textContent = `+${overflowCount}`;
-    container.appendChild(extra);
+    wrap.appendChild(extra);
   }
+
+  container.appendChild(wrap);
 }
 
 function buildSpectatorFeedEntries(state) {
@@ -631,8 +639,10 @@ function renderExperimentGuide(container, selectedExperimentId) {
   container.innerHTML = experiment
     ? `
       <article class="experiment-faq-item experiment-faq-item--single is-selected">
-        <div class="experiment-faq-id">exp ${experiment.id}</div>
-        <div class="experiment-faq-title">${experiment.title}</div>
+        <div class="experiment-faq-top">
+          <div class="experiment-faq-id">exp ${experiment.id}</div>
+          <div class="experiment-faq-title">${experiment.title}</div>
+        </div>
         <div class="experiment-faq-line">${experiment.summary}</div>
         <div class="experiment-faq-detail">${experiment.detail}</div>
       </article>
@@ -673,7 +683,11 @@ function buildHudState(state, reveal, challengeReveal) {
       : state.thinkingPlayerId);
 
     return {
-      primary: `${state.pendingTurn.claimedCount} x ${state.pendingTurn.claimedRank} on table`,
+      primary: '',
+      primaryClaim: {
+        count: state.pendingTurn.claimedCount,
+        rank: state.pendingTurn.claimedRank,
+      },
       secondary: state.awaitingHumanAction?.type === 'challenge'
         ? `${getPlayerName(judge)} deciding objection`
         : state.phase === 'challenging' && judge
@@ -707,7 +721,15 @@ function renderHudState(primaryContainer, secondaryContainer, state, reveal, cha
   if (hudState.emphasizeReveal) {
     primary.classList.add('claim-line--reveal');
   }
-  primary.textContent = hudState.primary;
+  if (hudState.primaryClaim) {
+    primary.innerHTML = `
+      <span class="claim-line-count">${hudState.primaryClaim.count}</span><span class="claim-line-x">x</span>
+      <span class="claim-line-rank">${hudState.primaryClaim.rank}</span>
+      <span class="claim-line-suffix">ON TABLE</span>
+    `;
+  } else {
+    primary.textContent = hudState.primary;
+  }
   primaryContainer.appendChild(primary);
   setText(secondaryContainer, hudState.secondary);
 }
@@ -1363,9 +1385,7 @@ export function renderApp(dom, app, layout, onToggleCard) {
   renderPile(dom.pileDisplay, viewState?.pileSize || 0);
   renderHudState(dom.pendingDisplay, dom.pendingSubline, viewState, app.transientReveal, app.challengeReveal);
   renderTurnRibbon(dom.turnRibbon, viewState);
-  const activeExperimentId = viewState?.experimentId != null
-    ? String(viewState.experimentId)
-    : String(dom.experimentSelect?.value || '1');
+  const activeExperimentId = String(dom.experimentSelect?.value || viewState?.experimentId || '1');
   renderExperimentGuide(dom.experimentGuideList, activeExperimentId);
   if (dom.researchStatsLink) {
     dom.researchStatsLink.href = `/stats.html?experiment=${encodeURIComponent(activeExperimentId)}`;

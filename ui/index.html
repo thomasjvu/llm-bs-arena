@@ -183,17 +183,15 @@
       <div class="side-panel-scroll">
         <section class="side-section" data-sidebar-section="utility">
           <label class="control-select">
-            <span>experiment</span>
-            <select id="experiment-select">
-              <option value="0">control</option>
-              <option value="1" selected>baseline</option>
-              <option value="2">asymmetric</option>
-              <option value="3">honesty</option>
+            <select id="experiment-select" aria-label="Experiment">
+              <option value="0">EXP0: CONTROL</option>
+              <option value="1" selected>EXP1: BASELINE</option>
+              <option value="2">EXP2: ASYMMETRIC</option>
+              <option value="3">EXP3: HONESTY</option>
             </select>
           </label>
 
           <div class="experiment-guide">
-            <div class="side-section-title">experiment guide</div>
             <div class="experiment-guide-list" id="experiment-guide-list"></div>
           </div>
 
@@ -216,6 +214,23 @@
       </div>
 
       <footer class="side-panel-footer">
+        <div class="side-panel-socials" aria-label="Project links">
+          <a class="side-social-link" href="https://github.com/thomasjvu/llm-bs-arena" target="_blank" rel="noreferrer" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 .297C5.373.297 0 5.67 0 12.297c0 5.303 3.438 9.8 8.205 11.387c.6.111.82-.261.82-.579c0-.285-.01-1.04-.016-2.04c-3.338.725-4.042-1.61-4.042-1.61c-.546-1.387-1.333-1.757-1.333-1.757c-1.089-.745.083-.729.083-.729c1.205.085 1.839 1.237 1.839 1.237c1.07 1.834 2.807 1.304 3.492.997c.108-.775.418-1.304.762-1.604c-2.665-.303-5.467-1.333-5.467-5.931c0-1.31.468-2.381 1.236-3.221c-.124-.303-.536-1.524.117-3.176c0 0 1.008-.322 3.301 1.23A11.5 11.5 0 0 1 12 6.118a11.5 11.5 0 0 1 3.006.404c2.291-1.552 3.297-1.23 3.297-1.23c.655 1.652.243 2.873.12 3.176c.77.84 1.235 1.911 1.235 3.221c0 4.609-2.807 5.625-5.48 5.921c.43.371.814 1.103.814 2.222c0 1.606-.014 2.902-.014 3.297c0 .321.216.694.825.576C20.565 22.092 24 17.597 24 12.297C24 5.67 18.627.297 12 .297" fill="currentColor"/>
+            </svg>
+          </a>
+          <a class="side-social-link" href="https://x.com/alkahestai" target="_blank" rel="noreferrer" aria-label="X">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18.244 2H21.308L14.616 9.649L22.488 22H16.323L11.496 14.526L4.956 22H1.89L9.05 13.819L1.5 2H7.82L12.183 8.937L18.244 2ZM17.169 20.137H18.866L6.898 3.765H5.075L17.169 20.137Z" fill="currentColor"/>
+            </svg>
+          </a>
+          <a class="side-social-link" href="https://arxiv.org/search/?query=BS-Bench%3A+Measuring+LLM+Deception%2C+Lie+Detection%2C+and+Instruction+Compliance&searchtype=all&source=header" target="_blank" rel="noreferrer" aria-label="arXiv">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3.8423 0a1.0037 1.0037 0 0 0-.922.6078c-.1536.3687-.0438.6275.2938 1.1113l6.9185 8.3597-1.0223 1.1058a1.0393 1.0393 0 0 0 .003 1.4229l1.2292 1.3135-5.4391 6.4444c-.2803.299-.4538.823-.2971 1.1986a1.0253 1.0253 0 0 0 .9585.635.9133.9133 0 0 0 .6891-.3405l5.783-6.126 7.4902 8.0051a.8527.8527 0 0 0 .6835.2597.9575.9575 0 0 0 .8777-.6138c.1577-.377-.017-.7502-.306-1.1407l-7.0518-8.3418 1.0632-1.13a.9626.9626 0 0 0 .0089-1.3165L4.6336.4639s-.3733-.4535-.768-.463zm0 .272h.0166c.2179.0052.4874.2715.5644.3639l.005.006.0052.0055 10.169 10.9905a.6915.6915 0 0 1-.0072.945l-1.0666 1.133-1.4982-1.7724-8.5994-10.39c-.3286-.472-.352-.6183-.2592-.841a.7307.7307 0 0 1 .6704-.4401Zm14.341 1.5701a.877.877 0 0 0-.6554.2418l-5.6962 6.1584 1.6944 1.8319 5.3089-6.5138c.3251-.4335.479-.6603.3247-1.0292a1.1205 1.1205 0 0 0-.9763-.689zm-7.6557 12.2823 1.3186 1.4135-5.7864 6.1295a.6494.6494 0 0 1-.4959.26.7516.7516 0 0 1-.706-.4669c-.1119-.2682.0359-.6864.2442-.9083l.0051-.0055.0047-.0055z" fill="currentColor"/>
+            </svg>
+          </a>
+        </div>
         <div>COPYRIGHT 2026 <a href="https://alkahest.ai" target="_blank" rel="noreferrer">ALKAHEST AI</a>.</div>
         <div>DESIGNED BY <a href="https://ultima.gg" target="_blank" rel="noreferrer">ULTIMA.GG</a></div>
       </footer>
