@@ -1026,9 +1026,11 @@ dom.newGameBtn.addEventListener('click', () => {
   void startNewGame();
 });
 
-dom.stepBtn.addEventListener('click', () => {
-  void stepOnce();
-});
+if (dom.stepBtn) {
+  dom.stepBtn.addEventListener('click', () => {
+    void stepOnce();
+  });
+}
 
 dom.autoPlayBtn.addEventListener('click', () => {
   if (app.autoPlaying) {

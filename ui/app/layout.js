@@ -55,6 +55,17 @@ function getTurnLeadPlayerId(state) {
   return state.players[state.currentPlayerIndex]?.id ?? state.players[0]?.id ?? null;
 }
 
+function getTurnJudgePlayerId(state) {
+  if (!state?.players?.length) return null;
+  if (state.awaitingHumanAction?.type === 'challenge') {
+    return state.awaitingHumanAction.playerId ?? null;
+  }
+  if (state.phase === 'challenging') {
+    return state.thinkingPlayerId ?? null;
+  }
+  return null;
+}
+
 export function buildSlotLayout(state) {
   const players = state?.players ?? [];
   const activePlayerId = getActiveSpeakerId(state);
@@ -84,11 +95,17 @@ export function getSlotForPlayer(layout, playerId) {
 export function buildTurnRibbon(state) {
   const players = state?.players ?? [];
   const leadPlayerId = getTurnLeadPlayerId(state);
+  const judgePlayerId = getTurnJudgePlayerId(state);
   if (!players.length || !leadPlayerId) return [];
 
   const leadIndex = Math.max(0, players.findIndex((player) => player.id === leadPlayerId));
   return players.map((_, offset) => {
     const player = players[(leadIndex + offset) % players.length];
+    const role = player.id === judgePlayerId
+      ? 'judge'
+      : player.id === leadPlayerId
+        ? 'leader'
+        : 'standby';
     return {
       id: player.id,
       name: player.displayName || player.modelId,
@@ -97,6 +114,8 @@ export function buildTurnRibbon(state) {
       isLead: offset === 0,
       isAwaitingHuman: state.awaitingHumanAction?.playerId === player.id,
       isEliminated: player.isEliminated,
+      role,
+      roleLabel: role === 'judge' ? 'JUDGE' : role === 'leader' ? 'LEADER' : 'STANDBY',
     };
   });
 }

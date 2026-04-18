@@ -523,8 +523,10 @@ function renderTurnRibbon(container, state) {
     const pillKey = `pill:${entry.id}`;
     const pill = existingNodes.get(pillKey) || document.createElement('div');
     pill.dataset.key = pillKey;
+    pill.dataset.role = entry.role || 'standby';
     pill.className = 'turn-pill';
     if (entry.isLead) pill.classList.add('is-lead', 'is-current');
+    if (entry.role === 'judge') pill.classList.add('is-judge');
     if (entry.isAwaitingHuman) pill.classList.add('is-awaiting-human');
     if (entry.isEliminated) pill.classList.add('is-eliminated');
     pill.setAttribute('aria-label', getShortModelName(entry.modelId, entry.name));
@@ -554,10 +556,13 @@ function renderTurnRibbon(container, state) {
     thumb.src = window.ModelThemes.getThumbnail(entry.modelId);
     thumb.alt = getShortModelName(entry.modelId, entry.name);
 
-    const label = pill.querySelector('.turn-label');
-    if (label) {
-      label.remove();
+    let label = pill.querySelector('.turn-label');
+    if (!label) {
+      label = document.createElement('span');
+      pill.appendChild(label);
     }
+    label.className = `turn-label turn-label--${entry.role || 'standby'}`;
+    label.textContent = entry.roleLabel || '';
     nextNodes.push(pill);
 
     if (index < queue.length - 1) {
@@ -622,19 +627,17 @@ function renderPile(container, pileSize) {
 function renderExperimentGuide(container, selectedExperimentId) {
   if (!container) return;
   const selectedId = String(selectedExperimentId ?? '1');
-  container.innerHTML = EXPERIMENTS.map((experiment) => {
-    const isSelected = experiment.id === selectedId;
-    return `
-      <details class="experiment-faq-item ${isSelected ? 'is-selected' : ''}" ${isSelected ? 'open' : ''}>
-        <summary class="experiment-faq-summary">
-          <span class="experiment-faq-id">exp ${experiment.id}</span>
-          <span class="experiment-faq-title">${experiment.title}</span>
-          <span class="experiment-faq-line">${experiment.summary}</span>
-        </summary>
+  const experiment = EXPERIMENTS.find((entry) => entry.id === selectedId) || EXPERIMENTS[0];
+  container.innerHTML = experiment
+    ? `
+      <article class="experiment-faq-item experiment-faq-item--single is-selected">
+        <div class="experiment-faq-id">exp ${experiment.id}</div>
+        <div class="experiment-faq-title">${experiment.title}</div>
+        <div class="experiment-faq-line">${experiment.summary}</div>
         <div class="experiment-faq-detail">${experiment.detail}</div>
-      </details>
-    `;
-  }).join('');
+      </article>
+    `
+    : '';
 }
 
 function buildHudState(state, reveal, challengeReveal) {
@@ -1360,9 +1363,12 @@ export function renderApp(dom, app, layout, onToggleCard) {
   renderPile(dom.pileDisplay, viewState?.pileSize || 0);
   renderHudState(dom.pendingDisplay, dom.pendingSubline, viewState, app.transientReveal, app.challengeReveal);
   renderTurnRibbon(dom.turnRibbon, viewState);
-  renderExperimentGuide(dom.experimentGuideList, dom.experimentSelect?.value);
+  const activeExperimentId = viewState?.experimentId != null
+    ? String(viewState.experimentId)
+    : String(dom.experimentSelect?.value || '1');
+  renderExperimentGuide(dom.experimentGuideList, activeExperimentId);
   if (dom.researchStatsLink) {
-    dom.researchStatsLink.href = `/stats.html?experiment=${encodeURIComponent(dom.experimentSelect?.value || '1')}`;
+    dom.researchStatsLink.href = `/stats.html?experiment=${encodeURIComponent(activeExperimentId)}`;
   }
 
   SLOT_IDS.forEach((slotId) => {
@@ -1383,7 +1389,9 @@ export function renderApp(dom, app, layout, onToggleCard) {
   dom.sidebarSections.forEach((section) => {
     section.hidden = section.dataset.sidebarSection !== app.sidebarTab;
   });
-  dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy || revealLocked;
+  if (dom.stepBtn) {
+    dom.stepBtn.disabled = !app.currentGameId || app.autoPlaying || Boolean(viewState?.awaitingHumanAction) || app.stepBusy || revealLocked;
+  }
   dom.autoPlayBtn.disabled = app.autoPlaying
     ? !app.currentGameId
     : !app.currentGameId || viewState?.phase === 'finished' || app.stepBusy || Boolean(viewState?.awaitingHumanAction) || revealLocked;
