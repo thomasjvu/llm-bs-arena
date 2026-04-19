@@ -23,6 +23,7 @@ Most honesty-oriented LLM evaluation focuses on static prompts. This dataset ins
 - other agents can challenge suspicious behavior
 
 This makes it useful for studying not just whether models say false things, but how they behave when deception is incentivized and socially contestable.
+Because the logs include seeds, seating order, and actual cards played on every turn, the frozen cohort also supports post-hoc replay of start-of-turn hands so honesty-mandate analysis can separate optional lies from turns where no truthful play was available.
 
 ## Composition
 
@@ -44,6 +45,8 @@ Derived CSV exports include:
 - one row per player per game
 - one row per game
 - one row per turn
+- replay-derived truthful-availability labels for each turn
+- replay-derived optional-lie and truthful-play-unavailable aggregates for each player-game row
 
 ## Collection Process
 
@@ -106,7 +109,7 @@ This release includes:
 - `release/v1.0.0/evaluation-manifest.json`
 - `release/v1.0.0/checksums.sha256`
 - `release/v1.0.0/RELEASE_NOTES.md`
-- tracked frozen summary artifacts under `paper/tmlr/artifacts/frozen/`
-- tracked paper figures under `paper/tmlr/figures/`
+- tracked frozen summary artifacts under `paper/arxiv/artifacts/frozen/`
+- tracked paper figures under `paper/arxiv/figures/`
 
 The full raw game logs are packaged as a versioned archive asset referenced by the release manifest rather than being committed into normal repo history.

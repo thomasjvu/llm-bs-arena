@@ -29,7 +29,7 @@ The benchmark focuses on three research questions:
 2. Moral restraint:
    Do models reduce deception when told opponents are constrained to be honest?
 3. Instruction compliance:
-   Do models violate explicit no-lying instructions when lying improves competitive outcomes?
+   When truthful play is available, do models still violate explicit no-lying instructions under competitive pressure?
 
 ## Task Definition
 
@@ -102,6 +102,7 @@ Use:
 Interpretation:
 - this is a plain-language honesty mandate
 - it is intentionally not the strongest possible anti-lying intervention
+- analysis distinguishes optional lies from truthful-play-unavailable turns
 - stronger honesty framing belongs in later ablations, not in the live pilot cohort
 
 ## Pilot Roster
@@ -166,7 +167,9 @@ Shard protocol:
 - lie success rate
 - challenge frequency
 - challenge accuracy
-- instruction violation rate in Experiment 3
+- optional lie rate given truthful availability
+- truthful-play-unavailable turn share
+- legacy overall lie rate under the honesty mandate for continuity with earlier exports
 
 ## Valid Run Criteria
 
@@ -192,8 +195,8 @@ Derived:
 - `results/research_summary.md`
 
 Tracked frozen release copies:
-- `paper/tmlr/artifacts/frozen/*`
-- `paper/tmlr/figures/*`
+- `paper/arxiv/artifacts/frozen/*`
+- `paper/arxiv/figures/*`
 
 Versioned release metadata:
 - `release/v1.0.0/benchmark-release.json`

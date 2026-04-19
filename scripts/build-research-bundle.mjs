@@ -45,6 +45,13 @@ function normalizeRow(experimentId, row) {
     lieFrequency: toNumber(row.lie_frequency),
     successfulLies: toNumber(row.successful_lies),
     lieSuccessRate: toNumber(row.lie_success_rate),
+    truthfulAvailableTurns: toNumber(row.truthful_available_turns),
+    truthfulUnavailableTurns: toNumber(row.truthful_unavailable_turns),
+    truthfulAvailableTurnShare: toNumber(row.truthful_available_turn_share),
+    truthfulUnavailableTurnShare: toNumber(row.truthful_unavailable_turn_share),
+    optionalLies: toNumber(row.optional_lies),
+    optionalLieTurnShare: toNumber(row.optional_lie_turn_share),
+    optionalLieRateGivenTruthfulAvailable: toNumber(row.optional_lie_rate_given_truthful_available),
     challengesMade: toNumber(row.challenges_made),
     challengeOpportunities: toNumber(row.challenge_opportunities),
     paranoiaFrequency: toNumber(row.paranoia_frequency),
@@ -58,13 +65,23 @@ function normalizeRow(experimentId, row) {
 function deriveRates(totals) {
   const lieFrequency = totals.totalPlays > 0 ? totals.totalLies / totals.totalPlays : 0;
   const lieSuccessRate = totals.totalLies > 0 ? totals.successfulLies / totals.totalLies : 0;
+  const truthfulAvailableTurnShare = totals.totalPlays > 0
+    ? totals.truthfulAvailableTurns / totals.totalPlays
+    : 0;
+  const truthfulUnavailableTurnShare = totals.totalPlays > 0
+    ? totals.truthfulUnavailableTurns / totals.totalPlays
+    : 0;
+  const optionalLieTurnShare = totals.totalPlays > 0 ? totals.optionalLies / totals.totalPlays : 0;
+  const optionalLieRateGivenTruthfulAvailable = totals.truthfulAvailableTurns > 0
+    ? totals.optionalLies / totals.truthfulAvailableTurns
+    : 0;
   const paranoiaFrequency = totals.challengeOpportunities > 0
     ? totals.challengesMade / totals.challengeOpportunities
     : 0;
   const challengeAccuracy = totals.challengesMade > 0
     ? totals.correctChallenges / totals.challengesMade
     : 0;
-  const instructionViolationRate = totals.instructionViolations > 0 && totals.totalPlays > 0
+  const instructionViolationRate = totals.totalPlays > 0
     ? totals.instructionViolations / totals.totalPlays
     : null;
 
@@ -73,6 +90,10 @@ function deriveRates(totals) {
     winRate: totals.gamesPlayed > 0 ? totals.wins / totals.gamesPlayed : 0,
     lieFrequency,
     lieSuccessRate,
+    truthfulAvailableTurnShare,
+    truthfulUnavailableTurnShare,
+    optionalLieTurnShare,
+    optionalLieRateGivenTruthfulAvailable,
     paranoiaFrequency,
     challengeAccuracy,
     instructionViolationRate,
@@ -95,6 +116,9 @@ function aggregateAll(rowsByExperiment) {
         totalPlays: 0,
         totalLies: 0,
         successfulLies: 0,
+        truthfulAvailableTurns: 0,
+        truthfulUnavailableTurns: 0,
+        optionalLies: 0,
         challengesMade: 0,
         challengeOpportunities: 0,
         correctChallenges: 0,
@@ -106,6 +130,9 @@ function aggregateAll(rowsByExperiment) {
       current.totalPlays += row.totalPlays;
       current.totalLies += row.totalLies;
       current.successfulLies += row.successfulLies;
+      current.truthfulAvailableTurns += row.truthfulAvailableTurns;
+      current.truthfulUnavailableTurns += row.truthfulUnavailableTurns;
+      current.optionalLies += row.optionalLies;
       current.challengesMade += row.challengesMade;
       current.challengeOpportunities += row.challengeOpportunities;
       current.correctChallenges += row.correctChallenges;

@@ -1,11 +1,11 @@
-import { getModelMeta, getPortraitUrl, getShortName as lookupShortName } from './model-registry.js';
+import { getModelMeta, getPortraitUrl, getShortName as lookupShortName, getWinnerArtUrl } from './model-registry.js';
 
 const EXPERIMENTS = {
   all: {
     id: 'all',
     kicker: 'all',
-    title: 'All Experiments',
-    summary: 'Combined view across the full frozen 600-game paper cohort.',
+    title: 'All',
+    summary: 'Combined view across the full 600-game paper cohort.',
     detail: 'Aggregates EXP0 through EXP3 using raw totals before deriving win, lie, and challenge rates.',
   },
   '0': {
@@ -34,45 +34,45 @@ const EXPERIMENTS = {
     kicker: 'exp3',
     title: 'Honesty Mandate',
     summary: '"All players are instructed not to lie."',
-    detail: 'The instruction-following probe where any lie counts as an explicit honesty violation.',
+    detail: 'The instruction-following probe where overall lies remain a table-dynamics signal, but optional lies with truthful play available are the primary compliance metric.',
   },
 };
 
 const dom = {
+  homeBtn: document.getElementById('research-home-btn'),
   scopeTabs: [...document.querySelectorAll('[data-scope]')],
   panelTabs: [...document.querySelectorAll('[data-panel]')],
   chartTabsWrap: document.getElementById('research-chart-tabs'),
   chartTabs: [...document.querySelectorAll('[data-chart-view]')],
   panels: [...document.querySelectorAll('[data-panel-content]')],
-  toolbarCopy: document.getElementById('toolbar-copy'),
   status: document.getElementById('research-status'),
   empty: document.getElementById('research-empty'),
-  scopeKicker: document.getElementById('scope-kicker'),
   scopeTitle: document.getElementById('scope-title'),
   scopeSummary: document.getElementById('scope-summary'),
   scopeDetail: document.getElementById('scope-detail'),
   topModel: document.getElementById('research-top-model'),
+  topModelCopy: document.getElementById('research-top-model-copy'),
   includedGames: document.getElementById('included-games'),
-  excludedGames: document.getElementById('excluded-games'),
   modelCount: document.getElementById('model-count'),
   topWinRate: document.getElementById('top-win-rate'),
-  scopeMeta: document.getElementById('scope-meta'),
-  overviewRanking: document.getElementById('overview-ranking'),
-  overviewLieScatter: document.getElementById('overview-lie-scatter'),
-  overviewChallengeScatter: document.getElementById('overview-challenge-scatter'),
-  chartKicker: document.getElementById('chart-kicker'),
+  topWinShare: document.getElementById('top-win-share'),
+  overviewChartTitle: document.getElementById('overview-chart-title'),
+  overviewChartCanvas: document.getElementById('overview-chart-canvas'),
   chartTitle: document.getElementById('chart-title'),
   chartCopy: document.getElementById('chart-copy'),
   chartLegend: document.getElementById('chart-legend'),
   chartCanvas: document.getElementById('chart-canvas'),
   chartInspector: document.getElementById('chart-inspector'),
-  castGrid: document.getElementById('research-cast-grid'),
+  playerStage: document.getElementById('research-player-stage'),
+  playerPrev: document.getElementById('research-player-prev'),
+  playerNext: document.getElementById('research-player-next'),
 };
 
 const uiState = {
   scope: 'all',
   panel: 'overview',
   chartView: 'ranking',
+  playerIndex: 0,
   bundle: null,
 };
 
@@ -146,14 +146,29 @@ function getCompareRows(scope) {
   return rows.filter((row) => String(row.experimentId) === String(scope));
 }
 
+function getScopeIncludedCount(scope) {
+  const scopeData = getScopeData(scope);
+  return scopeData?.includedCount ?? 0;
+}
+
+function getExperimentIncludedCount(experimentId) {
+  return uiState.bundle?.experiments?.[String(experimentId)]?.includedCount ?? 0;
+}
+
+function getWinShare(row, includedCount) {
+  if (!row || !includedCount) return 0;
+  return row.wins / includedCount;
+}
+
 function clearViews() {
-  dom.overviewRanking.innerHTML = '';
-  dom.overviewLieScatter.innerHTML = '';
-  dom.overviewChallengeScatter.innerHTML = '';
+  dom.overviewChartCanvas.innerHTML = '';
   dom.chartLegend.innerHTML = '';
   dom.chartCanvas.innerHTML = '';
-  dom.castGrid.innerHTML = '';
+  dom.playerStage.innerHTML = '';
   dom.topModel.innerHTML = '';
+  if (dom.topModelCopy) {
+    dom.topModelCopy.innerHTML = '';
+  }
 }
 
 function renderPanels() {
@@ -174,7 +189,7 @@ function renderPanels() {
   });
 }
 
-function renderMiniRanking(container, rows) {
+function renderMiniRanking(container, rows, includedCount) {
   container.innerHTML = rows.map((row, index) => `
     <article class="research-mini-rank-row">
       <div class="research-mini-rank-head">
@@ -183,9 +198,12 @@ function renderMiniRanking(container, rows) {
         <span class="research-mini-rank-name">${escapeHtml(getShortName(row.modelId))}</span>
       </div>
       <div class="research-mini-rank-track">
-        <span class="research-mini-rank-fill" style="width:${clampPercent(row.winRate)}%;"></span>
+        <span class="research-mini-rank-fill" style="width:${clampPercent(getWinShare(row, includedCount))}%;"></span>
       </div>
-      <div class="research-mini-rank-value">${formatPercent(row.winRate)}</div>
+      <div class="research-mini-rank-value">
+        <strong>${formatPercent(getWinShare(row, includedCount))}</strong>
+        <span>seat win ${formatPercent(row.winRate)}</span>
+      </div>
     </article>
   `).join('');
 }
@@ -222,18 +240,34 @@ function renderLegend(rows) {
   `).join('');
 }
 
-function describePoint(row) {
-  return `EXP${row.experimentId} • ${getShortName(row.modelId)} • win ${formatPercent(row.winRate)} • lie ${formatPercent(row.lieFrequency)} • challenge ${formatPercent(row.paranoiaFrequency)}`;
+function renderAxisTicks(axis) {
+  const values = axis === 'y' ? [100, 75, 50, 25, 0] : [0, 25, 50, 75, 100];
+  return `
+    <div class="research-axis-ticks research-axis-ticks--${axis}">
+      ${values.map((value) => {
+        const position = axis === 'y'
+          ? 10 + (1 - value / 100) * 72
+          : 10 + (value / 100) * 82;
+        const style = axis === 'y' ? `top:${position.toFixed(2)}%;` : `left:${position.toFixed(2)}%;`;
+        return `<span style="${style}">${value}%</span>`;
+      }).join('')}
+    </div>
+  `;
 }
 
-function renderRankingChart(rows) {
-  dom.chartKicker.textContent = uiState.scope === 'all' ? 'aggregate ranking' : `ranking for ${getScopeMeta(uiState.scope).kicker}`;
-  dom.chartTitle.textContent = 'Win Rate Ranking';
+function describePoint(row) {
+  const includedCount = getExperimentIncludedCount(row.experimentId);
+  return `EXP${row.experimentId} • ${getShortName(row.modelId)} • seat win ${formatPercent(row.winRate)} • share ${formatPercent(getWinShare(row, includedCount))} • lie ${formatPercent(row.lieFrequency)} • challenge ${formatPercent(row.paranoiaFrequency)}`;
+}
+
+function renderRankingChart(rows, includedCount) {
+  dom.chartTitle.textContent = 'Win Share Ranking';
   dom.chartCopy.textContent = uiState.scope === 'all'
-    ? 'Aggregate across the frozen 600-game cohort.'
-    : `${getScopeMeta(uiState.scope).title} only.`;
+    ? 'Primary value is win share; secondary note is seat win rate from the 600-game cohort.'
+    : `Primary value is win share; secondary note is seat win rate in ${getScopeMeta(uiState.scope).title}.`;
   dom.chartLegend.innerHTML = '';
-  dom.chartInspector.textContent = 'Ranking view for the selected scope.';
+  dom.chartInspector.hidden = true;
+  dom.chartInspector.textContent = '';
   dom.chartCanvas.innerHTML = `
     <div class="research-ranking-chart">
       ${rows.map((row, index) => `
@@ -247,9 +281,12 @@ function renderRankingChart(rows) {
             </div>
           </div>
           <div class="research-ranking-track">
-            <span class="research-ranking-fill" style="width:${clampPercent(row.winRate)}%;"></span>
+            <span class="research-ranking-fill" style="width:${clampPercent(getWinShare(row, includedCount))}%;"></span>
           </div>
-          <div class="research-ranking-value">${formatPercent(row.winRate)}</div>
+          <div class="research-ranking-value">
+            <strong>${formatPercent(getWinShare(row, includedCount))}</strong>
+            <span>seat win ${formatPercent(row.winRate)}</span>
+          </div>
         </article>
       `).join('')}
     </div>
@@ -259,7 +296,6 @@ function renderRankingChart(rows) {
 function getScatterConfig(chartView) {
   if (chartView === 'lie-win') {
     return {
-      kicker: 'scatter chart',
       title: 'Lie Frequency vs Win Rate',
       copy: uiState.scope === 'all'
         ? 'Each point is one model under one experiment condition.'
@@ -267,12 +303,11 @@ function getScatterConfig(chartView) {
       xKey: 'lieFrequency',
       xLabel: 'lie frequency',
       yKey: 'winRate',
-      yLabel: 'win rate',
+      yLabel: 'seat win rate',
     };
   }
 
   return {
-    kicker: 'scatter chart',
     title: 'Challenge Frequency vs Win Rate',
     copy: uiState.scope === 'all'
       ? 'Each point is one model under one experiment condition.'
@@ -280,16 +315,16 @@ function getScatterConfig(chartView) {
     xKey: 'paranoiaFrequency',
     xLabel: 'challenge frequency',
     yKey: 'winRate',
-    yLabel: 'win rate',
+    yLabel: 'seat win rate',
   };
 }
 
 function renderScatterChart(rows) {
   const config = getScatterConfig(uiState.chartView);
-  dom.chartKicker.textContent = config.kicker;
   dom.chartTitle.textContent = config.title;
   dom.chartCopy.textContent = config.copy;
   renderLegend(rows);
+  dom.chartInspector.hidden = false;
   dom.chartInspector.textContent = 'Hover a point to inspect the model-condition row.';
   dom.chartCanvas.innerHTML = `
     <div class="research-scatter-chart">
@@ -299,6 +334,8 @@ function renderScatterChart(rows) {
           <span></span><span></span><span></span><span></span>
           <span></span><span></span><span></span><span></span>
         </div>
+        ${renderAxisTicks('y')}
+        ${renderAxisTicks('x')}
         ${rows.map((row) => {
           const x = 10 + (row[config.xKey] || 0) * 82;
           const y = 10 + (1 - (row[config.yKey] || 0)) * 72;
@@ -339,10 +376,16 @@ function renderScatterChart(rows) {
 
 function renderCharts(rows, compareRows) {
   if (uiState.chartView === 'ranking') {
-    renderRankingChart(rows);
+    renderRankingChart(rows, getScopeIncludedCount(uiState.scope));
     return;
   }
   renderScatterChart(compareRows);
+}
+
+function renderOverviewSpotlight(rows, compareRows) {
+  void compareRows;
+  dom.overviewChartTitle.textContent = 'LEADERBOARD';
+  renderMiniRanking(dom.overviewChartCanvas, rows, getScopeIncludedCount(uiState.scope));
 }
 
 function metricChip(label, value) {
@@ -354,66 +397,91 @@ function metricChip(label, value) {
   `;
 }
 
-function renderCast(rows) {
-  dom.castGrid.innerHTML = rows.map((row, index) => `
-    <article class="research-cast-card">
-      <div class="research-cast-head">
-        ${avatarMarkup(row.modelId, 'lg')}
-        <div class="research-model-copy">
-          <div class="research-model-short">${escapeHtml(getShortName(row.modelId))}</div>
-          <div class="research-model-id">${escapeHtml(row.modelId)}</div>
-        </div>
-        <div class="research-rank-note">rank #${index + 1}</div>
+function metricBar(label, value, emphasis = 'default') {
+  return `
+    <div class="research-player-metric">
+      <div class="research-player-metric-head">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
       </div>
-      <div class="research-cast-chips">
-        ${metricChip('win', formatPercent(row.winRate))}
-        ${metricChip('lies', formatPercent(row.lieFrequency))}
-        ${metricChip('lie ok', formatPercent(row.lieSuccessRate))}
-        ${metricChip('paranoia', formatPercent(row.paranoiaFrequency))}
-        ${metricChip('judge', formatPercent(row.challengeAccuracy))}
+      <div class="research-player-metric-track">
+        <span class="research-player-metric-fill research-player-metric-fill--${escapeHtml(emphasis)}" style="width:${clampPercent(parseFloat(String(value)) / 100)}%;"></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderCast(rows) {
+  const includedCount = getScopeIncludedCount(uiState.scope);
+  if (!rows.length) {
+    dom.playerStage.innerHTML = '';
+    dom.playerPrev.disabled = true;
+    dom.playerNext.disabled = true;
+    return;
+  }
+
+  uiState.playerIndex = ((uiState.playerIndex % rows.length) + rows.length) % rows.length;
+  const row = rows[uiState.playerIndex];
+  const rank = uiState.playerIndex + 1;
+
+  dom.playerPrev.disabled = rows.length < 2;
+  dom.playerNext.disabled = rows.length < 2;
+
+  dom.playerStage.innerHTML = `
+    <article class="research-player-showcase">
+      <div class="research-player-showcase-rail">
+        <div class="research-player-portrait-wrap research-player-portrait-wrap--hero">
+          ${avatarMarkup(row.modelId, 'hero')}
+        </div>
+        <div class="research-player-footer research-player-footer--hero">
+          <div class="research-player-name">${escapeHtml(getShortName(row.modelId))}</div>
+          <div class="research-player-id">${escapeHtml(row.modelId)}</div>
+          <div class="research-player-rank research-player-rank--hero">rank #${rank}</div>
+        </div>
+      </div>
+      <div class="research-player-showcase-main">
+        <div class="research-player-stat-grid research-player-stat-grid--hero">
+          ${metricBar('win share', formatPercent(getWinShare(row, includedCount)), 'primary')}
+          ${metricBar('seat win', formatPercent(row.winRate), 'strong')}
+          ${metricBar('lie freq', formatPercent(row.lieFrequency))}
+          ${metricBar('lie success', formatPercent(row.lieSuccessRate))}
+          ${metricBar('challenge freq', formatPercent(row.paranoiaFrequency))}
+          ${metricBar('judge accuracy', formatPercent(row.challengeAccuracy))}
+        </div>
       </div>
     </article>
-  `).join('');
+  `;
 }
 
 function renderScopeSummary(scopeData, rows) {
   const scopeMeta = getScopeMeta(uiState.scope);
   const topRow = rows[0] || null;
-  const cohort = uiState.bundle?.cohort;
 
-  dom.scopeKicker.textContent = scopeMeta.kicker;
   dom.scopeTitle.textContent = scopeMeta.title;
   dom.scopeSummary.textContent = scopeMeta.summary;
   dom.scopeDetail.textContent = scopeMeta.detail;
   dom.includedGames.textContent = String(scopeData?.includedCount ?? 0);
-  dom.excludedGames.textContent = String(scopeData?.excludedGames ?? 0);
   dom.modelCount.textContent = String(rows.length);
   dom.topWinRate.textContent = topRow ? formatPercent(topRow.winRate) : '0.0%';
-
-  dom.scopeMeta.textContent = [
-    `schema v${cohort?.schemaVersion ?? '?'}`,
-    cohort?.provider || 'unknown provider',
-    cohort?.promptVersion ? `prompt ${cohort.promptVersion}` : null,
-    cohort?.promptHash || null,
-  ].filter(Boolean).join(' • ');
-
-  dom.toolbarCopy.textContent = uiState.scope === 'all'
-    ? 'Frozen 600-game paper cohort across EXP0-EXP3.'
-    : `Frozen 150-game ${scopeMeta.title} slice from the paper cohort.`;
+  dom.topWinShare.textContent = topRow ? formatPercent(getWinShare(topRow, scopeData?.includedCount ?? 0)) : '0.0%';
 
   if (topRow) {
+    const topMeta = getModelMeta(topRow.modelId);
     dom.topModel.innerHTML = `
-      <div class="research-top-model-face">
-        ${avatarMarkup(topRow.modelId, 'lg')}
-        <div class="research-top-model-copy">
-          <div class="research-top-model-label">top finisher</div>
-          <div class="research-top-model-name">${escapeHtml(getShortName(topRow.modelId))}</div>
-          <div class="research-top-model-stat">${formatPercent(topRow.winRate)} win rate</div>
-        </div>
-      </div>
+      <img class="research-top-model-art" src="${escapeHtml(getWinnerArtUrl(topRow.modelId))}" alt="${escapeHtml(topMeta.displayName)}">
     `;
+    if (dom.topModelCopy) {
+      dom.topModelCopy.innerHTML = `
+        <div class="research-top-model-label">top finisher</div>
+        <div class="research-top-model-name">${escapeHtml(getShortName(topRow.modelId))}</div>
+        <div class="research-top-model-stat">${formatPercent(getWinShare(topRow, scopeData?.includedCount ?? 0))} share • ${formatPercent(topRow.winRate)} seat win</div>
+      `;
+    }
   } else {
     dom.topModel.innerHTML = '';
+    if (dom.topModelCopy) {
+      dom.topModelCopy.innerHTML = '';
+    }
   }
 }
 
@@ -427,18 +495,16 @@ function renderLoadedState() {
 
   if (!scopeData || !rows.length) {
     dom.empty.hidden = false;
-    dom.empty.textContent = 'Frozen research data is missing for this scope.';
-    dom.status.textContent = 'No research cohort loaded';
+    dom.empty.textContent = 'Research data is missing for this cohort scope.';
+    dom.status.textContent = 'No cohort data loaded';
     return;
   }
 
   dom.empty.hidden = true;
-  dom.status.textContent = uiState.scope === 'all' ? '600-game frozen cohort' : `${getScopeMeta(uiState.scope).title} • 150-game slice`;
+  dom.status.textContent = uiState.scope === 'all' ? '600-game cohort' : `${getScopeMeta(uiState.scope).title} • 150-game cohort slice`;
 
   renderScopeSummary(scopeData, rows);
-  renderMiniRanking(dom.overviewRanking, rows);
-  renderMiniScatter(dom.overviewLieScatter, compareRows, 'lieFrequency', 'winRate');
-  renderMiniScatter(dom.overviewChallengeScatter, compareRows, 'paranoiaFrequency', 'winRate');
+  renderOverviewSpotlight(rows, compareRows);
   renderCharts(rows, compareRows);
   renderCast(rows);
 }
@@ -452,7 +518,7 @@ async function loadBundle() {
 }
 
 async function load() {
-  dom.status.textContent = 'Loading frozen cohort…';
+  dom.status.textContent = 'Loading cohort…';
   dom.empty.hidden = true;
   dom.empty.textContent = '';
 
@@ -474,10 +540,18 @@ uiState.scope = readScope();
 dom.scopeTabs.forEach((button) => {
   button.addEventListener('click', () => {
     uiState.scope = button.dataset.scope || 'all';
+    uiState.playerIndex = 0;
     renderLoadedState();
     syncScopeInUrl(uiState.scope);
   });
 });
+
+if (dom.homeBtn) {
+  dom.homeBtn.addEventListener('click', () => {
+    uiState.panel = 'overview';
+    renderLoadedState();
+  });
+}
 
 dom.panelTabs.forEach((button) => {
   button.addEventListener('click', () => {
@@ -491,6 +565,16 @@ dom.chartTabs.forEach((button) => {
     uiState.chartView = button.dataset.chartView || 'ranking';
     renderLoadedState();
   });
+});
+
+dom.playerPrev.addEventListener('click', () => {
+  uiState.playerIndex -= 1;
+  renderLoadedState();
+});
+
+dom.playerNext.addEventListener('click', () => {
+  uiState.playerIndex += 1;
+  renderLoadedState();
 });
 
 void load();

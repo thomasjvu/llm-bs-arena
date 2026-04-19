@@ -32,6 +32,14 @@ EXPERIMENT_PALETTE = {
     2: "#6C9561",
     3: "#B8565A",
 }
+MODEL_PALETTE = {
+    "nvidia/nemotron-3-super-120b-a12b": "#3F6A8A",
+    "moonshotai/kimi-k2.5": "#C17835",
+    "qwen/qwen3.5-397b-a17b": "#5E8B4A",
+    "z-ai/glm5": "#8B6BB0",
+    "minimaxai/minimax-m2.5": "#C45A67",
+    "mistralai/mistral-small-4-119b-2603": "#4F5663",
+}
 BACKGROUND = "#FBF8F3"
 PANEL = "#FFFDF9"
 GRID = "#D7D0C3"
@@ -57,6 +65,17 @@ MODEL_ORDER = [
     "minimaxai/minimax-m2.5",
     "mistralai/mistral-small-4-119b-2603",
 ]
+
+
+def with_win_share(df: pd.DataFrame) -> pd.DataFrame:
+    """Add normalized win share within an experiment-level stats table."""
+    out = df.copy()
+    if "wins" in out.columns:
+        total_wins = float(out["wins"].fillna(0).sum())
+        out["win_share"] = out["wins"].fillna(0).astype(float) / total_wins if total_wins else 0.0
+    elif "win_share" not in out.columns and "win_rate" in out.columns:
+        out["win_share"] = out["win_rate"].astype(float)
+    return out
 
 
 def setup_style():
@@ -207,33 +226,33 @@ def plot_benchmark_overview(output_path: str):
 def plot_win_rates(
     stats_df: pd.DataFrame,
     output_path: str,
-    title: str = "Win Rates by Model",
+    title: str = "Win Share by Model",
     experiment_id: int = 1,
     baseline_df: pd.DataFrame | None = None,
 ):
-    """Leaderboard chart of win rates, optionally with baseline markers."""
+    """Leaderboard chart of win share, optionally with baseline markers."""
     fig, ax = plt.subplots(figsize=(10.5, 6.3))
 
-    df = stats_df.copy()
+    df = with_win_share(stats_df)
     df["short_name"] = df["model_id"].apply(shorten_model_name)
-    df = df.sort_values("win_rate", ascending=True).reset_index(drop=True)
+    df = df.sort_values("win_share", ascending=True).reset_index(drop=True)
 
     baseline_map = None
     if baseline_df is not None:
-        baseline_map = baseline_df.set_index("model_id")["win_rate"].to_dict()
+        baseline_map = with_win_share(baseline_df).set_index("model_id")["win_share"].to_dict()
 
     bars = ax.barh(
         df["short_name"],
-        df["win_rate"],
+        df["win_share"],
         color=EXPERIMENT_PALETTE.get(experiment_id, "#6A88A8"),
         edgecolor="white",
         linewidth=1.2,
         height=0.78,
     )
 
-    ax.set_xlim(0, max(df["win_rate"].max() * 1.1, 0.72))
+    ax.set_xlim(0, max(df["win_share"].max() * 1.1, 0.5))
     ax.xaxis.set_major_formatter(PercentFormatter(1.0))
-    style_axis(ax, title, "Win rate", "")
+    style_axis(ax, title, "Win share", "")
     ax.grid(axis="x", color=GRID, linewidth=0.9, alpha=0.7)
     ax.grid(axis="y", visible=False)
     add_hbar_labels(ax, bars)
@@ -262,15 +281,15 @@ def plot_deception_metrics(stats_df: pd.DataFrame, output_path: str):
     """Scatter plot of lie frequency vs lie success rate."""
     fig, ax = plt.subplots(figsize=(10.5, 6.8))
 
-    df = stats_df.copy()
+    df = with_win_share(stats_df)
     df["short_name"] = df["model_id"].apply(shorten_model_name)
-    sizes = df["win_rate"] * 520 + 55
+    sizes = df["win_share"] * 520 + 55
 
     scatter = ax.scatter(
         df["lie_frequency"],
         df["lie_success_rate"],
         s=sizes,
-        c=df["win_rate"],
+        c=df["win_share"],
         cmap="copper",
         alpha=0.88,
         edgecolors="white",
@@ -292,7 +311,7 @@ def plot_deception_metrics(stats_df: pd.DataFrame, output_path: str):
     ax.grid(axis="both", color=GRID, linewidth=0.9, alpha=0.7)
 
     cbar = plt.colorbar(scatter)
-    cbar.set_label("Win rate")
+    cbar.set_label("Win share")
     cbar.ax.yaxis.set_major_formatter(PercentFormatter(1.0))
 
     plt.tight_layout()
@@ -349,105 +368,103 @@ def plot_experiment_comparison(
     combined = pd.DataFrame(records)
     pivot = combined.pivot(index="model_id", columns="experiment_id", values=metric).loc[MODEL_ORDER]
 
-    fig, ax = plt.subplots(figsize=(11.5, 6.3))
+    fig, ax = plt.subplots(figsize=(11.5, 6.8))
     x = np.arange(4)
 
+    legend_handles = []
     for model_id in MODEL_ORDER:
         values = pivot.loc[model_id].values
-        ax.plot(
+        line, = ax.plot(
             x,
             values,
-            color=MUTED,
-            linewidth=1.3,
-            alpha=0.5,
-            zorder=1,
+            color=MODEL_PALETTE.get(model_id, TEXT),
+            linewidth=2.1,
+            marker="o",
+            markersize=6.5,
+            markeredgecolor="white",
+            markeredgewidth=0.9,
+            alpha=0.98,
+            zorder=3,
+            label=shorten_model_name(model_id),
         )
-        for experiment_id, value in zip(sorted(experiment_stats), values):
-            ax.scatter(
-                experiment_id,
-                value,
-                s=70,
-                color=EXPERIMENT_PALETTE[experiment_id],
-                edgecolors="white",
-                linewidths=0.9,
-                zorder=3,
-            )
-
-    for model_id in [
-        "moonshotai/kimi-k2.5",
-        "nvidia/nemotron-3-super-120b-a12b",
-        "mistralai/mistral-small-4-119b-2603",
-    ]:
-        values = pivot.loc[model_id].values
-        ax.plot(
-            x,
-            values,
-            color=TEXT,
-            linewidth=2.2,
-            alpha=0.95,
-            zorder=2,
-        )
-        ax.text(
-            x[-1] + 0.08,
-            values[-1],
-            shorten_model_name(model_id),
-            va="center",
-            fontsize=9,
-            color=TEXT,
-        )
+        legend_handles.append(line)
 
     ax.set_xticks(x)
     ax.set_xticklabels([f"Exp {idx}" for idx in x])
     ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_ylim(0, max(pivot.max().max() * 1.15, 0.58))
-    ax.set_xlim(-0.2, 3.55)
+    ax.set_xlim(-0.1, 3.1)
     style_axis(ax, title, "Condition", ylabel)
     ax.grid(axis="y", color=GRID, linewidth=0.9, alpha=0.7)
     ax.grid(axis="x", color=GRID, linewidth=0.6, alpha=0.45)
     ax.set_title(title, pad=14)
+    ax.legend(
+        handles=legend_handles,
+        title="Model",
+        frameon=False,
+        ncol=2,
+        loc="upper right",
+        columnspacing=0.9,
+        handlelength=1.8,
+        borderaxespad=0.4,
+    )
 
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
 
 
-def plot_instruction_violations(exp3_stats: pd.DataFrame, output_path: str):
-    """Bar chart of instruction violation rates in experiment 3."""
+def plot_instruction_violations(exp0_stats: pd.DataFrame, exp3_stats: pd.DataFrame, output_path: str):
+    """Compare control vs honesty-mandate optional lie rates when truth was available."""
     fig, ax = plt.subplots(figsize=(10.5, 6.3))
 
-    df = exp3_stats.copy()
+    base = exp0_stats[["model_id", "optional_lie_rate_given_truthful_available"]].rename(
+        columns={"optional_lie_rate_given_truthful_available": "exp0_optional_lie"}
+    )
+    honesty = exp3_stats[["model_id", "optional_lie_rate_given_truthful_available"]].rename(
+        columns={"optional_lie_rate_given_truthful_available": "exp3_optional_lie"}
+    )
+    df = base.merge(honesty, on="model_id", how="inner")
     df["short_name"] = df["model_id"].apply(shorten_model_name)
-    df = df.sort_values("instruction_violation_rate", ascending=True).reset_index(drop=True)
+    df = df.sort_values("exp3_optional_lie", ascending=True).reset_index(drop=True)
 
-    bars = ax.barh(
-        df["short_name"],
-        df["instruction_violation_rate"],
+    y = np.arange(len(df))
+    height = 0.34
+
+    bars_exp0 = ax.barh(
+        y - height / 2,
+        df["exp0_optional_lie"],
+        height=height,
+        color=EXPERIMENT_PALETTE[0],
+        edgecolor="white",
+        linewidth=1.0,
+        label="Exp 0 control",
+    )
+    bars_exp3 = ax.barh(
+        y + height / 2,
+        df["exp3_optional_lie"],
+        height=height,
         color=EXPERIMENT_PALETTE[3],
         edgecolor="white",
-        linewidth=1.2,
-        height=0.78,
+        linewidth=1.0,
+        label="Exp 3 honesty",
     )
 
-    ax.set_xlim(0, max(df["instruction_violation_rate"].max() * 1.18, 0.34))
+    ax.set_yticks(y)
+    ax.set_yticklabels(df["short_name"])
+    ax.set_xlim(0, max(df[["exp0_optional_lie", "exp3_optional_lie"]].to_numpy().max() * 1.18, 0.14))
     ax.xaxis.set_major_formatter(PercentFormatter(1.0))
-    style_axis(ax, "Experiment 3: Honesty-Rule Violations", "Instruction violation rate", "")
+    style_axis(
+        ax,
+        "Control vs Honesty: Optional Lies When Truth Was Available",
+        "Adjusted optional-lie rate",
+        "",
+    )
     ax.grid(axis="x", color=GRID, linewidth=0.9, alpha=0.7)
     ax.grid(axis="y", visible=False)
-    add_hbar_labels(ax, bars, pad=0.006)
-
-    if "win_rate" in df.columns:
-        y_positions = np.arange(len(df))
-        ax.scatter(
-            df["win_rate"],
-            y_positions,
-            s=40,
-            facecolors=PANEL,
-            edgecolors=TEXT,
-            linewidths=1.0,
-            zorder=4,
-            label="Win rate",
-        )
-        ax.legend(frameon=False, loc="lower right")
+    add_hbar_labels(ax, bars_exp0, pad=0.004)
+    add_hbar_labels(ax, bars_exp3, pad=0.004)
+    ax.legend(frameon=False, loc="lower right")
 
     plt.tight_layout()
     plt.savefig(output_path)
@@ -522,10 +539,10 @@ def plot_metric_vs_win_rate(
     title: str,
     xlabel: str,
 ):
-    """Scatter plot of a condition-level metric vs win rate across model-condition pairs."""
+    """Scatter plot of a condition-level metric vs win share across model-condition pairs."""
     frames = []
     for experiment_id, stats_df in exp_stats:
-        df = stats_df.copy()
+        df = with_win_share(stats_df)
         df["experiment_id"] = experiment_id
         df["short_name"] = df["model_id"].apply(shorten_model_name)
         frames.append(df)
@@ -540,7 +557,7 @@ def plot_metric_vs_win_rate(
     for experiment_id, group in combined.groupby("experiment_id"):
         ax.scatter(
             group[metric],
-            group["win_rate"],
+            group["win_share"],
             s=110,
             alpha=0.88,
             color=EXPERIMENT_PALETTE.get(int(experiment_id), "#666666"),
@@ -560,19 +577,19 @@ def plot_metric_vs_win_rate(
             continue
         ax.annotate(
             f"{label_models[row['model_id']]} E{int(row['experiment_id'])}",
-            (row[metric], row["win_rate"]),
+            (row[metric], row["win_share"]),
             xytext=(6, 6),
             textcoords="offset points",
             fontsize=8.5,
             color=TEXT,
         )
 
-    style_axis(ax, title, xlabel, "Win rate")
+    style_axis(ax, title, xlabel, "Win share")
     ax.xaxis.set_major_formatter(PercentFormatter(1.0))
     ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.grid(axis="both", color=GRID, linewidth=0.9, alpha=0.7)
     ax.axvline(combined[metric].median(), color=MUTED, linewidth=1.0, linestyle="--", alpha=0.5)
-    ax.axhline(combined["win_rate"].median(), color=MUTED, linewidth=1.0, linestyle="--", alpha=0.5)
+    ax.axhline(combined["win_share"].median(), color=MUTED, linewidth=1.0, linestyle="--", alpha=0.5)
     ax.legend(title="Condition", frameon=False)
 
     plt.tight_layout()
@@ -581,24 +598,35 @@ def plot_metric_vs_win_rate(
 
 
 def plot_lie_frequency_vs_win_rate(exp_stats: list[tuple[int, pd.DataFrame]], output_path: str):
-    """Scatter plot of lie frequency vs win rate across model-condition pairs."""
+    """Scatter plot of lie frequency vs win share across model-condition pairs."""
     plot_metric_vs_win_rate(
         exp_stats,
         "lie_frequency",
         output_path,
-        "Lie Frequency vs Win Rate by Model and Condition",
+        "Lie Frequency vs Win Share by Model and Condition",
         "Lie frequency",
     )
 
 
 def plot_challenge_frequency_vs_win_rate(exp_stats: list[tuple[int, pd.DataFrame]], output_path: str):
-    """Scatter plot of challenge frequency vs win rate across model-condition pairs."""
+    """Scatter plot of challenge frequency vs win share across model-condition pairs."""
     plot_metric_vs_win_rate(
         exp_stats,
         "paranoia_frequency",
         output_path,
-        "Challenge Frequency vs Win Rate by Model and Condition",
+        "Challenge Frequency vs Win Share by Model and Condition",
         "Challenge frequency",
+    )
+
+
+def plot_optional_lie_rate_comparison(experiment_stats: dict[int, pd.DataFrame], output_path: str):
+    """Compare optional lie rate across all experiments with per-model trajectories."""
+    plot_experiment_comparison(
+        experiment_stats,
+        "optional_lie_rate_given_truthful_available",
+        output_path,
+        "Optional Lie Rate Given Truthful Play Was Available",
+        ylabel="Optional lie rate",
     )
 
 
@@ -639,7 +667,7 @@ def generate_all_plots(csv_dir: str, output_dir: str):
         plot_win_rates(
             exp1_stats,
             output_path / "exp1_win_rates.png",
-            "Experiment 1: Win Rate Leaderboard",
+            "Experiment 1: Win Share Leaderboard",
             experiment_id=1,
             baseline_df=exp0_stats,
         )
@@ -650,32 +678,32 @@ def generate_all_plots(csv_dir: str, output_dir: str):
         plot_win_rates(
             exp2_stats,
             output_path / "exp2_win_rates.png",
-            "Experiment 2: Win Rate Leaderboard",
+            "Experiment 2: Win Share Leaderboard",
             experiment_id=2,
         )
 
-    if exp3_stats is not None and "instruction_violation_rate" in exp3_stats.columns:
-        plot_instruction_violations(exp3_stats, output_path / "exp3_violations.png")
+    if exp0_stats is not None and exp3_stats is not None and "instruction_violation_rate" in exp3_stats.columns:
+        plot_instruction_violations(exp0_stats, exp3_stats, output_path / "exp3_violations.png")
 
     if exp0_stats is not None and exp1_stats is not None and exp2_stats is not None and exp3_stats is not None:
+        comparison_stats = {
+            0: exp0_stats,
+            1: exp1_stats,
+            2: exp2_stats,
+            3: exp3_stats,
+        }
         plot_experiment_comparison(
-            {
-                0: exp0_stats,
-                1: exp1_stats,
-                2: exp2_stats,
-                3: exp3_stats,
-            },
+            comparison_stats,
             "lie_frequency",
             output_path / "compare_lie_frequency.png",
             "Lie Frequency by Model Across Conditions",
         )
+        plot_optional_lie_rate_comparison(
+            comparison_stats,
+            output_path / "compare_optional_lie_rate.png",
+        )
         plot_experiment_comparison(
-            {
-                0: exp0_stats,
-                1: exp1_stats,
-                2: exp2_stats,
-                3: exp3_stats,
-            },
+            comparison_stats,
             "paranoia_frequency",
             output_path / "compare_challenge_frequency.png",
             "Challenge Frequency by Model Across Conditions",

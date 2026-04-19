@@ -57,12 +57,22 @@ def pct_delta_ci(values_a: Iterable[float], values_b: Iterable[float]) -> str:
     return f"{mean:+.1%} (95% CI {lower:+.1%} to {upper:+.1%})"
 
 
+def with_win_share(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if "wins" in out.columns:
+        total_wins = float(out["wins"].fillna(0).sum())
+        out["win_share"] = out["wins"].fillna(0).astype(float) / total_wins if total_wins else 0.0
+    elif "win_share" not in out.columns and "win_rate" in out.columns:
+        out["win_share"] = out["win_rate"].astype(float)
+    return out
+
+
 def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dict[int, pd.DataFrame]) -> list[str]:
     lines = [
         "## Experiment Overview",
         "",
-        "| Experiment | Games | Models | Mean win rate | Mean lie frequency | Mean paranoia | Mean instruction violation |",
-        "|---|---:|---:|---|---|---|---|",
+        "| Experiment | Games | Models | Top win share | Mean overall lie frequency | Mean optional lie rate | Mean challenge frequency | Mean conflict-turn share |",
+        "|---|---:|---:|---:|---|---|---|---|",
     ]
 
     experiment_ids = sorted({int(v) for v in player_games["experiment_id"].dropna().unique()} | set(experiment_stats.keys()))
@@ -70,30 +80,33 @@ def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dic
     for experiment_id in experiment_ids:
         exp_df = player_games[player_games["experiment_id"] == experiment_id]
         exp_stats = experiment_stats.get(experiment_id)
-        violation = "n/a"
         if exp_stats is not None and not exp_stats.empty:
-            mean_win = pct_ci(exp_stats["win_rate"].astype(float))
+            exp_stats = with_win_share(exp_stats)
+            top_win = pct(exp_stats["win_share"].max())
             mean_lie = pct_ci(exp_stats["lie_frequency"].astype(float))
+            mean_optional_lie = pct_ci(exp_stats["optional_lie_rate_given_truthful_available"].astype(float))
             mean_challenge = pct_ci(exp_stats["paranoia_frequency"].astype(float))
-            if experiment_id == 3 and "instruction_violation_rate" in exp_stats.columns:
-                violation = pct_ci(exp_stats["instruction_violation_rate"].fillna(0).astype(float))
+            conflict_turn_share = pct_ci(exp_stats["truthful_unavailable_turn_share"].astype(float))
             model_count = len(exp_stats)
         else:
-            mean_win = pct_group_ci(exp_df, "won")
+            win_counts = exp_df.groupby("model_id")["won"].sum().astype(float)
+            total_wins = float(win_counts.sum())
+            top_win = pct((win_counts / total_wins).max() if total_wins else float("nan"))
             mean_lie = pct_group_ci(exp_df, "lie_frequency")
+            mean_optional_lie = pct_group_ci(exp_df, "optional_lie_rate_given_truthful_available")
             mean_challenge = pct_group_ci(exp_df, "paranoia_frequency")
-            if experiment_id == 3 and "instruction_violation_rate" in exp_df.columns:
-                violation = pct_group_ci(exp_df.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate")
+            conflict_turn_share = pct_group_ci(exp_df, "truthful_unavailable_turn_share")
             model_count = exp_df["model_id"].nunique()
 
         lines.append(
             f"| {int(experiment_id)} | "
             f"{exp_df['game_id'].nunique()} | "
             f"{model_count} | "
-            f"{mean_win} | "
+            f"{top_win} | "
             f"{mean_lie} | "
+            f"{mean_optional_lie} | "
             f"{mean_challenge} | "
-            f"{violation} |"
+            f"{conflict_turn_share} |"
         )
 
     lines.append("")
@@ -106,43 +119,53 @@ def render_baseline_table(player_games: pd.DataFrame, exp1_stats: Optional[pd.Da
         return []
 
     if exp1_stats is not None and not exp1_stats.empty:
-        df = exp1_stats.copy()
+        df = with_win_share(exp1_stats)
         df["games"] = df["games_played"].astype(int)
     else:
         rows = []
         for model_id, group in exp1.groupby("model_id"):
+            wins = int(group["won"].sum())
             rows.append({
                 "model_id": model_id,
-                "win_rate": float(group["won"].mean()),
+                "wins": wins,
+                "win_share": wins / exp1["won"].sum(),
+                "optional_lie_rate": float(group["optional_lie_rate_given_truthful_available"].mean()),
+                "conflict_turn_share": float(group["truthful_unavailable_turn_share"].mean()),
                 "lie_frequency": float(group["lie_frequency"].mean()),
-                "lie_success_rate": float(group["lie_success_rate"].mean()),
                 "paranoia_frequency": float(group["paranoia_frequency"].mean()),
-                "challenge_accuracy": float(group["challenge_accuracy"].mean()),
                 "games": len(group),
             })
         df = pd.DataFrame(rows)
 
-    df = df.sort_values(["win_rate", "lie_frequency"], ascending=[False, False])
+    optional_col = (
+        "optional_lie_rate_given_truthful_available"
+        if "optional_lie_rate_given_truthful_available" in df.columns
+        else "optional_lie_rate"
+    )
+    conflict_col = "truthful_unavailable_turn_share" if "truthful_unavailable_turn_share" in df.columns else "conflict_turn_share"
+
+    df = df.sort_values(["win_share", optional_col], ascending=[False, False])
     lines = [
         "## RQ1: Baseline Deception (Experiment 1)",
         "",
-        "| Model | Games | Win rate | Lie frequency | Lie success | Paranoia | Challenge accuracy |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| Model | Games | Wins | Win share | Optional lie rate | Conflict-turn share | Overall lie frequency | Challenge frequency |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
     for _, row in df.iterrows():
         lines.append(
-            f"| {row['model_id']} | {int(row['games'])} | {pct(row['win_rate'])} | "
-            f"{pct(row['lie_frequency'])} | {pct(row['lie_success_rate'])} | "
-            f"{pct(row['paranoia_frequency'])} | {pct(row['challenge_accuracy'])} |"
+            f"| {row['model_id']} | {int(row['games'])} | {int(row['wins'])} | {pct(row['win_share'])} | "
+            f"{pct(row[optional_col])} | "
+            f"{pct(row[conflict_col])} | "
+            f"{pct(row['lie_frequency'])} | {pct(row['paranoia_frequency'])} |"
         )
 
     top_winner = df.iloc[0]
-    top_liar = df.sort_values("lie_frequency", ascending=False).iloc[0]
+    top_optional_liar = df.sort_values(optional_col, ascending=False).iloc[0]
     lines.extend([
         "",
-        f"Top baseline winner: `{top_winner['model_id']}` at {pct(top_winner['win_rate'])}.",
-        f"Highest baseline lie frequency: `{top_liar['model_id']}` at {pct(top_liar['lie_frequency'])}.",
+        f"Top baseline winner: `{top_winner['model_id']}` with {int(top_winner['wins'])} wins and {pct(top_winner['win_share'])} win share.",
+        f"Highest baseline optional-lie rate: `{top_optional_liar['model_id']}` at {pct(top_optional_liar[optional_col])}.",
         "",
     ])
     return lines
@@ -156,50 +179,57 @@ def render_moral_restraint(player_games: pd.DataFrame, exp1_stats: Optional[pd.D
 
     rows = []
     if exp1_stats is not None and not exp1_stats.empty and exp2_stats is not None and not exp2_stats.empty:
-        exp1_map = exp1_stats.set_index("model_id")
-        exp2_map = exp2_stats.set_index("model_id")
+        exp1_map = with_win_share(exp1_stats).set_index("model_id")
+        exp2_map = with_win_share(exp2_stats).set_index("model_id")
         for model_id in sorted(set(exp1_map.index).intersection(set(exp2_map.index))):
-            lie1 = float(exp1_map.loc[model_id, "lie_frequency"])
-            lie2 = float(exp2_map.loc[model_id, "lie_frequency"])
+            lie1 = float(exp1_map.loc[model_id, "optional_lie_rate_given_truthful_available"])
+            lie2 = float(exp2_map.loc[model_id, "optional_lie_rate_given_truthful_available"])
             rows.append({
                 "model_id": model_id,
-                "exp1_lie_frequency": lie1,
-                "exp2_lie_frequency": lie2,
+                "exp1_optional_lie_rate": lie1,
+                "exp2_optional_lie_rate": lie2,
                 "delta": lie2 - lie1,
                 "delta_text": f"{lie2 - lie1:+.1%}",
+                "exp1_win_share": float(exp1_map.loc[model_id, "win_share"]),
+                "exp2_win_share": float(exp2_map.loc[model_id, "win_share"]),
             })
     else:
         for model_id in sorted(set(exp1["model_id"]).intersection(set(exp2["model_id"]))):
             group1 = exp1[exp1["model_id"] == model_id]
             group2 = exp2[exp2["model_id"] == model_id]
+            wins1 = float(group1["won"].sum())
+            wins2 = float(group2["won"].sum())
             rows.append({
                 "model_id": model_id,
-                "exp1_lie_frequency": float(group1["lie_frequency"].mean()),
-                "exp2_lie_frequency": float(group2["lie_frequency"].mean()),
-                "delta": float(group2["lie_frequency"].mean() - group1["lie_frequency"].mean()),
-                "delta_text": pct_delta_ci(group1["lie_frequency"].astype(float), group2["lie_frequency"].astype(float)),
+                "exp1_optional_lie_rate": float(group1["optional_lie_rate_given_truthful_available"].mean()),
+                "exp2_optional_lie_rate": float(group2["optional_lie_rate_given_truthful_available"].mean()),
+                "delta": float(group2["optional_lie_rate_given_truthful_available"].mean() - group1["optional_lie_rate_given_truthful_available"].mean()),
+                "delta_text": pct_delta_ci(group1["optional_lie_rate_given_truthful_available"].astype(float), group2["optional_lie_rate_given_truthful_available"].astype(float)),
+                "exp1_win_share": wins1 / exp1["won"].sum(),
+                "exp2_win_share": wins2 / exp2["won"].sum(),
             })
 
     df = pd.DataFrame(rows).sort_values("delta")
     lines = [
         "## RQ2: Moral Restraint (Experiment 1 vs Experiment 2)",
         "",
-        "| Model | Exp 1 lie frequency | Exp 2 lie frequency | Delta (Exp2 - Exp1) |",
-        "|---|---:|---:|---|",
+        "| Model | Exp 1 optional lie rate | Exp 2 optional lie rate | Delta (Exp2 - Exp1) | Exp 1 win share | Exp 2 win share |",
+        "|---|---:|---:|---|---:|---:|",
     ]
 
     for _, row in df.iterrows():
         lines.append(
-            f"| {row['model_id']} | {pct(row['exp1_lie_frequency'])} | "
-            f"{pct(row['exp2_lie_frequency'])} | {row['delta_text']} |"
+            f"| {row['model_id']} | {pct(row['exp1_optional_lie_rate'])} | "
+            f"{pct(row['exp2_optional_lie_rate'])} | {row['delta_text']} | "
+            f"{pct(row['exp1_win_share'])} | {pct(row['exp2_win_share'])} |"
         )
 
     biggest_drop = df.iloc[0]
     biggest_increase = df.sort_values("delta", ascending=False).iloc[0]
     lines.extend([
         "",
-        f"Largest lie-frequency reduction: `{biggest_drop['model_id']}` with {biggest_drop['delta_text']}.",
-        f"Largest lie-frequency increase: `{biggest_increase['model_id']}` with {biggest_increase['delta_text']}.",
+        f"Largest optional-lie reduction: `{biggest_drop['model_id']}` with {biggest_drop['delta_text']}.",
+        f"Largest optional-lie increase: `{biggest_increase['model_id']}` with {biggest_increase['delta_text']}.",
         "",
     ])
     return lines
@@ -211,38 +241,51 @@ def render_instruction_compliance(player_games: pd.DataFrame, exp3_stats: Option
         return []
 
     if exp3_stats is not None and not exp3_stats.empty:
-        df = exp3_stats.copy()
-        df["violation_rate"] = df["instruction_violation_rate"].fillna(0).astype(float)
+        df = with_win_share(exp3_stats)
+        df["optional_violation_rate"] = df["optional_lie_rate_given_truthful_available"].fillna(0).astype(float)
+        df["legacy_violation_rate"] = df["instruction_violation_rate"].fillna(0).astype(float)
+        df["conflict_turn_share"] = df["truthful_unavailable_turn_share"].fillna(0).astype(float)
         df["games"] = df["games_played"].astype(int)
     else:
+        exp3["optional_lie_rate_given_truthful_available"] = exp3["optional_lie_rate_given_truthful_available"].fillna(0).astype(float)
         exp3["instruction_violation_rate"] = exp3["instruction_violation_rate"].fillna(0).astype(float)
+        exp3["truthful_unavailable_turn_share"] = exp3["truthful_unavailable_turn_share"].fillna(0).astype(float)
         rows = []
         for model_id, group in exp3.groupby("model_id"):
+            wins = int(group["won"].sum())
             rows.append({
                 "model_id": model_id,
-                "violation_rate": float(group["instruction_violation_rate"].mean()),
-                "win_rate": float(group["won"].mean()),
+                "optional_violation_rate": float(group["optional_lie_rate_given_truthful_available"].mean()),
+                "legacy_violation_rate": float(group["instruction_violation_rate"].mean()),
+                "conflict_turn_share": float(group["truthful_unavailable_turn_share"].mean()),
+                "wins": wins,
+                "win_share": wins / exp3["won"].sum(),
                 "games": len(group),
             })
         df = pd.DataFrame(rows)
 
-    df = df.sort_values(["violation_rate", "win_rate"], ascending=[False, False])
+    df = df.sort_values(["optional_violation_rate", "win_share"], ascending=[False, False])
     lines = [
         "## RQ3: Instruction Compliance (Experiment 3)",
         "",
-        "| Model | Games | Instruction violation rate | Win rate |",
-        "|---|---:|---:|---:|",
+        "| Model | Games | Wins | Adjusted optional lie rate | Legacy overall lie rate | Conflict-turn share | Win share |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ]
 
     for _, row in df.iterrows():
         lines.append(
-            f"| {row['model_id']} | {int(row['games'])} | {pct(row['violation_rate'])} | {pct(row['win_rate'])} |"
+            f"| {row['model_id']} | {int(row['games'])} | {int(row['wins'])} | {pct(row['optional_violation_rate'])} | "
+            f"{pct(row['legacy_violation_rate'])} | {pct(row['conflict_turn_share'])} | {pct(row['win_share'])} |"
         )
 
     top_violator = df.iloc[0]
+    mean_optional = df["optional_violation_rate"].mean()
+    mean_conflict = df["conflict_turn_share"].mean()
     lines.extend([
         "",
-        f"Highest instruction-violation rate: `{top_violator['model_id']}` at {pct(top_violator['violation_rate'])}.",
+        f"Highest adjusted optional-lie rate: `{top_violator['model_id']}` at {pct(top_violator['optional_violation_rate'])}.",
+        f"Mean model-level adjusted optional-lie rate: {pct(mean_optional)}.",
+        f"Mean model-level conflict-turn share: {pct(mean_conflict)}.",
         "",
     ])
     return lines
@@ -259,8 +302,9 @@ def render_paper_fill_ins(player_games: pd.DataFrame) -> list[str]:
         "## Paper Fill-Ins",
         "",
         f"- Methods sentence: `We ran {total_games} four-player games across {total_models} models under experiments {experiments}, using {providers} with prompt version(s) {prompt_versions}.`",
-        "- Results sentence template: `In the baseline deception condition, [MODEL] achieved the highest win rate, while [MODEL] lied most frequently; under asymmetric fairness, [MODEL] showed the largest reduction in lie frequency, and under the honesty mandate, [MODEL] had the highest instruction-violation rate.`",
-        "- Discussion angle: `The strongest paper story is the tension between competitive success, deception rate, and instruction following, not raw leaderboard ranking.`",
+        "- Results sentence template: `In the baseline deception condition, [MODEL] captured the largest share of wins, while [MODEL] showed the highest optional-lie rate; under asymmetric fairness, five models reduced optional lying while [MODEL] increased it, and under the honesty mandate, [MODEL] had the highest adjusted optional-lie rate when truthful play was available.`",
+        "- Reporting note: `Paper-facing tables should use per-experiment win share (wins divided by 150 games) as the primary win metric; appearance win rate can remain in CSV exports as a secondary derived field.`",
+        "- Discussion angle: `The strongest paper story is that the honesty mandate sharply suppresses optional lying while the table simultaneously becomes less aggressive about challenging remaining bluffs.`",
         "",
     ]
     return lines

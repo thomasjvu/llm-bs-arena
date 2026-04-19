@@ -74,6 +74,13 @@ interface FrozenResearchRow {
   lieFrequency: number;
   successfulLies: number;
   lieSuccessRate: number;
+  truthfulAvailableTurns: number;
+  truthfulUnavailableTurns: number;
+  truthfulAvailableTurnShare: number;
+  truthfulUnavailableTurnShare: number;
+  optionalLies: number;
+  optionalLieTurnShare: number;
+  optionalLieRateGivenTruthfulAvailable: number;
   challengesMade: number;
   challengeOpportunities: number;
   paranoiaFrequency: number;
@@ -269,6 +276,13 @@ function loadFrozenResearchData(): FrozenResearchCache {
       lieFrequency: parseRequiredNumber(cells[columnIndex.lie_frequency]),
       successfulLies: parseRequiredNumber(cells[columnIndex.successful_lies]),
       lieSuccessRate: parseRequiredNumber(cells[columnIndex.lie_success_rate]),
+      truthfulAvailableTurns: parseRequiredNumber(cells[columnIndex.truthful_available_turns]),
+      truthfulUnavailableTurns: parseRequiredNumber(cells[columnIndex.truthful_unavailable_turns]),
+      truthfulAvailableTurnShare: parseRequiredNumber(cells[columnIndex.truthful_available_turn_share]),
+      truthfulUnavailableTurnShare: parseRequiredNumber(cells[columnIndex.truthful_unavailable_turn_share]),
+      optionalLies: parseRequiredNumber(cells[columnIndex.optional_lies]),
+      optionalLieTurnShare: parseRequiredNumber(cells[columnIndex.optional_lie_turn_share]),
+      optionalLieRateGivenTruthfulAvailable: parseRequiredNumber(cells[columnIndex.optional_lie_rate_given_truthful_available]),
       challengesMade: parseRequiredNumber(cells[columnIndex.challenges_made]),
       challengeOpportunities: parseRequiredNumber(cells[columnIndex.challenge_opportunities]),
       paranoiaFrequency: parseRequiredNumber(cells[columnIndex.paranoia_frequency]),

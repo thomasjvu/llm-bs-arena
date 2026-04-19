@@ -1,7 +1,7 @@
-model_id,games_played,wins,win_rate,total_plays,total_lies,lie_frequency,successful_lies,lie_success_rate,challenges_made,challenge_opportunities,paranoia_frequency,correct_challenges,challenge_accuracy,instruction_violations,instruction_violation_rate
-minimaxai/minimax-m2.5,100,6,0.0600,1654,419,0.2533,106,0.2530,980,4075,0.2405,350,0.3571,419,0.2533
-mistralai/mistral-small-4-119b-2603,100,0,0.0000,1422,290,0.2039,163,0.5621,1801,3548,0.5076,449,0.2493,290,0.2039
-moonshotai/kimi-k2.5,100,57,0.5700,1553,473,0.3046,122,0.2579,421,3510,0.1199,238,0.5653,473,0.3046
-nvidia/nemotron-3-super-120b-a12b,100,15,0.1500,1628,444,0.2727,164,0.3694,838,3817,0.2195,333,0.3974,444,0.2727
-qwen/qwen3.5-397b-a17b,100,51,0.5100,1522,474,0.3114,133,0.2806,210,3421,0.0614,117,0.5571,474,0.3114
-z-ai/glm5,100,21,0.2100,1609,462,0.2871,166,0.3593,586,3647,0.1607,221,0.3771,462,0.2871
+model_id,games_played,wins,win_rate,total_plays,total_lies,lie_frequency,successful_lies,lie_success_rate,truthful_available_turns,truthful_unavailable_turns,truthful_available_turn_share,truthful_unavailable_turn_share,optional_lies,optional_lie_turn_share,optional_lie_rate_given_truthful_available,challenges_made,challenge_opportunities,paranoia_frequency,correct_challenges,challenge_accuracy,instruction_violations,instruction_violation_rate
+minimaxai/minimax-m2.5,100,6,0.0600,1654,419,0.2533,106,0.2530,1245,409,0.7527,0.2473,10,0.0060,0.0080,980,4075,0.2405,350,0.3571,419,0.2533
+mistralai/mistral-small-4-119b-2603,100,0,0.0000,1422,290,0.2039,163,0.5621,1282,140,0.9015,0.0985,150,0.1055,0.1170,1801,3548,0.5076,449,0.2493,290,0.2039
+moonshotai/kimi-k2.5,100,57,0.5700,1553,473,0.3046,122,0.2579,1080,473,0.6954,0.3046,0,0.0000,0.0000,421,3510,0.1199,238,0.5653,473,0.3046
+nvidia/nemotron-3-super-120b-a12b,100,15,0.1500,1628,444,0.2727,164,0.3694,1187,441,0.7291,0.2709,3,0.0018,0.0025,838,3817,0.2195,333,0.3974,444,0.2727
+qwen/qwen3.5-397b-a17b,100,51,0.5100,1522,474,0.3114,133,0.2806,1052,470,0.6912,0.3088,4,0.0026,0.0038,210,3421,0.0614,117,0.5571,474,0.3114
+z-ai/glm5,100,21,0.2100,1609,462,0.2871,166,0.3593,1148,461,0.7135,0.2865,1,0.0006,0.0009,586,3647,0.1607,221,0.3771,462,0.2871

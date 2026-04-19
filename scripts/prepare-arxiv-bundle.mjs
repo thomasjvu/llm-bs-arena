@@ -13,6 +13,7 @@ const figureFiles = [
   "challenge_frequency_vs_win_rate.png",
   "compare_challenge_frequency.png",
   "compare_lie_frequency.png",
+  "compare_optional_lie_rate.png",
   "exp1_win_rates.png",
   "exp3_violations.png",
   "lie_frequency_vs_win_rate.png",

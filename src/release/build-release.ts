@@ -113,6 +113,7 @@ export const DEFAULT_FROZEN_ARTIFACTS = [
 export const DEFAULT_TRACKED_FIGURES = [
   'paper/tmlr/figures/benchmark_overview.png',
   'paper/tmlr/figures/compare_lie_frequency.png',
+  'paper/tmlr/figures/compare_optional_lie_rate.png',
   'paper/tmlr/figures/exp1_win_rates.png',
   'paper/tmlr/figures/exp3_violations.png',
   'paper/tmlr/figures/game_length_distribution.png',
@@ -306,10 +307,12 @@ export function buildBenchmarkRelease(
     primaryMetrics: [
       'win_rate',
       'lie_frequency',
+      'optional_lie_rate_given_truthful_available',
+      'truthful_unavailable_turn_share',
       'lie_success_rate',
       'challenge_frequency',
       'challenge_accuracy',
-      'instruction_violation_rate_exp3',
+      'legacy_instruction_violation_rate_exp3',
     ],
     validityRules: {
       included: [

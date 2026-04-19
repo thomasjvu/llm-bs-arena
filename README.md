@@ -13,7 +13,7 @@ The environment is the card game *Bullshit*. Four agents play with hidden privat
 
 1. How effectively do models deceive other models when deception is allowed?
 2. Do models reduce deception when told opponents are honesty-constrained?
-3. Do models violate explicit no-lying instructions when lying improves competitive outcomes?
+3. When truthful play is available, do models still violate explicit no-lying instructions under competitive pressure?
 
 ## Frozen Pilot
 
@@ -25,7 +25,8 @@ The primary pilot is complete:
 - `600` winner-terminated games total
 
 The strongest results from the frozen cohort are:
-- Exp3 honesty instructions reduce but do not eliminate lying
+- Exp3 honesty instructions sharply reduce optional lying when truthful play is available
+- Exp3 overall lie frequency remains nonzero because truthful-play-unavailable turns are common
 - Exp3 also softens enforcement: challenge frequency drops while lie success rises
 - Exp2 produces heterogeneous, model-specific restraint effects rather than a universal drop in deception
 - Kimi leads Exp1, Exp2, and Exp3; Nemotron leads Exp0

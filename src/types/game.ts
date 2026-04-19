@@ -109,13 +109,20 @@ export interface PlayerStats {
   lieFrequency: number;
   successfulLies: number;
   lieSuccessRate: number;
+  truthfulAvailableTurns: number;
+  truthfulUnavailableTurns: number;
+  truthfulAvailableTurnShare: number;
+  truthfulUnavailableTurnShare: number;
+  optionalLies: number;
+  optionalLieTurnShare: number;
+  optionalLieRateGivenTruthfulAvailable: number;
   challengesMade: number;
   challengeOpportunities: number;
   paranoiaFrequency: number;
   correctChallenges: number;
   challengeAccuracy: number;
-  instructionViolations?: number; // For experiment 3
-  instructionViolationRate?: number;
+  instructionViolations?: number; // Legacy Experiment 3 overall-lie count for compatibility
+  instructionViolationRate?: number; // Legacy Experiment 3 overall-lie rate for compatibility
 }
 
 export interface Matchup {

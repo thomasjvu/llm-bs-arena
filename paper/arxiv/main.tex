@@ -4,8 +4,11 @@
 \usepackage{microtype}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
+\usepackage{caption}
 \usepackage{graphicx}
 \usepackage{enumitem}
+\usepackage{float}
+\usepackage[section]{placeins}
 \usepackage[numbers]{natbib}
 \usepackage[hidelinks]{hyperref}
 \usepackage{titling}
@@ -24,6 +27,7 @@
 \input{author_block}
 \date{}
 \newcommand{\prompttextlocation}{Appendix~\ref{app:prompt-texts}}
+\newcommand{\gameid}[1]{\path{#1}}
 
 \begin{document}
 \raggedbottom
@@ -34,6 +38,7 @@
 \input{sections/02_related}
 \input{sections/03_method}
 \input{sections/04_results}
+\FloatBarrier
 \input{sections/05_discussion}
 \input{sections/06_conclusion}
 

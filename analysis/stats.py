@@ -157,10 +157,14 @@ def summarize_experiment(player_games: pd.DataFrame, experiment_id: int, experim
     source_df = experiment_stats if experiment_stats is not None and not experiment_stats.empty else None
     if source_df is not None:
         lie_frequency = bootstrap_mean_ci(source_df["lie_frequency"].astype(float).values)
+        optional_lie_rate = bootstrap_mean_ci(source_df["optional_lie_rate_given_truthful_available"].astype(float).values)
+        truthful_unavailable_share = bootstrap_mean_ci(source_df["truthful_unavailable_turn_share"].astype(float).values)
         paranoia = bootstrap_mean_ci(source_df["paranoia_frequency"].astype(float).values)
         model_count = len(source_df)
     else:
         lie_frequency = bootstrap_group_mean_ci(exp_df, "lie_frequency")
+        optional_lie_rate = bootstrap_group_mean_ci(exp_df, "optional_lie_rate_given_truthful_available")
+        truthful_unavailable_share = bootstrap_group_mean_ci(exp_df, "truthful_unavailable_turn_share")
         paranoia = bootstrap_group_mean_ci(exp_df, "paranoia_frequency")
         model_count = exp_df["model_id"].nunique()
 
@@ -168,6 +172,8 @@ def summarize_experiment(player_games: pd.DataFrame, experiment_id: int, experim
         "player_games": str(len(exp_df)),
         "models": str(model_count),
         "lie_frequency": format_ci(*lie_frequency, pct=True),
+        "optional_lie_rate_given_truthful_available": format_ci(*optional_lie_rate, pct=True),
+        "truthful_unavailable_turn_share": format_ci(*truthful_unavailable_share, pct=True),
         "paranoia_frequency": format_ci(*paranoia, pct=True),
     }
 
@@ -176,7 +182,7 @@ def summarize_experiment(player_games: pd.DataFrame, experiment_id: int, experim
             violations = bootstrap_mean_ci(source_df["instruction_violation_rate"].fillna(0).astype(float).values)
         else:
             violations = bootstrap_group_mean_ci(exp_df.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate")
-        summary["instruction_violation_rate"] = format_ci(*violations, pct=True)
+        summary["instruction_violation_rate_legacy"] = format_ci(*violations, pct=True)
 
     return summary
 
@@ -267,11 +273,16 @@ def print_statistical_report(player_games: pd.DataFrame, experiment_stats: Dict[
         print(f"  Player-game rows: {summary['player_games']}")
         print(f"  Models: {summary['models']}")
         print(f"  Mean lie frequency: {summary['lie_frequency']}")
+        print(
+            "  Mean optional-lie rate given truthful play available: "
+            f"{summary['optional_lie_rate_given_truthful_available']}"
+        )
+        print(f"  Mean truthful-play-unavailable turn share: {summary['truthful_unavailable_turn_share']}")
         print(f"  Mean paranoia frequency: {summary['paranoia_frequency']}")
         print("  Experiment-level win rate is omitted here because one winner is guaranteed per four-player game;")
         print("  use the per-model leaderboard below for meaningful win-rate comparisons.")
-        if "instruction_violation_rate" in summary:
-            print(f"  Mean instruction violation rate: {summary['instruction_violation_rate']}")
+        if "instruction_violation_rate_legacy" in summary:
+            print(f"  Legacy overall-lie rate in Exp 3: {summary['instruction_violation_rate_legacy']}")
         print()
 
     exp1 = player_games[player_games["experiment_id"] == 1]
@@ -306,9 +317,23 @@ def print_statistical_report(player_games: pd.DataFrame, experiment_stats: Dict[
         print("-" * 60)
         if 3 in experiment_stats:
             exp3_stats = experiment_stats[3].copy()
+            exp3_stats["optional_lie_rate_given_truthful_available"] = (
+                exp3_stats["optional_lie_rate_given_truthful_available"].fillna(0).astype(float)
+            )
             exp3_stats["instruction_violation_rate"] = exp3_stats["instruction_violation_rate"].fillna(0).astype(float)
+            print_exact_metric_table(exp3_stats, "optional_lie_rate_given_truthful_available")
+            print()
+            print("  Legacy overall-lie rate in Experiment 3:")
             print_exact_metric_table(exp3_stats, "instruction_violation_rate")
         else:
+            print_model_table(
+                summarize_metric_by_model(
+                    exp3.fillna({"optional_lie_rate_given_truthful_available": 0}),
+                    "optional_lie_rate_given_truthful_available",
+                )
+            )
+            print()
+            print("  Legacy overall-lie rate in Experiment 3:")
             print_model_table(summarize_metric_by_model(exp3.fillna({"instruction_violation_rate": 0}), "instruction_violation_rate"))
         print()
 

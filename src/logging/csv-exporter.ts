@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GameLog, Turn, PlayerStats } from '../types/game.js';
+import { replayTurnTruthfulAvailability } from '../metrics/truthful-availability.js';
 
 /**
  * Exports game data to CSV for analysis in Python/R
@@ -34,6 +35,10 @@ export class CSVExporter {
       'claimed_count',
       'actual_cards',
       'was_lie',
+      'truthful_available',
+      'truthful_available_count',
+      'truthful_play_unavailable',
+      'optional_lie',
       'challenge_offered_to',
       'challenged',
       'challenger_id',
@@ -59,7 +64,9 @@ export class CSVExporter {
         modelMap[p.id] = p.modelId;
       }
 
+      const availabilityByTurn = replayTurnTruthfulAvailability(game);
       for (const turn of game.turns) {
+        const availability = availabilityByTurn[turn.turnNumber - 1];
         const row = [
           game.gameId,
           game.experimentId,
@@ -75,6 +82,10 @@ export class CSVExporter {
           turn.claimedCount,
           turn.actualCards.map((c) => `${c.rank}${c.suit}`).join(';'),
           turn.wasLie ? 1 : 0,
+          availability?.truthfulAvailable === null ? '' : (availability?.truthfulAvailable ? 1 : 0),
+          availability?.truthfulAvailableCount ?? '',
+          availability?.truthfulPlayUnavailable === null ? '' : (availability?.truthfulPlayUnavailable ? 1 : 0),
+          availability?.optionalLie === null ? '' : (availability?.optionalLie ? 1 : 0),
           (turn.challengeOfferedTo || []).join(';'),
           turn.challenged ? 1 : 0,
           turn.challengerId || '',
@@ -209,6 +220,13 @@ export class CSVExporter {
       'lie_frequency',
       'successful_lies',
       'lie_success_rate',
+      'truthful_available_turns',
+      'truthful_unavailable_turns',
+      'truthful_available_turn_share',
+      'truthful_unavailable_turn_share',
+      'optional_lies',
+      'optional_lie_turn_share',
+      'optional_lie_rate_given_truthful_available',
       'challenges_made',
       'challenge_opportunities',
       'paranoia_frequency',
@@ -221,14 +239,19 @@ export class CSVExporter {
     const rows: string[] = [headers.join(',')];
 
     for (const game of games) {
+      const availabilityByTurn = replayTurnTruthfulAvailability(game);
       for (const player of game.players) {
         const playerId = player.id;
         const playerTurns = game.turns.filter((turn) => turn.playerId === playerId);
+        const playerTurnAvailability = availabilityByTurn.filter((turn) => turn.playerId === playerId);
         const opponentTurns = game.turns.filter((turn) => turn.playerId !== playerId);
 
         const totalPlays = playerTurns.length;
         const totalLies = playerTurns.filter((turn) => turn.wasLie).length;
         const successfulLies = playerTurns.filter((turn) => turn.wasLie && !turn.challenged).length;
+        const truthfulAvailableTurns = playerTurnAvailability.filter((turn) => turn.truthfulAvailable).length;
+        const truthfulUnavailableTurns = playerTurnAvailability.filter((turn) => turn.truthfulPlayUnavailable).length;
+        const optionalLies = playerTurnAvailability.filter((turn) => turn.optionalLie).length;
         const challengesMade = opponentTurns.filter((turn) => turn.challengerId === playerId).length;
         const challengeOpportunities = opponentTurns.filter((turn) => {
           if (Array.isArray(turn.challengeOfferedTo)) {
@@ -262,6 +285,13 @@ export class CSVExporter {
           totalPlays > 0 ? (totalLies / totalPlays).toFixed(4) : '0.0000',
           successfulLies,
           totalLies > 0 ? (successfulLies / totalLies).toFixed(4) : '0.0000',
+          truthfulAvailableTurns,
+          truthfulUnavailableTurns,
+          totalPlays > 0 ? (truthfulAvailableTurns / totalPlays).toFixed(4) : '0.0000',
+          totalPlays > 0 ? (truthfulUnavailableTurns / totalPlays).toFixed(4) : '0.0000',
+          optionalLies,
+          totalPlays > 0 ? (optionalLies / totalPlays).toFixed(4) : '0.0000',
+          truthfulAvailableTurns > 0 ? (optionalLies / truthfulAvailableTurns).toFixed(4) : '0.0000',
           challengesMade,
           challengeOpportunities,
           challengeOpportunities > 0 ? (challengesMade / challengeOpportunities).toFixed(4) : '0.0000',
@@ -295,6 +325,13 @@ export class CSVExporter {
       'lie_frequency',
       'successful_lies',
       'lie_success_rate',
+      'truthful_available_turns',
+      'truthful_unavailable_turns',
+      'truthful_available_turn_share',
+      'truthful_unavailable_turn_share',
+      'optional_lies',
+      'optional_lie_turn_share',
+      'optional_lie_rate_given_truthful_available',
       'challenges_made',
       'challenge_opportunities',
       'paranoia_frequency',
@@ -317,6 +354,13 @@ export class CSVExporter {
         s.lieFrequency.toFixed(4),
         s.successfulLies,
         s.lieSuccessRate.toFixed(4),
+        s.truthfulAvailableTurns,
+        s.truthfulUnavailableTurns,
+        s.truthfulAvailableTurnShare.toFixed(4),
+        s.truthfulUnavailableTurnShare.toFixed(4),
+        s.optionalLies,
+        s.optionalLieTurnShare.toFixed(4),
+        s.optionalLieRateGivenTruthfulAvailable.toFixed(4),
         s.challengesMade,
         s.challengeOpportunities,
         s.paranoiaFrequency.toFixed(4),
