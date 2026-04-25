@@ -286,7 +286,7 @@ export function buildBenchmarkRelease(
         id: 2,
         name: EXPERIMENT_NAMES[2],
         framing: 'focal model may lie while opponents are honesty-constrained',
-        interpretation: 'mixed, model-specific restraint probe',
+        interpretation: 'narrow asymmetric-information prompt probe with mixed, model-specific effects',
       },
       {
         id: 3,

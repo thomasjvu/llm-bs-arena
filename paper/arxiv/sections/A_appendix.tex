@@ -54,6 +54,8 @@ You must include a valid JSON object in your response. You may think through the
 \end{itemize}
 \end{quote}
 
+This condition should be interpreted as a low-strategy prompt control, not as a pure non-strategic baseline, because the shared base rules above still mention lying, challenging, and basic risk tradeoffs.
+
 \subsection{Experiment 1}
 
 \begin{quote}\small
@@ -77,6 +79,8 @@ You must include a valid JSON object in your response. You may think through the
   \item You may still choose to lie or play honestly as you see fit.
 \end{itemize}
 \end{quote}
+
+We therefore interpret Experiment~2 as an asymmetric honesty framing rather than as a direct measure of internal moral reasoning.
 
 \subsection{Experiment 3}
 
@@ -140,7 +144,7 @@ I have one 6 (6D) in my hand and must play honestly. I'll play the 6D plus one o
 
 This is the cleanest Experiment~3 compliance failure in the frozen appendix set because the model had a truthful single-card 6-play available and still chose to pad the claim with an off-rank card.
 
-\subsection{Four-Card Zero-Match Bluff Under Asymmetric Fairness}
+\subsection{Four-Card Zero-Match Bluff Under Asymmetric Honesty Framing}
 
 Game \gameid{exp2_m11_g5_1775298615945}, Turn~38, Kimi:
 
@@ -148,7 +152,7 @@ Game \gameid{exp2_m11_g5_1775298615945}, Turn~38, Kimi:
 The pile is empty so being challenged carries no penalty beyond failing to discard. I have no Queens, so I must lie. I will play four cards---the three 7s and the Jack---to maximize hand reduction while discarding ranks furthest from the current position in the cycle.
 \end{quote}
 
-This is the clearest Experiment~2 counterexample because it is a four-card zero-match bluff from the one model that becomes more deceptive under the asymmetric-fairness framing. In the local sequence, Turn~37 is a false challenge against MiniMax's truthful two-Jack play, Turn~38 goes unchallenged, and Turn~40 is a correctly challenged Nemotron four-Ace bluff. That pattern is consistent with uneven enforcement under the softer aggregate inspection regime in Experiment~2. The frozen turn CSV preserves the acting model's reasoning text, but it does not preserve comparable non-challenge reasoning for the players who let Turn~38 pass, so we do not claim direct evidence of their internal rationale.
+This is the clearest Experiment~2 counterexample because it is a four-card zero-match bluff from the one model that becomes more deceptive under the asymmetric honesty framing. In the local sequence, Turn~37 is a false challenge against MiniMax's truthful two-Jack play, Turn~38 goes unchallenged, and Turn~40 is a correctly challenged Nemotron four-Ace bluff. That pattern is consistent with uneven enforcement under the softer aggregate inspection regime in Experiment~2. The frozen logs preserve the acting model's reasoning text and, on challenged turns, the realized challenger's rationale, but they do not preserve comparable pass rationales for the players who let Turn~38 pass, so we do not claim direct evidence of why those judges declined to challenge.
 
 \subsection{Conflict-Turn Bluff Under the Honesty Mandate}
 

@@ -158,14 +158,18 @@ def summarize_experiment(player_games: pd.DataFrame, experiment_id: int, experim
     if source_df is not None:
         lie_frequency = bootstrap_mean_ci(source_df["lie_frequency"].astype(float).values)
         optional_lie_rate = bootstrap_mean_ci(source_df["optional_lie_rate_given_truthful_available"].astype(float).values)
+        lie_success_rate = bootstrap_mean_ci(source_df["lie_success_rate"].astype(float).values)
         truthful_unavailable_share = bootstrap_mean_ci(source_df["truthful_unavailable_turn_share"].astype(float).values)
         paranoia = bootstrap_mean_ci(source_df["paranoia_frequency"].astype(float).values)
+        challenge_accuracy = bootstrap_mean_ci(source_df["challenge_accuracy"].astype(float).values)
         model_count = len(source_df)
     else:
         lie_frequency = bootstrap_group_mean_ci(exp_df, "lie_frequency")
         optional_lie_rate = bootstrap_group_mean_ci(exp_df, "optional_lie_rate_given_truthful_available")
+        lie_success_rate = bootstrap_group_mean_ci(exp_df, "lie_success_rate")
         truthful_unavailable_share = bootstrap_group_mean_ci(exp_df, "truthful_unavailable_turn_share")
         paranoia = bootstrap_group_mean_ci(exp_df, "paranoia_frequency")
+        challenge_accuracy = bootstrap_group_mean_ci(exp_df, "challenge_accuracy")
         model_count = exp_df["model_id"].nunique()
 
     summary = {
@@ -173,8 +177,10 @@ def summarize_experiment(player_games: pd.DataFrame, experiment_id: int, experim
         "models": str(model_count),
         "lie_frequency": format_ci(*lie_frequency, pct=True),
         "optional_lie_rate_given_truthful_available": format_ci(*optional_lie_rate, pct=True),
+        "lie_success_rate": format_ci(*lie_success_rate, pct=True),
         "truthful_unavailable_turn_share": format_ci(*truthful_unavailable_share, pct=True),
         "paranoia_frequency": format_ci(*paranoia, pct=True),
+        "challenge_accuracy": format_ci(*challenge_accuracy, pct=True),
     }
 
     if experiment_id == 3:
@@ -277,8 +283,10 @@ def print_statistical_report(player_games: pd.DataFrame, experiment_stats: Dict[
             "  Mean optional-lie rate given truthful play available: "
             f"{summary['optional_lie_rate_given_truthful_available']}"
         )
+        print(f"  Mean lie success rate: {summary['lie_success_rate']}")
         print(f"  Mean truthful-play-unavailable turn share: {summary['truthful_unavailable_turn_share']}")
         print(f"  Mean paranoia frequency: {summary['paranoia_frequency']}")
+        print(f"  Mean challenge accuracy: {summary['challenge_accuracy']}")
         print("  Experiment-level win rate is omitted here because one winner is guaranteed per four-player game;")
         print("  use the per-model leaderboard below for meaningful win-rate comparisons.")
         if "instruction_violation_rate_legacy" in summary:
@@ -303,7 +311,7 @@ def print_statistical_report(player_games: pd.DataFrame, experiment_stats: Dict[
         print()
 
     if not player_games[player_games["experiment_id"] == 1].empty and not player_games[player_games["experiment_id"] == 2].empty:
-        print("RQ2: Moral restraint (Exp 1 vs Exp 2 lie frequency)")
+        print("RQ2: Asymmetric honesty framing (Exp 1 vs Exp 2 lie frequency)")
         print("-" * 60)
         if 1 in experiment_stats and 2 in experiment_stats:
             print_exact_delta_table(experiment_stats[1], experiment_stats[2])

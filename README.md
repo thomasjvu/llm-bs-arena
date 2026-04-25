@@ -1,6 +1,6 @@
 # LLM Bullshit
 
-Bullshit-Bench is a benchmark release for studying deception, moral restraint, and instruction compliance in multi-agent LLM play.
+Bullshit-Bench is a benchmark release for studying deception, asymmetric honesty framing, and instruction compliance in multi-agent LLM play.
 
 The environment is the card game *Bullshit*. Four agents play with hidden private state, legal bluffing, objective ground truth, and explicit peer challenge opportunities. The release includes:
 - a seeded TypeScript game engine
@@ -12,7 +12,7 @@ The environment is the card game *Bullshit*. Four agents play with hidden privat
 ## Research Questions
 
 1. How effectively do models deceive other models when deception is allowed?
-2. Do models reduce deception when told opponents are honesty-constrained?
+2. How do models change deception when told opponents are honesty-constrained?
 3. When truthful play is available, do models still violate explicit no-lying instructions under competitive pressure?
 
 ## Frozen Pilot
@@ -28,7 +28,7 @@ The strongest results from the frozen cohort are:
 - Exp3 honesty instructions sharply reduce optional lying when truthful play is available
 - Exp3 overall lie frequency remains nonzero because truthful-play-unavailable turns are common
 - Exp3 also softens enforcement: challenge frequency drops while lie success rises
-- Exp2 produces heterogeneous, model-specific restraint effects rather than a universal drop in deception
+- Exp2 produces heterogeneous, model-specific responses to asymmetric honesty framing rather than a universal drop in deception
 - Kimi leads Exp1, Exp2, and Exp3; Nemotron leads Exp0
 - Mistral is the clearest high-challenge, zero-win profile
 

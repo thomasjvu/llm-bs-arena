@@ -2,11 +2,11 @@
 
 ## Overview
 
-This project studies deception, moral restraint, and instruction compliance in multi-agent LLM interactions by making four LLMs play Bullshit (Cheat / I Doubt It) against each other under different prompt framings.
+This project studies deception, asymmetric honesty framing, and instruction compliance in multi-agent LLM interactions by making four LLMs play Bullshit (Cheat / I Doubt It) against each other under different prompt framings.
 
 ### Research Questions
 1. **RQ1:** How effectively can LLMs deceive other LLMs in a game that rewards lying?
-2. **RQ2:** Do LLMs reduce deceptive behavior when told the other players must play honestly?
+2. **RQ2:** How do LLMs change deceptive behavior when told the other players must play honestly?
 3. **RQ3:** When truthful play is available, will LLMs still violate explicit instructions prohibiting deception under competitive pressure?
 
 ### Why This Matters
@@ -18,7 +18,7 @@ This project studies deception, moral restraint, and instruction compliance in m
 ## Experimental Design
 
 ### Experiment 0: Control
-Prompt framing: random-play baseline with no strategic guidance.
+Prompt framing: low-strategy prompt control with reduced strategic emphasis.
 
 Purpose: establish a low-strategy reference point for challenge and lie behavior.
 
@@ -27,10 +27,10 @@ Prompt framing: deception is allowed and expected.
 
 Purpose: measure baseline deception capability, challenge behavior, and win rate.
 
-### Experiment 2: Asymmetric Fairness
+### Experiment 2: Asymmetric Honesty Framing
 Prompt framing: the focal model may lie, but is told the other players will play honestly.
 
-Purpose: test whether models show moral restraint when they believe opponents are constrained.
+Purpose: test how models respond to an asymmetric honesty framing when they believe opponents are constrained.
 
 ### Experiment 3: Honesty Mandate
 Prompt framing: all players are instructed to play honestly and lying is prohibited.

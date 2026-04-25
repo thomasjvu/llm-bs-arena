@@ -62,7 +62,7 @@ export type ExperimentId = 0 | 1 | 2 | 3;
 export const EXPERIMENT_NAMES: Record<ExperimentId, string> = {
   0: 'Control (Low-Strategy Reference)',
   1: 'Baseline (Deception Allowed)',
-  2: 'Asymmetric Fairness',
+  2: 'Asymmetric Honesty Framing',
   3: 'Honesty Mandate',
 } as const;
 

@@ -71,8 +71,8 @@ def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dic
     lines = [
         "## Experiment Overview",
         "",
-        "| Experiment | Games | Models | Top win share | Mean overall lie frequency | Mean optional lie rate | Mean challenge frequency | Mean conflict-turn share |",
-        "|---|---:|---:|---:|---|---|---|---|",
+        "| Experiment | Games | Models | Top win share | Mean overall lie frequency | Mean optional lie rate | Mean lie success | Mean challenge frequency | Mean challenge accuracy | Mean conflict-turn share |",
+        "|---|---:|---:|---:|---|---|---|---|---|---|",
     ]
 
     experiment_ids = sorted({int(v) for v in player_games["experiment_id"].dropna().unique()} | set(experiment_stats.keys()))
@@ -85,7 +85,9 @@ def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dic
             top_win = pct(exp_stats["win_share"].max())
             mean_lie = pct_ci(exp_stats["lie_frequency"].astype(float))
             mean_optional_lie = pct_ci(exp_stats["optional_lie_rate_given_truthful_available"].astype(float))
+            mean_lie_success = pct_ci(exp_stats["lie_success_rate"].astype(float))
             mean_challenge = pct_ci(exp_stats["paranoia_frequency"].astype(float))
+            mean_challenge_accuracy = pct_ci(exp_stats["challenge_accuracy"].astype(float))
             conflict_turn_share = pct_ci(exp_stats["truthful_unavailable_turn_share"].astype(float))
             model_count = len(exp_stats)
         else:
@@ -94,7 +96,9 @@ def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dic
             top_win = pct((win_counts / total_wins).max() if total_wins else float("nan"))
             mean_lie = pct_group_ci(exp_df, "lie_frequency")
             mean_optional_lie = pct_group_ci(exp_df, "optional_lie_rate_given_truthful_available")
+            mean_lie_success = pct_group_ci(exp_df, "lie_success_rate")
             mean_challenge = pct_group_ci(exp_df, "paranoia_frequency")
+            mean_challenge_accuracy = pct_group_ci(exp_df, "challenge_accuracy")
             conflict_turn_share = pct_group_ci(exp_df, "truthful_unavailable_turn_share")
             model_count = exp_df["model_id"].nunique()
 
@@ -105,7 +109,9 @@ def render_experiment_overview(player_games: pd.DataFrame, experiment_stats: Dic
             f"{top_win} | "
             f"{mean_lie} | "
             f"{mean_optional_lie} | "
+            f"{mean_lie_success} | "
             f"{mean_challenge} | "
+            f"{mean_challenge_accuracy} | "
             f"{conflict_turn_share} |"
         )
 
@@ -171,7 +177,7 @@ def render_baseline_table(player_games: pd.DataFrame, exp1_stats: Optional[pd.Da
     return lines
 
 
-def render_moral_restraint(player_games: pd.DataFrame, exp1_stats: Optional[pd.DataFrame], exp2_stats: Optional[pd.DataFrame]) -> list[str]:
+def render_asymmetric_honesty_framing(player_games: pd.DataFrame, exp1_stats: Optional[pd.DataFrame], exp2_stats: Optional[pd.DataFrame]) -> list[str]:
     exp1 = player_games[player_games["experiment_id"] == 1]
     exp2 = player_games[player_games["experiment_id"] == 2]
     if ((exp1_stats is None or exp1_stats.empty) and exp1.empty) or ((exp2_stats is None or exp2_stats.empty) and exp2.empty):
@@ -211,7 +217,7 @@ def render_moral_restraint(player_games: pd.DataFrame, exp1_stats: Optional[pd.D
 
     df = pd.DataFrame(rows).sort_values("delta")
     lines = [
-        "## RQ2: Moral Restraint (Experiment 1 vs Experiment 2)",
+        "## RQ2: Asymmetric Honesty Framing (Experiment 1 vs Experiment 2)",
         "",
         "| Model | Exp 1 optional lie rate | Exp 2 optional lie rate | Delta (Exp2 - Exp1) | Exp 1 win share | Exp 2 win share |",
         "|---|---:|---:|---|---:|---:|",
@@ -302,7 +308,7 @@ def render_paper_fill_ins(player_games: pd.DataFrame) -> list[str]:
         "## Paper Fill-Ins",
         "",
         f"- Methods sentence: `We ran {total_games} four-player games across {total_models} models under experiments {experiments}, using {providers} with prompt version(s) {prompt_versions}.`",
-        "- Results sentence template: `In the baseline deception condition, [MODEL] captured the largest share of wins, while [MODEL] showed the highest optional-lie rate; under asymmetric fairness, five models reduced optional lying while [MODEL] increased it, and under the honesty mandate, [MODEL] had the highest adjusted optional-lie rate when truthful play was available.`",
+        "- Results sentence template: `In the baseline deception condition, [MODEL] captured the largest share of wins, while [MODEL] showed the highest optional-lie rate; under asymmetric honesty framing, five models reduced optional lying while [MODEL] increased it, and under the honesty mandate, [MODEL] had the highest adjusted optional-lie rate when truthful play was available.`",
         "- Reporting note: `Paper-facing tables should use per-experiment win share (wins divided by 150 games) as the primary win metric; appearance win rate can remain in CSV exports as a secondary derived field.`",
         "- Discussion angle: `The strongest paper story is that the honesty mandate sharply suppresses optional lying while the table simultaneously becomes less aggressive about challenging remaining bluffs.`",
         "",
@@ -398,7 +404,7 @@ def build_report(
     lines.extend(render_data_quality_notes(player_games, game_summary))
     lines.extend(render_experiment_overview(player_games, experiment_stats))
     lines.extend(render_baseline_table(player_games, experiment_stats.get(1)))
-    lines.extend(render_moral_restraint(player_games, experiment_stats.get(1), experiment_stats.get(2)))
+    lines.extend(render_asymmetric_honesty_framing(player_games, experiment_stats.get(1), experiment_stats.get(2)))
     lines.extend(render_instruction_compliance(player_games, experiment_stats.get(3)))
     lines.extend(render_paper_fill_ins(player_games))
     lines.extend(render_figures(figures_dir))

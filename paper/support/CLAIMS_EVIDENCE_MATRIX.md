@@ -69,7 +69,7 @@ Sources:
 - `paper/arxiv/artifacts/frozen/research_summary.md`
 
 Limitation:
-- This is evidence of a mixed response to one framing, not proof of moral restraint as a general phenomenon.
+- This is evidence of a mixed response to one prompt framing, not proof of internal moral reasoning or a general honesty disposition.
 
 ### Claim 4
 
@@ -111,12 +111,13 @@ Limitation:
 ### Claim 6
 
 Claim:
-- Under the honesty mandate, model-level performance appears more aligned with challenge calibration than with optional-lie reduction alone.
+- Under the honesty mandate, some model-level performance shifts are consistent with a role for challenge calibration in addition to optional-lie reduction.
 
 Evidence:
 - Qwen's win rate rises from `25.0%` in Exp1 to `51.0%` in Exp3 while challenge frequency falls from `41.9%` to `6.1%` and challenge accuracy rises from `43.6%` to `55.7%`.
 - MiniMax reduces adjusted optional-lie rate from `7.2%` to `0.8%`, but win rate still falls from `25.0%` to `6.0%`.
 - Mistral remains the Exp3 negative anchor with `50.8%` challenge frequency, `11.7%` adjusted optional-lie rate, and `0.0%` win rate.
+- Mean model-level challenge accuracy does not increase uniformly across conditions, which is why the paper keeps this as a descriptive model-level interpretation rather than a condition-wide claim.
 
 Sources:
 - `paper/arxiv/artifacts/frozen/player_stats_exp1.csv`

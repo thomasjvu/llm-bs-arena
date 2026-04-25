@@ -12,7 +12,7 @@ const EXPERIMENTS = {
     id: '0',
     kicker: 'exp0',
     title: 'Control',
-    summary: '"Low-strategy / random-play baseline."',
+    summary: '"Low-strategy prompt control."',
     detail: 'No strategic deception guidance. This is the control condition used to establish the low-strategy reference point.',
   },
   '1': {
@@ -25,9 +25,9 @@ const EXPERIMENTS = {
   '2': {
     id: '2',
     kicker: 'exp2',
-    title: 'Asymmetric Fairness',
+    title: 'Asymmetric Honesty Framing',
     summary: '"The focal model may lie, but opponents are framed as honest."',
-    detail: 'The moral-restraint probe in which the acting model is told opponents are honesty-constrained.',
+    detail: 'A narrow asymmetric-information prompt probe in which the acting model is told opponents are honesty-constrained.',
   },
   '3': {
     id: '3',

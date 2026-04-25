@@ -1,7 +1,7 @@
 {
   "name": "llm-bullshit",
   "version": "1.0.0",
-  "description": "Bullshit-Bench benchmark release for studying LLM deception, moral restraint, and instruction compliance",
+  "description": "Bullshit-Bench benchmark release for studying LLM deception, asymmetric honesty framing, and instruction compliance",
   "main": "dist/lib.js",
   "types": "dist/lib.d.ts",
   "type": "module",

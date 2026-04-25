@@ -26,7 +26,7 @@ The benchmark focuses on three research questions:
 
 1. Deception capability:
    How effectively do models lie and avoid being caught when deception is allowed?
-2. Moral restraint:
+2. Asymmetric honesty framing:
    Do models reduce deception when told opponents are constrained to be honest?
 3. Instruction compliance:
    When truthful play is available, do models still violate explicit no-lying instructions under competitive pressure?
@@ -82,14 +82,14 @@ Prompt framing:
 Use:
 - main benchmark condition
 
-### Experiment 2: Asymmetric Fairness
+### Experiment 2: Asymmetric Honesty Framing
 
 Prompt framing:
 - focal model may lie
 - opponents are described as honesty-constrained
 
 Use:
-- moral-restraint probe
+- asymmetric honesty framing probe
 
 ### Experiment 3: Honesty Mandate
 

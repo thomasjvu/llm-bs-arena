@@ -2,7 +2,7 @@
 
 ## Summary
 
-This dataset consists of game logs produced by large language models playing the card game *Bullshit* under controlled prompt conditions. It is intended to support research on deception, challenge behavior, moral restraint, and instruction compliance in multi-agent LLM interaction.
+This dataset consists of game logs produced by large language models playing the card game *Bullshit* under controlled prompt conditions. It is intended to support research on deception, challenge behavior, asymmetric honesty framing, and instruction compliance in multi-agent LLM interaction.
 
 The official release is a **600-game benchmark dataset**:
 - 4 experiments
