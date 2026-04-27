@@ -99,8 +99,8 @@ Evidence:
 - Saved logs encode truthful vs deceptive play, challenge opportunities, and challenge outcomes directly from game state.
 
 Sources:
-- `BENCHMARK_SPEC.md`
-- `DATASET_CARD.md`
+- `docs/BENCHMARK_SPEC.md`
+- `docs/DATASET_CARD.md`
 - `src/engine/game-state.ts`
 - `src/engine/play-rules.ts`
 - `src/test/game.test.ts`

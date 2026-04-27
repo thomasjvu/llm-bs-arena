@@ -129,9 +129,9 @@ Minimum reproduction steps:
 
 Primary operator docs:
 - `README.md`
-- `RESEARCH_RUNBOOK.md`
-- `BENCHMARK_SPEC.md`
-- `DATASET_CARD.md`
+- `docs/RESEARCH_RUNBOOK.md`
+- `docs/BENCHMARK_SPEC.md`
+- `docs/DATASET_CARD.md`
 
 ## A.9 Suggested Appendix Tables
 
