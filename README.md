@@ -37,10 +37,10 @@ Tracked frozen artifacts live in `paper/arxiv/artifacts/frozen/` and tracked pap
 ## Release Surface
 
 Primary technical docs:
-- [BENCHMARK_SPEC.md](BENCHMARK_SPEC.md)
-- [DATASET_CARD.md](DATASET_CARD.md)
-- [RESEARCH_PLAN.md](RESEARCH_PLAN.md)
-- [RESEARCH_RUNBOOK.md](RESEARCH_RUNBOOK.md)
+- [BENCHMARK_SPEC.md](docs/BENCHMARK_SPEC.md)
+- [DATASET_CARD.md](docs/DATASET_CARD.md)
+- [RESEARCH_PLAN.md](docs/RESEARCH_PLAN.md)
+- [RESEARCH_RUNBOOK.md](docs/RESEARCH_RUNBOOK.md)
 
 Paper source:
 - [paper/arxiv/main.tex](paper/arxiv/main.tex)

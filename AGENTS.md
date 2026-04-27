@@ -25,9 +25,9 @@ Do not let broader branding or speculative future directions blur the current pa
 ## Read First
 
 - `README.md`
-- `RESEARCH_PLAN.md`
-- `RESEARCH_RUNBOOK.md`
-- `BENCHMARK_SPEC.md`
+- `docs/RESEARCH_PLAN.md`
+- `docs/RESEARCH_RUNBOOK.md`
+- `docs/BENCHMARK_SPEC.md`
 - `paper/arxiv/README.md`
 - `paper/support/PUBLIC_RELEASE_CHECKLIST.md`
 

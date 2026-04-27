@@ -1,0 +1,125 @@
+# Bullshit-Bench Research Runbook
+
+## Overview
+This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot study and generate the official release. Follow these steps in order to ensure consistency and reproducibility.
+
+## Prerequisites
+- Node.js 20.6+
+- npm
+- Python 3.x
+- NVIDIA API key (for NIM provider)
+
+## Phase 0: Setup
+1. Install dependencies:
+   ```bash
+   npm install
+   npm run python:setup
+   ```
+2. Configure environment:
+   ```bash
+   cp .env.example .env
+   # Edit .env to set:
+   LLM_PROVIDER=nim
+   NVIDIA_API_KEY=your_key_here
+   ```
+3. Verify NIM connectivity:
+   ```bash
+   npm start -- nim-models
+   ```
+
+## Phase 1: Validation
+1. Test game logic with mock provider:
+   ```bash
+   npm start -- game -e 1 -p mock
+   ```
+2. Validate one real game per experiment:
+   ```bash
+   npm start -- game -e 0 -p nim
+   npm start -- game -e 1 -p nim
+   npm start -- game -e 2 -p nim
+   npm start -- game -e 3 -p nim
+   ```
+3. (Optional) Visual inspection:
+   ```bash
+   npm run visualizer
+   # Open http://localhost:3001
+   ```
+
+## Phase 2: Dataset Collection
+1. Freeze pilot dataset settings (do not change after this point):
+   - Provider: nim
+   - Roster: 6-model default
+   - Experiments: 0, 1, 2, 3
+   - Games per matchup: 10
+2. Collect pilot dataset (600 games total):
+   ```bash
+   npm start -- tournament -e 0 -g 10
+   npm start -- tournament -e 1 -g 10
+   npm start -- tournament -e 2 -g 10
+   npm start -- tournament -e 3 -g 10
+   ```
+   - For parallel execution, shard by matchup index (0-4, 5-9, 10-14)
+
+## Phase 3: Analysis
+1. Generate analysis outputs:
+   ```bash
+   npm run research:brief
+   ```
+   This produces:
+   - `logs/csv/player_game_stats.csv`
+   - `logs/csv/game_summary.csv`
+   - `logs/csv/all_turns.csv`
+   - `results/figures/*.png`
+   - `results/research_summary.md`
+2. Verify success:
+   - Report contains correct provider and prompt metadata
+   - No warnings about legacy/incomplete dataset
+   - Figures generated for all experiments
+
+## Phase 4: Release Packaging
+1. Build official release bundle:
+   ```bash
+   npm start -- release
+   ```
+2. Verify outputs exist:
+   - `release/v1.0.0/benchmark-release.json`
+   - `release/v1.0.0/dataset-manifest.json`
+   - `release/v1.0.0/evaluation-manifest.json`
+   - `release/v1.0.0/checksums.sha256`
+   - `release/v1.0.0/assets/bullshit-bench-v1.0.0-raw-games.tar.gz`
+
+## Phase 5: Paper Preparation
+1. Review analysis before writing:
+   - `results/research_summary.md`
+   - `paper/arxiv/main.tex`
+2. Answer key questions:
+   - Who won most in Experiment 1?
+   - Who lied most in Experiment 1?
+   - Who reduced lying most in Experiment 2?
+   - Who violated honesty instructions most in Experiment 3?
+3. If report shows dataset is incomplete/legacy, do not proceed.
+4. Write paper using this order:
+   - Fill `paper/arxiv/sections/*.tex` methods from actual run settings
+   - Fill results from `paper/arxiv/artifacts/frozen/research_summary.md`
+   - Add tracked figures from `paper/arxiv/figures/`
+   - Write abstract last
+   - Prepare blinded submission assets before public release
+
+## Common Mistakes to Avoid
+- Analyzing leftover logs from old runs
+- Changing provider or roster mid-dataset
+- Using validation games as main results
+- Drawing conclusions from tiny/incomplete datasets
+- Writing paper before checking generated report
+
+## Troubleshooting
+- **Provider timeouts**: Increase `NVIDIA_NIM_TIMEOUT_MS` in .env
+- **Truncated outputs**: Increase relevant `LLM_*_MAX_TOKENS`
+- **Missing API key**: Verify `NVIDIA_API_KEY` in .env
+- **Failed games**: Check `logs/runs/` for terminal transcripts
+- **Analysis failures**: Ensure all previous steps completed successfully
+
+## Verification
+- Target cohort: 600 winner-terminated games
+- Default analysis unit: one row per player per game (2,400 rows)
+- Primary metrics: Win rate, lie frequency, lie success rate, challenge frequency, challenge accuracy, optional lie rate, truthful-play-unavailable turn share
