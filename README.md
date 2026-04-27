@@ -32,23 +32,23 @@ The strongest results from the frozen cohort are:
 - Kimi leads Exp1, Exp2, and Exp3; Nemotron leads Exp0
 - Mistral is the clearest high-challenge, zero-win profile
 
-Tracked frozen artifacts live in [paper/arxiv/artifacts/frozen](/Users/area/repos/llm-bullshit/paper/arxiv/artifacts/frozen) and tracked paper figures live in [paper/arxiv/figures](/Users/area/repos/llm-bullshit/paper/arxiv/figures).
+Tracked frozen artifacts live in `paper/arxiv/artifacts/frozen/` and tracked paper figures live in `paper/arxiv/figures/`.
 
 ## Release Surface
 
 Primary technical docs:
-- [BENCHMARK_SPEC.md](/Users/area/repos/llm-bullshit/BENCHMARK_SPEC.md)
-- [DATASET_CARD.md](/Users/area/repos/llm-bullshit/DATASET_CARD.md)
-- [RESEARCH_PLAN.md](/Users/area/repos/llm-bullshit/RESEARCH_PLAN.md)
-- [RESEARCH_RUNBOOK.md](/Users/area/repos/llm-bullshit/RESEARCH_RUNBOOK.md)
+- [BENCHMARK_SPEC.md](BENCHMARK_SPEC.md)
+- [DATASET_CARD.md](DATASET_CARD.md)
+- [RESEARCH_PLAN.md](RESEARCH_PLAN.md)
+- [RESEARCH_RUNBOOK.md](RESEARCH_RUNBOOK.md)
 
 Paper source:
-- [paper/arxiv/main.tex](/Users/area/repos/llm-bullshit/paper/arxiv/main.tex)
-- [references.bib](/Users/area/repos/llm-bullshit/references.bib)
+- [paper/arxiv/main.tex](paper/arxiv/main.tex)
+- [references.bib](references.bib)
 
 Internal submission docs:
-- [paper/support/ARXIV_UPLOAD_CHECKLIST.md](/Users/area/repos/llm-bullshit/paper/support/ARXIV_UPLOAD_CHECKLIST.md)
-- [paper/support/CLAIMS_EVIDENCE_MATRIX.md](/Users/area/repos/llm-bullshit/paper/support/CLAIMS_EVIDENCE_MATRIX.md)
+- [paper/support/ARXIV_UPLOAD_CHECKLIST.md](paper/support/ARXIV_UPLOAD_CHECKLIST.md)
+- [paper/support/CLAIMS_EVIDENCE_MATRIX.md](paper/support/CLAIMS_EVIDENCE_MATRIX.md)
 
 ## Setup
 
@@ -161,4 +161,4 @@ Core methods:
 
 ## Submission Note
 
-The current paper path is the arXiv preprint build at [paper/arxiv/main.tex](/Users/area/repos/llm-bullshit/paper/arxiv/main.tex). Public-facing narrative writing is maintained outside this repository so the research artifact can stay focused on the benchmark, analysis pipeline, and paper source.
+The current paper path is the arXiv preprint build at [paper/arxiv/main.tex](paper/arxiv/main.tex). Public-facing narrative writing is maintained outside this repository so the research artifact can stay focused on the benchmark, analysis pipeline, and paper source.

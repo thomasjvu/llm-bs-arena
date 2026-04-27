@@ -6,6 +6,7 @@ node_modules/
 dist/
 *.js.map
 paper/arxiv/build/
+paper/arxiv/submission/bs-bench-arxiv/
 release/**/assets/*.tar.gz
 
 # Logs and data

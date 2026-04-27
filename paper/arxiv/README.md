@@ -21,7 +21,7 @@ tectonic --outdir paper/arxiv/build paper/arxiv/main.tex
 ```
 
 Preview output:
-- [paper/arxiv/build/main.pdf](/Users/area/repos/llm-bullshit/paper/arxiv/build/main.pdf)
+- `paper/arxiv/build/main.pdf`
 
 Prepare the upload bundle:
 
@@ -29,13 +29,12 @@ Prepare the upload bundle:
 npm run arxiv:bundle
 ```
 
-Bundle outputs:
-- `paper/arxiv/submission/bs-bench-arxiv/`
+Bundle output:
 - `paper/arxiv/submission/bs-bench-arxiv.tar.gz`
 
 ## Before Upload
 
-- replace the placeholder author block in [paper/arxiv/author_block.tex](/Users/area/repos/llm-bullshit/paper/arxiv/author_block.tex)
+- replace the placeholder author block in `paper/arxiv/author_block.tex`
 - keep the paper self-contained; the first upload does not include a separate supplement
 - do not add repo, blog, or release URLs while those assets remain non-public
 - run `npm run arxiv:bundle` and upload `paper/arxiv/submission/bs-bench-arxiv.tar.gz`

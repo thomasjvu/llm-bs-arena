@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error Frontend modules are browser-targeted plain JS.
 import { buildSlotLayout } from '../../ui/app/layout.js';
 
 describe('frontend slot layout', () => {
@@ -32,10 +33,22 @@ describe('frontend slot layout', () => {
 describe('frontend model themes', () => {
   it('maps Minimax to its own asset folder and gives Nemotron the GLM placeholder set', () => {
     const source = fs.readFileSync(path.resolve('ui/model-themes.js'), 'utf8');
-    const context = { window: {} };
+    const context: {
+      window: {
+        ModelThemes?: {
+          getFolder: (modelId: string) => string;
+          getThumbnail: (modelId: string) => string;
+          validateRegistry: () => string[];
+        };
+      };
+    } = { window: {} };
     vm.runInNewContext(source, context);
     const themes = context.window.ModelThemes;
 
+    expect(themes).toBeDefined();
+    if (!themes) {
+      throw new Error('ModelThemes registry did not attach to window');
+    }
     expect(themes.getFolder('minimaxai/minimax-m2.5')).toBe('minimax');
     expect(themes.getFolder('nvidia/nemotron-3-super-120b-a12b')).toBe('glm');
     expect(themes.getThumbnail('nvidia/nemotron-3-super-120b-a12b')).toBe('/images/glm/llms_glm_default.png');

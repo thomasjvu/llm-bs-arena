@@ -141,16 +141,14 @@ Each game log includes:
 
 ### Phase 4: Packaging
 - fill `paper/arxiv/sections/*.tex` from the generated summary
-- publish the cleaned repo and screenshots
-- extract resume bullets from `paper/arxiv/artifacts/frozen/research_summary.md`
-- decide whether to stop at a strong hiring artifact or run a larger confirmatory dataset
+- publish the cleaned repo and selected screenshots
+- decide whether to stop at the frozen pilot release or run a larger confirmatory dataset
 
 ## Recommended Outcome Path
 
 ### Fastest Credible Path
 - produce a clean pilot dataset
 - publish the repo with figures and markdown summary
-- add the project to your resume and portfolio
 - release an arXiv preprint or public technical report
 
 ### Stronger Research Path
