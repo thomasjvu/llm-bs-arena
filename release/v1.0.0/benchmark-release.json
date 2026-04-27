@@ -12,7 +12,7 @@
     "path": "release/v1.0.0/assets/bullshit-bench-v1.0.0-raw-games.tar.gz",
     "kind": "raw-logs-archive",
     "bytes": 9535042,
-    "sha256": "c9195bc8db3d327384e38224e4a2f875e6871eac3a8b3f3e2cd2746f486c4214"
+    "sha256": "f452eb3aefe6c7fb9e770d9d5c4742ad1b560024ea9299d18b54bd330e60b985"
   },
   "comparableCohort": {
     "schemaVersion": 2,
@@ -35,23 +35,24 @@
     "baseline/truthful-greedy"
   ],
   "frozenSummaryArtifacts": [
-    "paper/tmlr/artifacts/frozen/cohort_manifest.json",
-    "paper/tmlr/artifacts/frozen/player_game_stats.csv",
-    "paper/tmlr/artifacts/frozen/player_stats_exp0.csv",
-    "paper/tmlr/artifacts/frozen/player_stats_exp1.csv",
-    "paper/tmlr/artifacts/frozen/player_stats_exp2.csv",
-    "paper/tmlr/artifacts/frozen/player_stats_exp3.csv",
-    "paper/tmlr/artifacts/frozen/research_summary.md"
+    "paper/arxiv/artifacts/frozen/cohort_manifest.json",
+    "paper/arxiv/artifacts/frozen/player_game_stats.csv",
+    "paper/arxiv/artifacts/frozen/player_stats_exp0.csv",
+    "paper/arxiv/artifacts/frozen/player_stats_exp1.csv",
+    "paper/arxiv/artifacts/frozen/player_stats_exp2.csv",
+    "paper/arxiv/artifacts/frozen/player_stats_exp3.csv",
+    "paper/arxiv/artifacts/frozen/research_summary.md"
   ],
   "trackedFigures": [
-    "paper/tmlr/figures/benchmark_overview.png",
-    "paper/tmlr/figures/compare_lie_frequency.png",
-    "paper/tmlr/figures/exp1_win_rates.png",
-    "paper/tmlr/figures/exp3_violations.png",
-    "paper/tmlr/figures/game_length_distribution.png",
-    "paper/tmlr/figures/lie_frequency_heatmap.png",
-    "paper/tmlr/figures/lie_frequency_vs_win_rate.png"
+    "paper/arxiv/figures/benchmark_overview.png",
+    "paper/arxiv/figures/compare_lie_frequency.png",
+    "paper/arxiv/figures/compare_optional_lie_rate.png",
+    "paper/arxiv/figures/exp1_win_rates.png",
+    "paper/arxiv/figures/exp3_violations.png",
+    "paper/arxiv/figures/game_length_distribution.png",
+    "paper/arxiv/figures/lie_frequency_heatmap.png",
+    "paper/arxiv/figures/lie_frequency_vs_win_rate.png"
   ],
-  "generatedAt": "2026-04-15T20:04:44.915Z",
-  "releaseDate": "2026-04-15"
+  "generatedAt": "2026-04-27T14:48:42.236Z",
+  "releaseDate": "2026-04-27"
 }

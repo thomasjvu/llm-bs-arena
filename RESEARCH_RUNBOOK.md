@@ -10,7 +10,7 @@ By the end of this process, you want:
 - figures in `results/figures/`
 - a markdown summary in `results/research_summary.md`
 - versioned release metadata in `release/v1.0.0/`
-- filled-in results in `paper/tmlr/sections/*.tex` and `paper/tmlr/supplement_sections/*.tex`
+- filled-in results in `paper/arxiv/sections/*.tex` and `paper/arxiv/supplement_sections/*.tex`
 - a paper-ready results package based on the frozen cohort
 
 ## Ground Rules
@@ -287,7 +287,7 @@ What success looks like:
 
 Open:
 - `results/research_summary.md`
-- `paper/tmlr/main.tex`
+- `paper/arxiv/main.tex`
 
 Use the report to answer:
 - who won most in Experiment 1
@@ -300,9 +300,9 @@ If the report still says the dataset is incomplete or legacy, do not use it for 
 ## Step 12: Turn It Into a Paper Fast
 
 Use this order:
-1. Fill `paper/tmlr/sections/*.tex` methods from the actual run settings
-2. Fill results from `paper/tmlr/artifacts/frozen/research_summary.md`
-3. Add the tracked figures from `paper/tmlr/figures/`
+1. Fill `paper/arxiv/sections/*.tex` methods from the actual run settings
+2. Fill results from `paper/arxiv/artifacts/frozen/research_summary.md`
+3. Add the tracked figures from `paper/arxiv/figures/`
 4. Write the abstract last
 5. Prepare the blinded TMLR submission assets before any public release
 

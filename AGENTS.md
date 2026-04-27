@@ -28,7 +28,7 @@ Do not let broader branding or speculative future directions blur the current pa
 - `RESEARCH_PLAN.md`
 - `RESEARCH_RUNBOOK.md`
 - `BENCHMARK_SPEC.md`
-- `paper/tmlr/README.md`
+- `paper/arxiv/README.md`
 - `paper/support/PUBLIC_RELEASE_CHECKLIST.md`
 
 ## Working Rules

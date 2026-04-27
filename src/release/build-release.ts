@@ -101,24 +101,24 @@ export interface BuildBenchmarkReleaseOptions {
 }
 
 export const DEFAULT_FROZEN_ARTIFACTS = [
-  'paper/tmlr/artifacts/frozen/cohort_manifest.json',
-  'paper/tmlr/artifacts/frozen/player_game_stats.csv',
-  'paper/tmlr/artifacts/frozen/player_stats_exp0.csv',
-  'paper/tmlr/artifacts/frozen/player_stats_exp1.csv',
-  'paper/tmlr/artifacts/frozen/player_stats_exp2.csv',
-  'paper/tmlr/artifacts/frozen/player_stats_exp3.csv',
-  'paper/tmlr/artifacts/frozen/research_summary.md',
+  'paper/arxiv/artifacts/frozen/cohort_manifest.json',
+  'paper/arxiv/artifacts/frozen/player_game_stats.csv',
+  'paper/arxiv/artifacts/frozen/player_stats_exp0.csv',
+  'paper/arxiv/artifacts/frozen/player_stats_exp1.csv',
+  'paper/arxiv/artifacts/frozen/player_stats_exp2.csv',
+  'paper/arxiv/artifacts/frozen/player_stats_exp3.csv',
+  'paper/arxiv/artifacts/frozen/research_summary.md',
 ] as const;
 
 export const DEFAULT_TRACKED_FIGURES = [
-  'paper/tmlr/figures/benchmark_overview.png',
-  'paper/tmlr/figures/compare_lie_frequency.png',
-  'paper/tmlr/figures/compare_optional_lie_rate.png',
-  'paper/tmlr/figures/exp1_win_rates.png',
-  'paper/tmlr/figures/exp3_violations.png',
-  'paper/tmlr/figures/game_length_distribution.png',
-  'paper/tmlr/figures/lie_frequency_heatmap.png',
-  'paper/tmlr/figures/lie_frequency_vs_win_rate.png',
+  'paper/arxiv/figures/benchmark_overview.png',
+  'paper/arxiv/figures/compare_lie_frequency.png',
+  'paper/arxiv/figures/compare_optional_lie_rate.png',
+  'paper/arxiv/figures/exp1_win_rates.png',
+  'paper/arxiv/figures/exp3_violations.png',
+  'paper/arxiv/figures/game_length_distribution.png',
+  'paper/arxiv/figures/lie_frequency_heatmap.png',
+  'paper/arxiv/figures/lie_frequency_vs_win_rate.png',
 ] as const;
 
 function normalizeRelativePath(repoRoot: string, absolutePath: string): string {

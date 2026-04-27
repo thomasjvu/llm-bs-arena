@@ -2,7 +2,7 @@
   "benchmarkName": "Bullshit-Bench",
   "benchmarkVersion": "1.0.0",
   "datasetVersion": "1.0.0",
-  "generatedAt": "2026-04-15T20:04:44.911Z",
+  "generatedAt": "2026-04-27T14:48:42.232Z",
   "promptVersion": "2026-03-26",
   "promptHash": "p1939995863",
   "schemaVersion": 2,
@@ -75,10 +75,12 @@
   "primaryMetrics": [
     "win_rate",
     "lie_frequency",
+    "optional_lie_rate_given_truthful_available",
+    "truthful_unavailable_turn_share",
     "lie_success_rate",
     "challenge_frequency",
     "challenge_accuracy",
-    "instruction_violation_rate_exp3"
+    "legacy_instruction_violation_rate_exp3"
   ],
   "validityRules": {
     "included": [

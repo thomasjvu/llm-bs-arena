@@ -2,7 +2,7 @@
   "benchmarkName": "Bullshit-Bench",
   "benchmarkVersion": "1.0.0",
   "datasetVersion": "1.0.0",
-  "generatedAt": "2026-04-15T20:04:44.911Z",
+  "generatedAt": "2026-04-27T14:48:42.232Z",
   "totalGamesFound": 600,
   "includedGames": 600,
   "playerGameRows": 2400,
@@ -39,94 +39,100 @@
     "path": "release/v1.0.0/assets/bullshit-bench-v1.0.0-raw-games.tar.gz",
     "kind": "raw-logs-archive",
     "bytes": 9535042,
-    "sha256": "c9195bc8db3d327384e38224e4a2f875e6871eac3a8b3f3e2cd2746f486c4214"
+    "sha256": "f452eb3aefe6c7fb9e770d9d5c4742ad1b560024ea9299d18b54bd330e60b985"
   },
   "frozenArtifacts": [
     {
-      "path": "paper/tmlr/artifacts/frozen/cohort_manifest.json",
+      "path": "paper/arxiv/artifacts/frozen/cohort_manifest.json",
       "kind": "frozen-artifact",
       "bytes": 20163,
       "sha256": "6d47761c20244f59eeec51f6dd6396871bb4b6b4883a40a65e369a04d9c3c900"
     },
     {
-      "path": "paper/tmlr/artifacts/frozen/player_game_stats.csv",
+      "path": "paper/arxiv/artifacts/frozen/player_game_stats.csv",
       "kind": "frozen-artifact",
-      "bytes": 697116,
-      "sha256": "c5349723a12a608fbf6b13c2f0a96b9d42de416d8cbb21244b22af166d28b8ad"
+      "bytes": 781389,
+      "sha256": "8918866db2c3aeb8863656f73ef17cefbbac661a6c1082eaca69edc3e5488b37"
     },
     {
-      "path": "paper/tmlr/artifacts/frozen/player_stats_exp0.csv",
+      "path": "paper/arxiv/artifacts/frozen/player_stats_exp0.csv",
       "kind": "frozen-artifact",
-      "bytes": 820,
-      "sha256": "50997a1b18343706eb579ee303f7d1c5f9043663d30d57601a07e277a0526fd2"
+      "bytes": 1258,
+      "sha256": "8831ad7d04c9c4313656c1aa2d3257e1062453e4ea1215a30bdf59ba2cde6e36"
     },
     {
-      "path": "paper/tmlr/artifacts/frozen/player_stats_exp1.csv",
+      "path": "paper/arxiv/artifacts/frozen/player_stats_exp1.csv",
       "kind": "frozen-artifact",
-      "bytes": 833,
-      "sha256": "0fe6c5f9e1dd40b1b822f044a100c6827123207d831762d1863538f3d5a0e99e"
+      "bytes": 1279,
+      "sha256": "1642584c94e7f9575643a14d58897c79c090249f050cc8544980374195e2681a"
     },
     {
-      "path": "paper/tmlr/artifacts/frozen/player_stats_exp2.csv",
+      "path": "paper/arxiv/artifacts/frozen/player_stats_exp2.csv",
       "kind": "frozen-artifact",
-      "bytes": 825,
-      "sha256": "1d2b91ba46775ac6257ec1ca980d126136b83443197193b5e28ecafd586be285"
+      "bytes": 1264,
+      "sha256": "26b7fd0fda439bce38f2da2fb693b73b0fe1546353c6348dabef9c6c4c5ed95f"
     },
     {
-      "path": "paper/tmlr/artifacts/frozen/player_stats_exp3.csv",
+      "path": "paper/arxiv/artifacts/frozen/player_stats_exp3.csv",
       "kind": "frozen-artifact",
-      "bytes": 872,
-      "sha256": "197cca461cad666fb0263aa9b747ddc6d80ba1a17b3ab5786bb1accf9dc7e144"
+      "bytes": 1304,
+      "sha256": "bccb5a1a9971c94b667c59e6f0dfd22cf8e75fb6c2f8d454e472d3e106e3fba1"
     },
     {
-      "path": "paper/tmlr/artifacts/frozen/research_summary.md",
+      "path": "paper/arxiv/artifacts/frozen/research_summary.md",
       "kind": "frozen-artifact",
-      "bytes": 3981,
-      "sha256": "5a24ecd26563d4d38a45cbae453bac73d833818633bda36a74d9992765f1d3b8"
+      "bytes": 5402,
+      "sha256": "48cbed7870cbcd0ae05f36be6f4bad3c947616a1eaeed182bdb50585690dfd48"
     }
   ],
   "trackedFigures": [
     {
-      "path": "paper/tmlr/figures/benchmark_overview.png",
+      "path": "paper/arxiv/figures/benchmark_overview.png",
       "kind": "figure",
       "bytes": 230703,
       "sha256": "ac3a02cf9b0319e3681cbffa286d4016d19d8f8063364c68713ad58a67336377"
     },
     {
-      "path": "paper/tmlr/figures/compare_lie_frequency.png",
+      "path": "paper/arxiv/figures/compare_lie_frequency.png",
       "kind": "figure",
-      "bytes": 107078,
-      "sha256": "ddd25c759e45969cf584e507f043496160b2dba76022f5c08794aedcbe2d3f2a"
+      "bytes": 309597,
+      "sha256": "79ade8a799033fabefa3951eb2abb8240c67096f127c842cfc766fb21cfae49f"
     },
     {
-      "path": "paper/tmlr/figures/exp1_win_rates.png",
+      "path": "paper/arxiv/figures/compare_optional_lie_rate.png",
       "kind": "figure",
-      "bytes": 102421,
-      "sha256": "41af28d35393f08a8208ea53dae2d01a3e60c7a987f133a8dbd3861873b37626"
+      "bytes": 293632,
+      "sha256": "c274b96625d7907f7f95429403cdb073a1d2a3d8f9f69cf1b83db0fb4f4313f5"
     },
     {
-      "path": "paper/tmlr/figures/exp3_violations.png",
+      "path": "paper/arxiv/figures/exp1_win_rates.png",
       "kind": "figure",
-      "bytes": 110487,
-      "sha256": "731604b00e3314c382c55de43c5a3d0038257be7929afebe8b210cbc5c0b02eb"
+      "bytes": 113211,
+      "sha256": "75a9688f86e416a2da8d2820e8260220ce691dc6b31aa9e74d9e9caf646a2920"
     },
     {
-      "path": "paper/tmlr/figures/game_length_distribution.png",
+      "path": "paper/arxiv/figures/exp3_violations.png",
+      "kind": "figure",
+      "bytes": 151672,
+      "sha256": "516542569b8920c1daedd5440e15dee4a30f4a7221c0fde05200985522631d60"
+    },
+    {
+      "path": "paper/arxiv/figures/game_length_distribution.png",
       "kind": "figure",
       "bytes": 92873,
       "sha256": "90cc03a8339f47832e99a7abe2d3e20c8cca1407027d970cd3041529a32f18a3"
     },
     {
-      "path": "paper/tmlr/figures/lie_frequency_heatmap.png",
+      "path": "paper/arxiv/figures/lie_frequency_heatmap.png",
       "kind": "figure",
       "bytes": 155488,
       "sha256": "add8a9c246dc965bf2f7e7ef44656874406bea7f3b2cb2fb2f3a8935f82d9d7a"
     },
     {
-      "path": "paper/tmlr/figures/lie_frequency_vs_win_rate.png",
+      "path": "paper/arxiv/figures/lie_frequency_vs_win_rate.png",
       "kind": "figure",
-      "bytes": 196562,
-      "sha256": "04fd982822a1c68f8f1772c218fbf8206ef437bb0af1208e6c5cbf9ac10c8974"
+      "bytes": 181573,
+      "sha256": "0738e15a710929d7b7b4ff693af07f325539a149e9c2fdaef276a921da242c16"
     }
   ]
 }
