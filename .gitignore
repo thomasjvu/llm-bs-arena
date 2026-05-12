@@ -21,6 +21,9 @@ results/
 .env.*.local
 
 # IDE
+.agents/
+.codex/
+.claude/
 .idea/
 .vscode/
 *.swp

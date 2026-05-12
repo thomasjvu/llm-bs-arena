@@ -44,7 +44,7 @@ Primary technical docs:
 
 Paper source:
 - [paper/arxiv/main.tex](paper/arxiv/main.tex)
-- [references.bib](references.bib)
+- [docs/references.bib](docs/references.bib)
 
 Internal submission docs:
 - [paper/support/ARXIV_UPLOAD_CHECKLIST.md](paper/support/ARXIV_UPLOAD_CHECKLIST.md)

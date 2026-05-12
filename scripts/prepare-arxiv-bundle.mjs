@@ -51,7 +51,7 @@ ensureDir(bundleRoot);
 
 copyFile(path.join(arxivRoot, "main.tex"), path.join(bundleRoot, "main.tex"));
 copyFile(path.join(arxivRoot, "author_block.tex"), path.join(bundleRoot, "author_block.tex"));
-copyFile(path.join(repoRoot, "references.bib"), path.join(bundleRoot, "references.bib"));
+copyFile(path.join(repoRoot, "docs", "references.bib"), path.join(bundleRoot, "references.bib"));
 copyDirFiles(path.join(arxivRoot, "sections"), path.join(bundleRoot, "sections"));
 
 const figuresDest = path.join(bundleRoot, "figures");
@@ -63,7 +63,7 @@ for (const figure of figureFiles) {
 const mainPath = path.join(bundleRoot, "main.tex");
 const mainText = fs
   .readFileSync(mainPath, "utf8")
-  .replace("\\bibliography{../../references}", "\\bibliography{references}");
+  .replace("\\bibliography{../../docs/references}", "\\bibliography{references}");
 fs.writeFileSync(mainPath, mainText);
 
 fs.rmSync(bundleTar, { force: true });

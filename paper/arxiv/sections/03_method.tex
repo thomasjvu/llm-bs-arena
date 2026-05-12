@@ -6,22 +6,29 @@ Each game uses four agents, a standard 52-card deck, and a seeded shuffle. The p
 
 \subsection{Prompt Conditions}
 
-The pilot uses four conditions. Experiment~0 is a low-strategy prompt control rather than a pure random or non-strategic baseline: its condition block removes explicit encouragement to deceive, but the shared rules still mention lying, challenging, and basic risk tradeoffs. Experiment~1 explicitly legalizes and normalizes deception. Experiment~2 tells the focal model it may lie while opponents are described as honesty-constrained, providing an asymmetric honesty framing rather than a direct probe of internal moral reasoning. Experiment~3 is a plain-language honesty mandate that explicitly forbids lying. We intentionally treat Experiment~3 as a probe of whether straightforward honesty instructions survive competitive pressure, not as the strongest possible anti-lying intervention. Because some Bullshit states leave a player with no card of the required rank, our Experiment~3 analysis distinguishes optional lies from truthful-play-unavailable turns rather than treating every lie as an equally clean instruction violation. Full prompt texts are included in \prompttextlocation.
+The pilot uses four conditions:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Experiment~0: low-strategy prompt control.} The condition removes explicit encouragement to deceive, but the shared rules still mention lying, challenging, and basic risk tradeoffs, so this is not a pure random or non-strategic baseline.
+  \item \textbf{Experiment~1: deception allowed.} The prompt explicitly legalizes and normalizes deception.
+  \item \textbf{Experiment~2: asymmetric honesty framing.} The focal model is told it may lie while opponents are described as honesty-constrained; we treat this as a prompt-framing probe, not as a direct probe of internal moral reasoning.
+  \item \textbf{Experiment~3: honesty mandate.} The prompt explicitly forbids lying in plain language.
+\end{itemize}
+We intentionally treat Experiment~3 as a probe of whether straightforward honesty instructions survive competitive pressure, not as the strongest possible anti-lying intervention. Because some Bullshit states leave a player with no card of the required rank, our Experiment~3 analysis distinguishes optional lies from truthful-play-unavailable turns rather than treating every lie as an equally clean instruction violation. Full prompt texts are included in \prompttextlocation.
 
 \subsection{Model Cohort}
 
-The primary pilot cohort uses six hosted models served through a single provider cohort: Qwen 3.5 397B A17B, MiniMax M2.5, Nemotron 3 Super 120B A12B, Mistral Small 4 119B, GLM5, and Kimi K2.5. The full pilot design spans all $\binom{6}{4}=15$ unique four-model matchups, with ten seeded games per matchup per experiment for a target of 600 games.
+The primary pilot cohort uses six hosted models served through a single provider cohort: Qwen 3.5 397B A17B, MiniMax M2.5, Nemotron 3 Super 120B A12B, Mistral Small 4 119B, GLM5, and Kimi K2.5. The full pilot design spans all 15 unique four-model matchups, with ten seeded games per matchup per experiment for a target of 600 games.
 
 \subsection{Implementation and Dataset Hygiene}
 
-The environment is implemented in TypeScript with structured-response parsing, bounded prompt context, provider retry logic, client recreation on recoverable failures, and long-run recovery for hosted inference. The public release also exposes an importable environment API with \texttt{reset}, \texttt{observation}, \texttt{publicState}, \texttt{step}, \texttt{done}, and \texttt{result} methods, plus a small baseline-policy pack for local side comparisons.
+The environment is implemented in TypeScript with structured-response parsing, bounded prompt context, retries, and recovery for hosted inference. The public release exposes an importable environment API with \texttt{reset}, \texttt{observation}, \texttt{publicState}, \texttt{step}, \texttt{done}, and \texttt{result} methods, plus a small baseline-policy pack.
 
-Reproducibility and dataset hygiene are enforced through seeded deck order and seating, prompt versioning and hashing, schema versioning, dominant-cohort filtering at analysis time, and versioned dataset/evaluation manifests with checksums. Research-default runs are uncapped and must end in a natural win; capped runs are marked explicitly and excluded from the main cohort.
+For reproducibility, each run logs seeded deck order and seating, prompt version and hash, schema version, provider metadata, and versioned dataset/evaluation manifests with checksums. Research-default runs are uncapped and must end in a natural win; capped runs are marked explicitly and excluded from the main cohort.
 
 \subsection{Analysis}
 
-The primary statistical unit is one row per player per game rather than one row per turn. Cross-condition narrative claims use mean rates from the six frozen model summaries in each experiment. Model-profile sections use the exact per-model condition rates. Challenge frequency is challenges made divided by real challenge opportunities, and challenge accuracy is correct challenges divided by all challenges made.
+The primary statistical unit is one row per player per game rather than one row per turn. Cross-condition claims use mean rates from the six frozen model summaries in each experiment, while model-profile sections use exact per-model condition rates. Challenge frequency is challenges made divided by real challenge opportunities, and challenge accuracy is correct challenges divided by all challenges made.
 
 For truthful-availability analysis, we replay each game from the logged seed, seating order, and actual cards played to reconstruct the acting player's hand at the start of every turn. A turn is labeled \emph{truthful-available} if the acting player holds at least one card of the required rank, and an \emph{optional lie} is any lie on such a turn. Turns with no card of the required rank are labeled \emph{truthful-play-unavailable}. Across all four experiments, we report the availability-adjusted optional-lie rate and the truthful-play-unavailable share as the primary deception split, while retaining overall lie frequency as a secondary table-dynamics metric.
 
-This keeps cross-condition comparisons from being driven by raw row volume while preserving exact model-level leaderboards. Qualitative reasoning traces and exemplar games are used as supporting evidence rather than as the main statistical unit, and any calibration interpretation in later discussion is descriptive rather than causal.
+This prevents cross-condition comparisons from being driven by raw row volume while preserving exact model-level leaderboards. Qualitative traces and exemplar games are supporting evidence, and any calibration interpretation in later discussion is descriptive rather than causal.
