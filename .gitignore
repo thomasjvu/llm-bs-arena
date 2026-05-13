@@ -12,6 +12,7 @@ release/**/assets/*.tar.gz
 # Logs and data
 logs/
 !logs/.gitkeep
+logs-v*/
 results/
 !results/.gitkeep
 

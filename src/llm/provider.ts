@@ -10,7 +10,7 @@ import { getPromptHash, PROMPT_VERSION } from './prompt-builder.js';
 import { APIConnectionError as NimAPIConnectionError } from './nim-api.js';
 
 export type Provider = 'nim' | 'mock';
-export const LOG_SCHEMA_VERSION = 2;
+export const LOG_SCHEMA_VERSION = 3;
 export const SCRIPTED_BASELINE_PREFIX = 'baseline/';
 
 export interface ProviderRuntimeConfig {

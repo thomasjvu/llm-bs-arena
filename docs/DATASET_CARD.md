@@ -37,6 +37,7 @@ Each game log records:
 - turn-by-turn actions
 - lie/truth labels
 - challenge opportunities
+- challenge/pass decisions and pass rationales in schema v3+ logs
 - challenge outcomes
 - reasoning text
 - game duration and token usage metadata when available
@@ -45,6 +46,7 @@ Derived CSV exports include:
 - one row per player per game
 - one row per game
 - one row per turn
+- one row per challenge-window decision in schema v3+ exports
 - replay-derived truthful-availability labels for each turn
 - replay-derived optional-lie and truthful-play-unavailable aggregates for each player-game row
 

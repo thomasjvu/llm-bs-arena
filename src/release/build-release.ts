@@ -110,6 +110,10 @@ export const DEFAULT_FROZEN_ARTIFACTS = [
   'paper/arxiv/artifacts/frozen/research_summary.md',
 ] as const;
 
+export const SCHEMA_V3_FROZEN_ARTIFACTS = [
+  'paper/arxiv/artifacts/frozen/challenge_decisions.csv',
+] as const;
+
 export const DEFAULT_TRACKED_FIGURES = [
   'paper/arxiv/figures/benchmark_overview.png',
   'paper/arxiv/figures/compare_lie_frequency.png',
@@ -198,9 +202,6 @@ export function buildBenchmarkRelease(
   const assetsDir = path.join(releaseDir, 'assets');
   const benchmarkVersion = options.benchmarkVersion ?? BENCHMARK_VERSION;
   const datasetVersion = options.datasetVersion ?? DATASET_VERSION;
-  const frozenArtifacts = (options.frozenArtifacts ?? [...DEFAULT_FROZEN_ARTIFACTS]).map((entry) =>
-    path.resolve(repoRoot, entry)
-  );
   const trackedFigures = (options.trackedFigures ?? [...DEFAULT_TRACKED_FIGURES]).map((entry) =>
     path.resolve(repoRoot, entry)
   );
@@ -213,6 +214,17 @@ export function buildBenchmarkRelease(
   if (cohortManifest.includedGames.length === 0) {
     throw new Error('No included games were found for the benchmark release');
   }
+
+  const comparableCohort = cohortManifest.comparableCohort;
+  if (!comparableCohort) {
+    throw new Error('Comparable cohort metadata is missing from the cohort manifest');
+  }
+
+  const requestedFrozenArtifacts = options.frozenArtifacts ?? [
+    ...DEFAULT_FROZEN_ARTIFACTS,
+    ...(comparableCohort.schemaVersion >= 3 ? SCHEMA_V3_FROZEN_ARTIFACTS : []),
+  ];
+  const frozenArtifacts = requestedFrozenArtifacts.map((entry) => path.resolve(repoRoot, entry));
 
   for (const filepath of [...frozenArtifacts, ...trackedFigures]) {
     assertFileExists(filepath);
@@ -237,11 +249,6 @@ export function buildBenchmarkRelease(
   const rawLogArchive = buildFileEntry(repoRoot, archivePath, 'raw-logs-archive');
   const frozenArtifactEntries = frozenArtifacts.map((filepath) => buildFileEntry(repoRoot, filepath, 'frozen-artifact'));
   const trackedFigureEntries = trackedFigures.map((filepath) => buildFileEntry(repoRoot, filepath, 'figure'));
-
-  const comparableCohort = cohortManifest.comparableCohort;
-  if (!comparableCohort) {
-    throw new Error('Comparable cohort metadata is missing from the cohort manifest');
-  }
 
   const datasetManifest: DatasetManifest = {
     benchmarkName: BENCHMARK_NAME,

@@ -464,11 +464,29 @@ function buildVisibleStateForPlayer(game: ActiveGame, playerId: string, pileSize
   };
 }
 
-function recordChallengeDecision(turn: Turn, playerId: string, challenge: boolean, reasoning: string) {
+function recordChallengeDecision(
+  turn: Turn,
+  playerId: string,
+  modelId: string,
+  challenge: boolean,
+  reasoning: string,
+  responseTimeMs?: number,
+  tokenUsage?: Turn['challengeTokenUsage'],
+  tokenUsageIncomplete?: boolean
+) {
   turn.challengeOfferedTo ??= [];
   turn.challengeOfferedTo.push(playerId);
   turn.challengeDecisions ??= [];
-  turn.challengeDecisions.push({ playerId, challenge, reasoning });
+  turn.challengeDecisions.push({
+    playerId,
+    modelId,
+    challenge,
+    reasoning,
+    decisionOrder: turn.challengeDecisions.length,
+    responseTimeMs,
+    tokenUsage,
+    tokenUsageIncomplete,
+  });
 }
 
 function acceptPendingTurn(game: ActiveGame, logPrefix: string) {
@@ -588,6 +606,7 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
       // Attach token usage to the turn
       turn.playResponseTimeMs = playResponse.responseTimeMs;
       turn.playTokenUsage = playResponse.tokenUsage;
+      turn.playTokenUsageIncomplete = playResponse.tokenUsageIncomplete;
 
       game.pendingTurn = turn;
       game.challengeQueue = getOtherPlayers(game.state).map(p => p.id);
@@ -631,13 +650,18 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
         recordChallengeDecision(
           game.pendingTurn,
           challenger.id,
+          challenger.modelId,
           challengeResponse.challenge,
-          challengeResponse.reasoning
+          challengeResponse.reasoning,
+          challengeResponse.responseTimeMs,
+          challengeResponse.tokenUsage,
+          challengeResponse.tokenUsageIncomplete
         );
 
         if (challengeResponse.challenge) {
           game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
           game.pendingTurn.challengeTokenUsage = challengeResponse.tokenUsage;
+          game.pendingTurn.challengeTokenUsageIncomplete = challengeResponse.tokenUsageIncomplete;
           resolveChallenge(game, challenger.id, challengeResponse.reasoning, '[step]');
         }
         // If no challenge, continue to next potential challenger (loop continues)
@@ -783,7 +807,15 @@ async function handleHumanChallenge(req: http.IncomingMessage, res: http.ServerR
     return;
   }
 
-  recordChallengeDecision(game.pendingTurn, challengerId, shouldChallenge, reasoning);
+  const challenger = game.state.players.find((player) => player.id === challengerId);
+  recordChallengeDecision(
+    game.pendingTurn,
+    challengerId,
+    challenger?.modelId || challengerId,
+    shouldChallenge,
+    reasoning,
+    0
+  );
 
   if (shouldChallenge) {
     game.pendingTurn.challengeResponseTimeMs = 0;
@@ -851,6 +883,7 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
     );
     turn.playResponseTimeMs = playResponse.responseTimeMs;
     turn.playTokenUsage = playResponse.tokenUsage;
+    turn.playTokenUsageIncomplete = playResponse.tokenUsageIncomplete;
     console.log(`[auto]   ${turn.claimedCount}× ${turn.claimedRank} (${turn.wasLie ? 'LIE' : 'TRUTH'})`);
 
     game.pendingTurn = turn;
@@ -891,13 +924,18 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
     recordChallengeDecision(
       game.pendingTurn,
       challenger.id,
+      challenger.modelId,
       challengeResponse.challenge,
-      challengeResponse.reasoning
+      challengeResponse.reasoning,
+      challengeResponse.responseTimeMs,
+      challengeResponse.tokenUsage,
+      challengeResponse.tokenUsageIncomplete
     );
 
     if (challengeResponse.challenge) {
       game.pendingTurn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
       game.pendingTurn.challengeTokenUsage = challengeResponse.tokenUsage;
+      game.pendingTurn.challengeTokenUsageIncomplete = challengeResponse.tokenUsageIncomplete;
       resolveChallenge(game, challenger.id, challengeResponse.reasoning, '[auto]');
       break;
     }

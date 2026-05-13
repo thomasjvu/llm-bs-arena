@@ -31,6 +31,7 @@ export {
   buildBenchmarkRelease,
   DEFAULT_FROZEN_ARTIFACTS,
   DEFAULT_TRACKED_FIGURES,
+  SCHEMA_V3_FROZEN_ARTIFACTS,
 } from './release/build-release.js';
 export {
   BENCHMARK_NAME,

@@ -34,10 +34,10 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
    ```
 2. Validate one real game per experiment:
    ```bash
-   npm start -- game -e 0 -p nim
-   npm start -- game -e 1 -p nim
-   npm start -- game -e 2 -p nim
-   npm start -- game -e 3 -p nim
+   npm start -- tournament -e 0 -g 1 -p nim -o logs-v2-smoke --matchup-start 0 --matchup-end 0
+   npm start -- tournament -e 1 -g 1 -p nim -o logs-v2-smoke --matchup-start 0 --matchup-end 0
+   npm start -- tournament -e 2 -g 1 -p nim -o logs-v2-smoke --matchup-start 0 --matchup-end 0
+   npm start -- tournament -e 3 -g 1 -p nim -o logs-v2-smoke --matchup-start 0 --matchup-end 0
    ```
 3. (Optional) Visual inspection:
    ```bash
@@ -51,24 +51,29 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
    - Roster: 6-model default
    - Experiments: 0, 1, 2, 3
    - Games per matchup: 10
+   - Output directory: `logs-v2`
 2. Collect pilot dataset (600 games total):
    ```bash
-   npm start -- tournament -e 0 -g 10
-   npm start -- tournament -e 1 -g 10
-   npm start -- tournament -e 2 -g 10
-   npm start -- tournament -e 3 -g 10
+   npm start -- tournament -e 0 -g 10 -o logs-v2
+   npm start -- tournament -e 1 -g 10 -o logs-v2
+   npm start -- tournament -e 2 -g 10 -o logs-v2
+   npm start -- tournament -e 3 -g 10 -o logs-v2
    ```
    - For parallel execution, shard by matchup index (0-4, 5-9, 10-14)
 
 ## Phase 3: Analysis
 1. Generate analysis outputs:
    ```bash
-   npm run research:brief
+   npm start -- analyze -o logs-v2 --csv
+   .venv/bin/python analysis/stats.py --csv-dir logs-v2/csv
+   .venv/bin/python analysis/plots.py --csv-dir logs-v2/csv --output-dir results/figures
+   .venv/bin/python analysis/report.py --csv-dir logs-v2/csv --output results/research_summary.md --figures-dir results/figures
    ```
    This produces:
-   - `logs/csv/player_game_stats.csv`
-   - `logs/csv/game_summary.csv`
-   - `logs/csv/all_turns.csv`
+   - `logs-v2/csv/player_game_stats.csv`
+   - `logs-v2/csv/game_summary.csv`
+   - `logs-v2/csv/all_turns.csv`
+   - `logs-v2/csv/challenge_decisions.csv`
    - `results/figures/*.png`
    - `results/research_summary.md`
 2. Verify success:
@@ -79,7 +84,7 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
 ## Phase 4: Release Packaging
 1. Build official release bundle:
    ```bash
-   npm start -- release
+   npm start -- release --logs logs-v2
    ```
 2. Verify outputs exist:
    - `release/v1.0.0/benchmark-release.json`
@@ -107,6 +112,7 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
 
 ## Common Mistakes to Avoid
 - Analyzing leftover logs from old runs
+- Writing v2 smoke or paid runs into `logs/`; use `logs-v2-smoke` or `logs-v2`
 - Changing provider or roster mid-dataset
 - Using validation games as main results
 - Drawing conclusions from tiny/incomplete datasets

@@ -126,12 +126,15 @@ export class TurnManager {
       normalizedPlay.claimedCount,
       playResponse.reasoning
     );
+    turn.playResponseTimeMs = playResponse.responseTimeMs;
+    turn.playTokenUsage = playResponse.tokenUsage;
+    turn.playTokenUsageIncomplete = playResponse.tokenUsageIncomplete;
 
     const otherPlayers = getOtherPlayers(state);
     const challengeOrder =
       this.config.challengeOrder === 'random' ? this.shuffleArray(otherPlayers) : otherPlayers;
 
-    for (const challenger of challengeOrder) {
+    for (const [decisionIndex, challenger] of challengeOrder.entries()) {
       turn.challengeOfferedTo?.push(challenger.id);
       const challengerVisibleState = getVisibleState(state, challenger.id);
 
@@ -146,8 +149,22 @@ export class TurnManager {
         },
         state.experimentId
       );
+      turn.challengeDecisions ??= [];
+      turn.challengeDecisions.push({
+        playerId: challenger.id,
+        modelId: challenger.modelId,
+        challenge: challengeResponse.challenge,
+        reasoning: challengeResponse.reasoning,
+        decisionOrder: decisionIndex,
+        responseTimeMs: challengeResponse.responseTimeMs,
+        tokenUsage: challengeResponse.tokenUsage,
+        tokenUsageIncomplete: challengeResponse.tokenUsageIncomplete,
+      });
 
       if (challengeResponse.challenge) {
+        turn.challengeResponseTimeMs = challengeResponse.responseTimeMs;
+        turn.challengeTokenUsage = challengeResponse.tokenUsage;
+        turn.challengeTokenUsageIncomplete = challengeResponse.tokenUsageIncomplete;
         processChallenge(state, turn, challenger.id, challengeResponse.reasoning);
         break; // Only one challenge per turn
       }

@@ -28,7 +28,7 @@ interface ChatMessage {
 
 interface ChatCompletionResult {
   content: string;
-  tokenUsage: TokenUsage;
+  tokenUsage?: TokenUsage;
   responseTimeMs: number;
   finishReason: string;
 }
@@ -46,6 +46,7 @@ interface OpenAICompatibleClient {
 type ParsedDecision = {
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
+  tokenUsageIncomplete?: boolean;
 };
 
 type ResponseParser<T extends ParsedDecision> = (response: string) => T | null;
@@ -58,6 +59,20 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 
 const PLAY_MAX_TOKENS = parsePositiveInt(process.env.LLM_PLAY_MAX_TOKENS, 8192);
 const CHALLENGE_MAX_TOKENS = parsePositiveInt(process.env.LLM_CHALLENGE_MAX_TOKENS, 4096);
+
+function combineTokenUsage(usages: Array<TokenUsage | undefined>): TokenUsage | undefined {
+  const present = usages.filter((usage): usage is TokenUsage => Boolean(usage));
+  if (present.length === 0) return undefined;
+
+  return present.reduce<TokenUsage>(
+    (total, usage) => ({
+      promptTokens: total.promptTokens + usage.promptTokens,
+      completionTokens: total.completionTokens + usage.completionTokens,
+      totalTokens: total.totalTokens + usage.totalTokens,
+    }),
+    { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+  );
+}
 
 class BaseLLMAdapter implements LLMAdapter {
   private client: OpenAICompatibleClient;
@@ -130,6 +145,8 @@ class BaseLLMAdapter implements LLMAdapter {
     onToken?: (text: string) => void,
     maxTokens: number = PLAY_MAX_TOKENS
   ): Promise<T> {
+    const usageParts: Array<TokenUsage | undefined> = [];
+    let responseTimeMs = 0;
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -138,14 +155,17 @@ class BaseLLMAdapter implements LLMAdapter {
     const result = onToken
       ? await this.client.chatCompletionStream(modelId, messages, onToken, maxTokens)
       : await this.client.chatCompletion(modelId, messages, maxTokens);
+    usageParts.push(result.tokenUsage);
+    responseTimeMs += result.responseTimeMs;
 
     let lastResponse = result.content;
     let lastTruncated = result.finishReason === 'length';
     const parsed = parser(result.content);
 
     if (parsed) {
-      parsed.responseTimeMs = result.responseTimeMs;
-      parsed.tokenUsage = result.tokenUsage;
+      parsed.responseTimeMs = responseTimeMs;
+      parsed.tokenUsage = combineTokenUsage(usageParts);
+      parsed.tokenUsageIncomplete = usageParts.some((usage) => !usage);
       return parsed;
     }
 
@@ -159,14 +179,17 @@ class BaseLLMAdapter implements LLMAdapter {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: retryPrompt },
       ], maxTokens);
+      usageParts.push(retryResult.tokenUsage);
+      responseTimeMs += retryResult.responseTimeMs;
 
       lastResponse = retryResult.content;
       lastTruncated = retryResult.finishReason === 'length';
       const retryParsed = parser(retryResult.content);
 
       if (retryParsed) {
-        retryParsed.responseTimeMs = retryResult.responseTimeMs;
-        retryParsed.tokenUsage = retryResult.tokenUsage;
+        retryParsed.responseTimeMs = responseTimeMs;
+        retryParsed.tokenUsage = combineTokenUsage(usageParts);
+        retryParsed.tokenUsageIncomplete = usageParts.some((usage) => !usage);
         return retryParsed;
       }
 

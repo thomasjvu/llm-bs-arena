@@ -34,6 +34,12 @@ The strongest results from the frozen cohort are:
 
 Tracked frozen artifacts live in `paper/arxiv/artifacts/frozen/` and tracked paper figures live in `paper/arxiv/figures/`.
 
+## Version Tags
+
+Use git tags to recover the exact code state for each public milestone:
+- `v1.0.0`: frozen 600-game cohort and arXiv paper release state.
+- `v2-run-ready`: schema-v3 logging and methodology updates for the next NIM run. This tag is code-ready only; it does not include a new paid cohort.
+
 ## Release Surface
 
 Primary technical docs:
@@ -100,7 +106,7 @@ npm start -- game -e 1 -p nim
 Tournament:
 
 ```bash
-npm start -- tournament -e 1 -g 10 -p nim
+npm start -- tournament -e 1 -g 10 -p nim -o logs-v2
 ```
 
 Visualizer:
@@ -114,17 +120,17 @@ Open `http://localhost:3001`.
 Analysis pipeline:
 
 ```bash
-npm start -- manifest
-npm start -- analyze --csv
-npm run stats
-npm run plots
-npm run report
+npm start -- manifest -o logs-v2
+npm start -- analyze -o logs-v2 --csv
+.venv/bin/python analysis/stats.py --csv-dir logs-v2/csv
+.venv/bin/python analysis/plots.py --csv-dir logs-v2/csv --output-dir results/figures
+.venv/bin/python analysis/report.py --csv-dir logs-v2/csv --output results/research_summary.md --figures-dir results/figures
 ```
 
 Release bundle:
 
 ```bash
-npm start -- release
+npm start -- release --logs logs-v2
 ```
 
 ## Library API

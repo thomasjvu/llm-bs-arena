@@ -12,6 +12,7 @@ import { MODELS, BASELINE_MODELS, ExperimentId } from './types/game.js';
 import { createGameState } from './engine/game-state.js';
 import { TurnManager } from './engine/turn-manager.js';
 import { buildRunMetadata, createAdapter, detectProvider, Provider } from './llm/provider.js';
+import { assertOutputCohortCompatible } from './tournament/output-guard.js';
 import { buildBenchmarkRelease } from './release/build-release.js';
 import { BENCHMARK_NAME, BENCHMARK_VERSION, DATASET_VERSION, DEFAULT_RELEASE_DIR } from './release/version.js';
 
@@ -80,6 +81,7 @@ program
   .option('--matchup-end <number>', 'Last matchup index to run (inclusive)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
   .option('-p, --provider <provider>', 'LLM provider: nim or mock')
+  .option('--allow-mixed-output', 'Allow writing into an output directory that already contains a different schema/provider/prompt cohort')
   .action(async (options) => {
     const experimentId = options.experiment as ExperimentId;
     if (![0, 1, 2, 3].includes(experimentId)) {
@@ -110,8 +112,12 @@ program
 
     const provider = options.provider || detectProvider();
     const adapter = createAdapter(provider as Provider, config.models);
+    const runMetadata = buildRunMetadata(provider as Provider, config.models);
+    assertOutputCohortCompatible(options.output, runMetadata, {
+      allowMixedOutput: Boolean(options.allowMixedOutput),
+    });
 
-    const runner = new TournamentRunner(config, adapter, buildRunMetadata(provider as Provider, config.models));
+    const runner = new TournamentRunner(config, adapter, runMetadata);
 
     await runner.run((progress) => {
       process.stdout.write(
@@ -227,9 +233,11 @@ program
       const turnsPath = exporter.exportTurns(games);
       const summaryPath = exporter.exportGameSummary(games);
       const playerGamePath = exporter.exportPlayerGameStats(games);
+      const challengeDecisionsPath = exporter.exportChallengeDecisions(games);
       console.log(`Turns exported to: ${turnsPath}`);
       console.log(`Summary exported to: ${summaryPath}`);
       console.log(`Player-game stats exported to: ${playerGamePath}`);
+      console.log(`Challenge decisions exported to: ${challengeDecisionsPath}`);
     }
   });
 

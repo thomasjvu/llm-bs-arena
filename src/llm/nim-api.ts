@@ -2,7 +2,7 @@ import { TokenUsage } from '../types/game.js';
 
 export interface ChatCompletionResult {
   content: string;
-  tokenUsage: TokenUsage;
+  tokenUsage?: TokenUsage;
   responseTimeMs: number;
   finishReason: string;
 }
@@ -205,13 +205,13 @@ export class NimClient {
           throw new Error('No textual content in response');
         }
         const finishReason = data.choices[0].finish_reason || 'stop';
-        const usage: TokenUsage = data.usage
+        const usage: TokenUsage | undefined = data.usage
           ? {
               promptTokens: data.usage.prompt_tokens,
               completionTokens: data.usage.completion_tokens,
               totalTokens: data.usage.total_tokens,
             }
-          : { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+          : undefined;
         const tokens = data.usage ? `${data.usage.prompt_tokens}+${data.usage.completion_tokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
         console.log(`[nim] OK ${this.modelLabel(modelId)} (${Date.now() - t0}ms, ${tokens}${truncated}) — ${this.previewContent(content)}…`);
@@ -335,7 +335,7 @@ export class NimClient {
         if (!body) throw new Error('No response body for stream');
 
         let fullContent = '';
-        let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+        let usage: TokenUsage | undefined;
         let finishReason = 'stop';
         let firstTokenTime: number | null = null;
 
@@ -386,7 +386,7 @@ export class NimClient {
 
         const elapsed = Date.now() - t0;
         const ttft = firstTokenTime ? firstTokenTime - t0 : elapsed;
-        const tokens = `${usage.promptTokens}+${usage.completionTokens}tok`;
+        const tokens = usage ? `${usage.promptTokens}+${usage.completionTokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
         console.log(`[nim-stream] OK ${this.modelLabel(modelId)} (${elapsed}ms, ttft=${ttft}ms, ${tokens}${truncated})`);
 

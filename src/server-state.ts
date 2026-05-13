@@ -81,13 +81,20 @@ function sanitizeTurnForClient(game: ServerGameSnapshot, turn: Turn, allowPrivat
     handSizesAfterTurn: turn.handSizesAfterTurn,
     playResponseTimeMs: turn.playResponseTimeMs,
     playTokenUsage: turn.playTokenUsage,
+    playTokenUsageIncomplete: turn.playTokenUsageIncomplete,
     challengeResponseTimeMs: turn.challengeResponseTimeMs,
     challengeTokenUsage: turn.challengeTokenUsage,
+    challengeTokenUsageIncomplete: turn.challengeTokenUsageIncomplete,
     challengeOfferedTo: turn.challengeOfferedTo,
     challengeDecisions: (turn.challengeDecisions ?? []).map((decision) => ({
       playerId: decision.playerId,
+      modelId: decision.modelId,
       challenge: decision.challenge,
       reasoning: sanitizeReasoning(game, decision.playerId, decision.reasoning),
+      decisionOrder: decision.decisionOrder,
+      responseTimeMs: decision.responseTimeMs,
+      tokenUsage: decision.tokenUsage,
+      tokenUsageIncomplete: decision.tokenUsageIncomplete,
     })),
   };
 

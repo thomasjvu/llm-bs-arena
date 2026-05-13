@@ -23,8 +23,13 @@ export interface TokenUsage {
 
 export interface ChallengeDecision {
   playerId: string;
+  modelId?: string;
   challenge: boolean;
   reasoning: string;
+  decisionOrder?: number;
+  responseTimeMs?: number;
+  tokenUsage?: TokenUsage;
+  tokenUsageIncomplete?: boolean;
 }
 
 export interface RunMetadata {
@@ -53,8 +58,10 @@ export interface Turn {
   handSizesAfterTurn: Record<string, number>;
   playResponseTimeMs?: number;
   playTokenUsage?: TokenUsage;
+  playTokenUsageIncomplete?: boolean;
   challengeResponseTimeMs?: number;
   challengeTokenUsage?: TokenUsage;
+  challengeTokenUsageIncomplete?: boolean;
 }
 
 export type ExperimentId = 0 | 1 | 2 | 3;
@@ -90,6 +97,7 @@ export interface PlayTurnResponse {
   claim_count: number; // must match cards_to_play.length
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
+  tokenUsageIncomplete?: boolean;
 }
 
 export interface ChallengeResponse {
@@ -97,6 +105,7 @@ export interface ChallengeResponse {
   challenge: boolean;
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
+  tokenUsageIncomplete?: boolean;
 }
 
 export interface PlayerStats {

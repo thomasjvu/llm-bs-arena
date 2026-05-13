@@ -19,10 +19,13 @@ import { replayTurnTruthfulAvailability } from '../metrics/truthful-availability
 import { parsePlayResponse, parseChallengeResponse, extractJSON } from '../llm/response-parser.js';
 import { MODELS, BASELINE_MODELS, RANKS, Card, GameLog } from '../types/game.js';
 import { GameLogger, selectComparableGameCohort, buildCohortManifest } from '../logging/game-logger.js';
+import { CSVExporter } from '../logging/csv-exporter.js';
 import { ResilientLLMAdapter, buildRunMetadata } from '../llm/provider.js';
 import { APIConnectionError as NimAPIConnectionError, NimClient } from '../llm/nim-api.js';
 import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
-import { ScriptedBaselineAdapter } from '../llm/llm-adapter.js';
+import { NimLLMAdapter, ScriptedBaselineAdapter } from '../llm/llm-adapter.js';
+import { buildSystemPrompt, PROMPT_VERSION } from '../llm/prompt-builder.js';
+import { assertOutputCohortCompatible } from '../tournament/output-guard.js';
 
 describe('Deck', () => {
   it('should create a standard 52-card deck with 4 of each rank', () => {
@@ -328,6 +331,127 @@ describe('TurnManager', () => {
     expect(turn.actualCards.length).toBe(MAX_CARDS_PER_PLAY);
     expect(turn.claimedCount).toBe(MAX_CARDS_PER_PLAY);
   });
+
+  it('should persist all pass decisions with model ids, timings, and token usage', async () => {
+    const adapter: LLMAdapter = {
+      async getPlayDecision(_playerId, _modelId, visibleState) {
+        const card = visibleState.hand.find((candidate) => candidate.rank === visibleState.currentRank) || visibleState.hand[0];
+        return {
+          reasoning: 'Play with usage.',
+          cards_to_play: [cardToString(card)],
+          claim_count: 1,
+          responseTimeMs: 11,
+          tokenUsage: { promptTokens: 101, completionTokens: 7, totalTokens: 108 },
+        };
+      },
+      async getChallengeDecision(challengerId, modelId) {
+        return {
+          reasoning: `${modelId} passes.`,
+          challenge: false,
+          responseTimeMs: challengerId === 'player_1' ? 21 : challengerId === 'player_2' ? 22 : 23,
+          tokenUsage: { promptTokens: 201, completionTokens: 9, totalTokens: 210 },
+        };
+      },
+    };
+
+    const state = createGameState('pass-logging-game', 1, ['m1', 'm2', 'm3', 'm4'], 42);
+    state.currentPlayerIndex = 0;
+    state.currentRank = 'A';
+    state.players[0].hand = [{ rank: 'A', suit: 'S' }, ...state.players[0].hand.filter((card) => card.rank !== 'A' || card.suit !== 'S')];
+    const turn = await new TurnManager().executeTurn(state, adapter);
+
+    expect(turn.playResponseTimeMs).toBe(11);
+    expect(turn.playTokenUsage).toEqual({ promptTokens: 101, completionTokens: 7, totalTokens: 108 });
+    expect(turn.challenged).toBe(false);
+    expect(turn.challengeOfferedTo).toEqual(['player_1', 'player_2', 'player_3']);
+    expect(turn.challengeDecisions).toEqual([
+      {
+        playerId: 'player_1',
+        modelId: 'm2',
+        challenge: false,
+        reasoning: 'm2 passes.',
+        decisionOrder: 0,
+        responseTimeMs: 21,
+        tokenUsage: { promptTokens: 201, completionTokens: 9, totalTokens: 210 },
+      },
+      {
+        playerId: 'player_2',
+        modelId: 'm3',
+        challenge: false,
+        reasoning: 'm3 passes.',
+        decisionOrder: 1,
+        responseTimeMs: 22,
+        tokenUsage: { promptTokens: 201, completionTokens: 9, totalTokens: 210 },
+      },
+      {
+        playerId: 'player_3',
+        modelId: 'm4',
+        challenge: false,
+        reasoning: 'm4 passes.',
+        decisionOrder: 2,
+        responseTimeMs: 23,
+        tokenUsage: { promptTokens: 201, completionTokens: 9, totalTokens: 210 },
+      },
+    ]);
+  });
+
+  it('should preserve pass decisions before a later successful challenge', async () => {
+    let challengeCalls = 0;
+    const adapter: LLMAdapter = {
+      async getPlayDecision(_playerId, _modelId, visibleState) {
+        const card = visibleState.hand[0];
+        return {
+          reasoning: 'Play first card.',
+          cards_to_play: [cardToString(card)],
+          claim_count: 1,
+          responseTimeMs: 10,
+          tokenUsage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+        };
+      },
+      async getChallengeDecision(_challengerId, modelId) {
+        challengeCalls++;
+        return {
+          reasoning: challengeCalls === 1 ? 'Let it pass.' : 'Challenge now.',
+          challenge: challengeCalls === 2,
+          responseTimeMs: 30 + challengeCalls,
+          tokenUsage: { promptTokens: 40 + challengeCalls, completionTokens: 5, totalTokens: 45 + challengeCalls },
+        };
+      },
+    };
+
+    const state = createGameState('later-challenge-game', 1, ['m1', 'm2', 'm3', 'm4'], 42);
+    state.currentPlayerIndex = 0;
+    state.currentRank = 'A';
+    const turn = await new TurnManager().executeTurn(state, adapter);
+
+    expect(challengeCalls).toBe(2);
+    expect(turn.challenged).toBe(true);
+    expect(turn.challengerId).toBe('player_2');
+    expect(turn.challengeReasoning).toBe('Challenge now.');
+    expect(turn.challengeResponseTimeMs).toBe(32);
+    expect(turn.challengeTokenUsage).toEqual({ promptTokens: 42, completionTokens: 5, totalTokens: 47 });
+    expect(turn.challengeOfferedTo).toEqual(['player_1', 'player_2']);
+    expect(turn.challengeDecisions).toEqual([
+      {
+        playerId: 'player_1',
+        modelId: 'm2',
+        challenge: false,
+        reasoning: 'Let it pass.',
+        decisionOrder: 0,
+        responseTimeMs: 31,
+        tokenUsage: { promptTokens: 41, completionTokens: 5, totalTokens: 46 },
+      },
+      {
+        playerId: 'player_2',
+        modelId: 'm3',
+        challenge: true,
+        reasoning: 'Challenge now.',
+        decisionOrder: 1,
+        responseTimeMs: 32,
+        tokenUsage: { promptTokens: 42, completionTokens: 5, totalTokens: 47 },
+      },
+    ]);
+  });
 });
 
 describe('Adapter Recovery', () => {
@@ -470,6 +594,106 @@ describe('Scripted Baseline Adapter', () => {
   });
 });
 
+describe('Prompt Protocol', () => {
+  it('should use a v2 prompt version with a neutered Exp0 system prompt', () => {
+    const exp0Prompt = buildSystemPrompt(0);
+    const exp1Prompt = buildSystemPrompt(1);
+
+    expect(PROMPT_VERSION).toBe('2026-05-13-v2');
+    expect(exp0Prompt).not.toContain('STRATEGY CONSIDERATIONS');
+    expect(exp0Prompt).not.toMatch(/\blie|lying|LIED|challenge|Bullshit/i);
+    expect(exp0Prompt).toContain('CONTROL CONDITION');
+    expect(exp1Prompt).toContain('STRATEGY CONSIDERATIONS');
+    expect(exp1Prompt).toContain('You MAY lie');
+  });
+});
+
+describe('Structured Response Accounting', () => {
+  const visibleState = {
+    hand: [{ rank: 'A', suit: 'S' }] as Card[],
+    currentRank: 'A' as const,
+    pileSize: 0,
+    otherPlayersCounts: {},
+    recentTurns: [],
+  };
+
+  it('should aggregate token usage and response time across JSON repair retries', async () => {
+    let calls = 0;
+    const client = {
+      async chatCompletion() {
+        calls++;
+        if (calls === 1) {
+          return {
+            content: 'not json',
+            tokenUsage: { promptTokens: 10, completionTokens: 2, totalTokens: 12 },
+            responseTimeMs: 11,
+            finishReason: 'stop',
+          };
+        }
+
+        return {
+          content: '{"reasoning":"retry ok","challenge":false}',
+          tokenUsage: { promptTokens: 20, completionTokens: 3, totalTokens: 23 },
+          responseTimeMs: 22,
+          finishReason: 'stop',
+        };
+      },
+      async chatCompletionStream() {
+        throw new Error('unused');
+      },
+    };
+
+    const adapter = new NimLLMAdapter(client as any, 1);
+    const response = await adapter.getChallengeDecision(
+      'player_1',
+      'model-a',
+      visibleState,
+      { playerId: 'model-b', claimedCount: 1, claimedRank: 'A' },
+      1
+    );
+
+    expect(calls).toBe(2);
+    expect(response.challenge).toBe(false);
+    expect(response.responseTimeMs).toBe(33);
+    expect(response.tokenUsage).toEqual({ promptTokens: 30, completionTokens: 5, totalTokens: 35 });
+    expect(response.tokenUsageIncomplete).toBe(false);
+  });
+
+  it('should mark structured-response usage incomplete when any retry call omits usage', async () => {
+    let calls = 0;
+    const client = {
+      async chatCompletion() {
+        calls++;
+        if (calls === 1) {
+          return {
+            content: 'not json',
+            responseTimeMs: 11,
+            finishReason: 'stop',
+          };
+        }
+
+        return {
+          content: '{"reasoning":"retry ok","cards_to_play":["AS"],"claim_count":1}',
+          tokenUsage: { promptTokens: 20, completionTokens: 3, totalTokens: 23 },
+          responseTimeMs: 22,
+          finishReason: 'stop',
+        };
+      },
+      async chatCompletionStream() {
+        throw new Error('unused');
+      },
+    };
+
+    const adapter = new NimLLMAdapter(client as any, 1);
+    const response = await adapter.getPlayDecision('player_0', 'model-a', visibleState, 1);
+
+    expect(calls).toBe(2);
+    expect(response.responseTimeMs).toBe(33);
+    expect(response.tokenUsage).toEqual({ promptTokens: 20, completionTokens: 3, totalTokens: 23 });
+    expect(response.tokenUsageIncomplete).toBe(true);
+  });
+});
+
 describe('NVIDIA NIM Client', () => {
   const originalFetch = globalThis.fetch;
 
@@ -574,6 +798,37 @@ describe('NVIDIA NIM Client', () => {
     expect(calls).toBe(2);
     expect(response.content).toContain('"challenge":false');
   });
+
+  it('should leave token usage undefined when the provider omits usage data', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          id: 'resp-no-usage',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    ) as typeof fetch;
+
+    const client = new NimClient({
+      apiKey: 'test-key',
+      baseUrl: 'https://example.invalid/v1',
+      maxRetries: 1,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+
+    const response = await client.chatCompletion('model-a', [{ role: 'user', content: 'hi' }], 32);
+
+    expect(response.content).toContain('"challenge":false');
+    expect(response.tokenUsage).toBeUndefined();
+  });
 });
 
 describe('Matchup Generator', () => {
@@ -659,6 +914,38 @@ describe('Matchup Generator', () => {
     ]);
 
     expect(metadata.provider).toBe('nim+baseline');
+  });
+
+  it('should reject tournament output directories with a mixed schema/provider/prompt cohort', () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-output-guard-'));
+    const gamesDir = path.join(outputDir, 'games');
+    fs.mkdirSync(gamesDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(gamesDir, 'legacy.json'),
+      JSON.stringify({
+        gameId: 'legacy',
+        experimentId: 1,
+        players: [],
+        metadata: {
+          logSchemaVersion: 2,
+          provider: 'nim',
+          promptVersion: '2026-03-26',
+          promptHash: 'old',
+        },
+        turns: [],
+        winner: null,
+        totalTurns: 0,
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        durationMs: 0,
+      } satisfies GameLog)
+    );
+
+    const metadata = buildRunMetadata('nim', ['a', 'b', 'c', 'd']);
+
+    expect(() => assertOutputCohortCompatible(outputDir, metadata)).toThrow(/different schema\/provider\/prompt cohort/);
+    expect(() => assertOutputCohortCompatible(outputDir, metadata, { allowMixedOutput: true })).not.toThrow();
   });
 
   it('should resolve a valid matchup shard', () => {
@@ -1232,5 +1519,109 @@ describe('GameLogger', () => {
     expect(log.seatingOrder).toEqual(['a', 'b', 'c', 'd']);
     expect(log.winner).toBe('player_2');
     expect(log.terminationReason).toBe('winner');
+  });
+});
+
+describe('CSVExporter', () => {
+  it('should export every challenge-window decision and preserve missing token usage as blank', () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-csv-'));
+    const exporter = new CSVExporter(outputDir);
+    const game: GameLog = {
+      gameId: 'challenge-csv-game',
+      experimentId: 1,
+      players: [
+        { id: 'player_0', modelId: 'model-a' },
+        { id: 'player_1', modelId: 'model-b' },
+        { id: 'player_2', modelId: 'model-c' },
+        { id: 'player_3', modelId: 'model-d' },
+      ],
+      metadata: {
+        logSchemaVersion: 3,
+        provider: 'nim',
+        providerBaseUrl: 'https://example.invalid/v1',
+        promptVersion: '2026-03-26',
+        promptHash: 'p123',
+      },
+      turns: [
+        {
+          turnNumber: 1,
+          playerId: 'player_0',
+          claimedRank: 'A',
+          claimedCount: 1,
+          actualCards: [{ rank: 'A', suit: 'S' }],
+          wasLie: false,
+          challengeOfferedTo: ['player_1', 'player_2'],
+          challengeDecisions: [
+            {
+              playerId: 'player_1',
+              modelId: 'model-b',
+              challenge: false,
+              reasoning: 'No challenge, seems plausible.',
+              decisionOrder: 0,
+              responseTimeMs: 20,
+              tokenUsageIncomplete: true,
+            },
+            {
+              playerId: 'player_2',
+              modelId: 'model-c',
+              challenge: true,
+              reasoning: 'I will challenge.',
+              decisionOrder: 1,
+              responseTimeMs: 30,
+              tokenUsage: { promptTokens: 100, completionTokens: 5, totalTokens: 105 },
+            },
+          ],
+          challenged: true,
+          challengerId: 'player_2',
+          challengeCorrect: false,
+          challengeReasoning: 'I will challenge.',
+          reasoning: 'Truthful play.',
+          pileAfterTurn: 1,
+          handSizesAfterTurn: {},
+          playResponseTimeMs: 10,
+          playTokenUsage: { promptTokens: 50, completionTokens: 4, totalTokens: 54 },
+          challengeResponseTimeMs: 30,
+          challengeTokenUsage: { promptTokens: 100, completionTokens: 5, totalTokens: 105 },
+        },
+      ],
+      winner: 'player_0',
+      terminationReason: 'winner',
+      totalTurns: 1,
+      startTime: '2024-01-01T00:00:00Z',
+      endTime: '2024-01-01T00:00:01Z',
+      durationMs: 1000,
+    };
+
+    const decisionsPath = exporter.exportChallengeDecisions([game]);
+    const decisionsCsv = fs.readFileSync(decisionsPath, 'utf-8');
+
+    expect(decisionsCsv).toContain('player_1,model-b,0,0,,"No challenge, seems plausible.",20,,,,1');
+    expect(decisionsCsv).toContain('player_2,model-c,1,1,0,I will challenge.,30,100,5,105,');
+
+    const summaryPath = exporter.exportGameSummary([game]);
+    const summaryCsv = fs.readFileSync(summaryPath, 'utf-8');
+    expect(summaryCsv).toContain(',150,9,159,1');
+
+    const noUsageGame: GameLog = {
+      ...game,
+      gameId: 'no-usage-game',
+      turns: [
+        {
+          ...game.turns[0],
+          playTokenUsage: undefined,
+          playTokenUsageIncomplete: undefined,
+          challengeTokenUsage: undefined,
+          challengeTokenUsageIncomplete: undefined,
+          challengeDecisions: game.turns[0].challengeDecisions?.map((decision) => ({
+            ...decision,
+            tokenUsage: undefined,
+            tokenUsageIncomplete: undefined,
+          })),
+        },
+      ],
+    };
+    const noUsageSummaryPath = exporter.exportGameSummary([noUsageGame]);
+    const noUsageSummaryCsv = fs.readFileSync(noUsageSummaryPath, 'utf-8');
+    expect(noUsageSummaryCsv.trim().split('\n')[1].endsWith('1000,,,,0')).toBe(true);
   });
 });

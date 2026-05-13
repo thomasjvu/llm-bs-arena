@@ -14,6 +14,24 @@ export class CSVExporter {
     fs.mkdirSync(this.outputDir, { recursive: true });
   }
 
+  private csvCell(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    const text = String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  private acceptedChallengeDecision(turn: Turn) {
+    return (turn.challengeDecisions ?? []).find((decision) => decision.challenge);
+  }
+
+  private challengeTokenUsages(turn: Turn) {
+    if (turn.challengeDecisions && turn.challengeDecisions.length > 0) {
+      return turn.challengeDecisions.map((decision) => decision.tokenUsage);
+    }
+
+    return turn.challengeTokenUsage ? [turn.challengeTokenUsage] : [];
+  }
+
   /**
    * Exports all turns to a flat CSV
    */
@@ -47,13 +65,15 @@ export class CSVExporter {
       'pile_after',
       'reasoning',
       'play_response_time_ms',
-      'play_prompt_tokens',
-      'play_completion_tokens',
-      'play_total_tokens',
-      'challenge_response_time_ms',
-      'challenge_prompt_tokens',
-      'challenge_completion_tokens',
-      'challenge_total_tokens',
+          'play_prompt_tokens',
+          'play_completion_tokens',
+          'play_total_tokens',
+          'play_token_usage_incomplete',
+          'challenge_response_time_ms',
+          'challenge_prompt_tokens',
+          'challenge_completion_tokens',
+          'challenge_total_tokens',
+          'challenge_token_usage_incomplete',
     ];
 
     const rows: string[] = [headers.join(',')];
@@ -92,17 +112,21 @@ export class CSVExporter {
           turn.challengerId ? modelMap[turn.challengerId] || '' : '',
           turn.challengeCorrect !== undefined ? (turn.challengeCorrect ? 1 : 0) : '',
           turn.pileAfterTurn,
-          `"${(turn.reasoning || '').replace(/"/g, '""')}"`,
+          turn.reasoning || '',
           turn.playResponseTimeMs ?? '',
           turn.playTokenUsage?.promptTokens ?? '',
           turn.playTokenUsage?.completionTokens ?? '',
           turn.playTokenUsage?.totalTokens ?? '',
-          turn.challengeResponseTimeMs ?? '',
-          turn.challengeTokenUsage?.promptTokens ?? '',
-          turn.challengeTokenUsage?.completionTokens ?? '',
-          turn.challengeTokenUsage?.totalTokens ?? '',
+          turn.playTokenUsageIncomplete === undefined ? '' : (turn.playTokenUsageIncomplete ? 1 : 0),
+          turn.challengeResponseTimeMs ?? this.acceptedChallengeDecision(turn)?.responseTimeMs ?? '',
+          turn.challengeTokenUsage?.promptTokens ?? this.acceptedChallengeDecision(turn)?.tokenUsage?.promptTokens ?? '',
+          turn.challengeTokenUsage?.completionTokens ?? this.acceptedChallengeDecision(turn)?.tokenUsage?.completionTokens ?? '',
+          turn.challengeTokenUsage?.totalTokens ?? this.acceptedChallengeDecision(turn)?.tokenUsage?.totalTokens ?? '',
+          (turn.challengeTokenUsageIncomplete ?? this.acceptedChallengeDecision(turn)?.tokenUsageIncomplete) === undefined
+            ? ''
+            : ((turn.challengeTokenUsageIncomplete ?? this.acceptedChallengeDecision(turn)?.tokenUsageIncomplete) ? 1 : 0),
         ];
-        rows.push(row.join(','));
+        rows.push(row.map((cell) => this.csvCell(cell)).join(','));
       }
     }
 
@@ -142,6 +166,7 @@ export class CSVExporter {
       'total_prompt_tokens',
       'total_completion_tokens',
       'total_tokens',
+      'token_usage_incomplete',
     ];
 
     const rows: string[] = [headers.join(',')];
@@ -155,10 +180,25 @@ export class CSVExporter {
       const totalLies = game.turns.filter((t) => t.wasLie).length;
       const totalChallenges = game.turns.filter((t) => t.challenged).length;
       const successfulChallenges = game.turns.filter((t) => t.challenged && t.challengeCorrect).length;
-      const totalPromptTokens = game.turns.reduce((s, t) =>
-        s + (t.playTokenUsage?.promptTokens ?? 0) + (t.challengeTokenUsage?.promptTokens ?? 0), 0);
-      const totalCompletionTokens = game.turns.reduce((s, t) =>
-        s + (t.playTokenUsage?.completionTokens ?? 0) + (t.challengeTokenUsage?.completionTokens ?? 0), 0);
+      const tokenUsages = game.turns.flatMap((turn) => [
+        turn.playTokenUsage,
+        ...this.challengeTokenUsages(turn),
+      ]);
+      const hasTokenUsage = tokenUsages.some(Boolean);
+      const totalPromptTokens = hasTokenUsage
+        ? tokenUsages.reduce((s, usage) => s + (usage?.promptTokens ?? 0), 0)
+        : '';
+      const totalCompletionTokens = hasTokenUsage
+        ? tokenUsages.reduce((s, usage) => s + (usage?.completionTokens ?? 0), 0)
+        : '';
+      const totalTokens = hasTokenUsage
+        ? tokenUsages.reduce((s, usage) => s + (usage?.totalTokens ?? 0), 0)
+        : '';
+      const tokenUsageIncomplete = game.turns.some((turn) =>
+        Boolean(turn.playTokenUsageIncomplete) ||
+        Boolean(turn.challengeTokenUsageIncomplete) ||
+        Boolean(turn.challengeDecisions?.some((decision) => decision.tokenUsageIncomplete))
+      );
 
       const row = [
         game.gameId,
@@ -185,9 +225,95 @@ export class CSVExporter {
         game.durationMs,
         totalPromptTokens,
         totalCompletionTokens,
-        totalPromptTokens + totalCompletionTokens,
+        totalTokens,
+        tokenUsageIncomplete ? 1 : 0,
       ];
-      rows.push(row.join(','));
+      rows.push(row.map((cell) => this.csvCell(cell)).join(','));
+    }
+
+    fs.writeFileSync(filepath, rows.join('\n'));
+    return filepath;
+  }
+
+  /**
+   * Exports one row per challenge-window decision, including pass rationales.
+   */
+  exportChallengeDecisions(games: GameLog[]): string {
+    const filepath = path.join(this.outputDir, 'challenge_decisions.csv');
+
+    const headers = [
+      'game_id',
+      'experiment_id',
+      'provider',
+      'provider_base_url',
+      'prompt_version',
+      'prompt_hash',
+      'log_schema_version',
+      'turn_number',
+      'acting_player_id',
+      'acting_model_id',
+      'challenger_id',
+      'challenger_model',
+      'decision_order',
+      'challenge',
+      'challenge_correct',
+      'reasoning',
+      'response_time_ms',
+      'prompt_tokens',
+      'completion_tokens',
+      'total_tokens',
+      'token_usage_incomplete',
+    ];
+
+    const rows: string[] = [headers.join(',')];
+
+    for (const game of games) {
+      const modelMap: Record<string, string> = {};
+      for (const player of game.players) {
+        modelMap[player.id] = player.modelId;
+      }
+
+      for (const turn of game.turns) {
+        const decisions = turn.challengeDecisions && turn.challengeDecisions.length > 0
+          ? turn.challengeDecisions
+          : (turn.challengeOfferedTo ?? []).map((playerId, decisionOrder) => ({
+              playerId,
+              modelId: modelMap[playerId],
+              decisionOrder,
+              challenge: turn.challengerId === playerId,
+              reasoning: turn.challengerId === playerId ? turn.challengeReasoning || '' : '',
+              responseTimeMs: turn.challengerId === playerId ? turn.challengeResponseTimeMs : undefined,
+              tokenUsage: turn.challengerId === playerId ? turn.challengeTokenUsage : undefined,
+              tokenUsageIncomplete: turn.challengerId === playerId ? turn.challengeTokenUsageIncomplete : undefined,
+            }));
+
+        for (const [index, decision] of decisions.entries()) {
+          const row = [
+            game.gameId,
+            game.experimentId,
+            game.metadata?.provider || '',
+            game.metadata?.providerBaseUrl || '',
+            game.metadata?.promptVersion || '',
+            game.metadata?.promptHash || '',
+            game.metadata?.logSchemaVersion ?? '',
+            turn.turnNumber,
+            turn.playerId,
+            modelMap[turn.playerId] || '',
+            decision.playerId,
+            decision.modelId || modelMap[decision.playerId] || '',
+            decision.decisionOrder ?? index,
+            decision.challenge ? 1 : 0,
+            decision.challenge ? (turn.challengeCorrect !== undefined ? (turn.challengeCorrect ? 1 : 0) : '') : '',
+            decision.reasoning || '',
+            decision.responseTimeMs ?? '',
+            decision.tokenUsage?.promptTokens ?? '',
+            decision.tokenUsage?.completionTokens ?? '',
+            decision.tokenUsage?.totalTokens ?? '',
+            decision.tokenUsageIncomplete === undefined ? '' : (decision.tokenUsageIncomplete ? 1 : 0),
+          ];
+          rows.push(row.map((cell) => this.csvCell(cell)).join(','));
+        }
+      }
     }
 
     fs.writeFileSync(filepath, rows.join('\n'));

@@ -64,15 +64,15 @@ Research-default execution:
 ### Experiment 0: Control
 
 Prompt framing:
-- low-strategy play
-- no strategic emphasis on deception
+- neutered mechanical-play control
+- no shared strategy block about deception, challenge risk, or hidden intentions
 
 Use:
-- low-strategy reference point
+- cleaner prompt-control reference point for v2 runs
 
 Interpretation:
 - not a true random-policy baseline
-- useful as a prompt-level comparison condition
+- useful as a prompt-level comparison condition, not as human or random-play behavior
 
 ### Experiment 1: Baseline
 
@@ -191,6 +191,7 @@ Derived:
 - `logs/csv/player_game_stats.csv`
 - `logs/csv/game_summary.csv`
 - `logs/csv/all_turns.csv`
+- `logs/csv/challenge_decisions.csv`
 - `results/figures/*.png`
 - `results/research_summary.md`
 
