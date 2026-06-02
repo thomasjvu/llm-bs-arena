@@ -6,7 +6,15 @@ import { describe, expect, it } from 'vitest';
 import { parseCard } from '../engine/deck.js';
 import { createBullshitEnv } from '../env/bullshit-env.js';
 import { BASELINE_MODELS, GameLog } from '../types/game.js';
-import { RandomLegalPolicy, TruthfulGreedyPolicy, buildBenchmarkRelease } from '../lib.js';
+import {
+  DEFAULT_FROZEN_ARTIFACTS,
+  DEFAULT_TRACKED_FIGURES,
+  RandomLegalPolicy,
+  SCHEMA_V3_FROZEN_ARTIFACTS,
+  SCHEMA_V4_FROZEN_ARTIFACTS,
+  TruthfulGreedyPolicy,
+  buildBenchmarkRelease,
+} from '../lib.js';
 
 describe('BullshitEnv', () => {
   it('should reset deterministically with the same seed', () => {
@@ -267,12 +275,8 @@ describe('Benchmark release builder', () => {
   it('should build a versioned release manifest, checksums, and raw-log archive', () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-release-'));
     const gamesDir = path.join(repoRoot, 'logs', 'games');
-    const frozenDir = path.join(repoRoot, 'paper', 'tmlr', 'artifacts', 'frozen');
-    const figuresDir = path.join(repoRoot, 'paper', 'tmlr', 'figures');
 
     fs.mkdirSync(gamesDir, { recursive: true });
-    fs.mkdirSync(frozenDir, { recursive: true });
-    fs.mkdirSync(figuresDir, { recursive: true });
 
     const log: GameLog = {
       gameId: 'exp1_m0_g0_demo',
@@ -284,10 +288,10 @@ describe('Benchmark release builder', () => {
         { id: 'player_3', modelId: 'd' },
       ],
       metadata: {
-        logSchemaVersion: 2,
+        logSchemaVersion: 4,
         provider: 'nim',
-        promptVersion: '2026-03-26',
-        promptHash: 'p1939995863',
+        promptVersion: '2026-05-26-full-history-v3-json-only',
+        promptHash: 'p-v3',
       },
       turns: [],
       winner: 'player_0',
@@ -300,39 +304,21 @@ describe('Benchmark release builder', () => {
 
     fs.writeFileSync(path.join(gamesDir, `${log.gameId}.json`), JSON.stringify(log, null, 2));
 
-    const frozenFiles = [
-      'cohort_manifest.json',
-      'player_game_stats.csv',
-      'player_stats_exp0.csv',
-      'player_stats_exp1.csv',
-      'player_stats_exp2.csv',
-      'player_stats_exp3.csv',
-      'research_summary.md',
-    ].map((filename) => {
-      const filepath = path.join(frozenDir, filename);
-      fs.writeFileSync(filepath, `content for ${filename}\n`);
-      return filepath;
-    });
-
-    const figureFiles = [
-      'benchmark_overview.png',
-      'compare_lie_frequency.png',
-      'exp1_win_rates.png',
-      'exp3_violations.png',
-      'game_length_distribution.png',
-      'lie_frequency_heatmap.png',
-    ].map((filename) => {
-      const filepath = path.join(figuresDir, filename);
-      fs.writeFileSync(filepath, filename);
-      return filepath;
-    });
+    for (const relativePath of [
+      ...DEFAULT_FROZEN_ARTIFACTS,
+      ...SCHEMA_V3_FROZEN_ARTIFACTS,
+      ...SCHEMA_V4_FROZEN_ARTIFACTS,
+      ...DEFAULT_TRACKED_FIGURES,
+    ]) {
+      const filepath = path.join(repoRoot, relativePath);
+      fs.mkdirSync(path.dirname(filepath), { recursive: true });
+      fs.writeFileSync(filepath, `content for ${relativePath}\n`);
+    }
 
     const release = buildBenchmarkRelease({
       repoRoot,
       logsDir: 'logs',
       releaseDir: 'release/v1.0.0',
-      frozenArtifacts: frozenFiles.map((filepath) => path.relative(repoRoot, filepath)),
-      trackedFigures: figureFiles.map((filepath) => path.relative(repoRoot, filepath)),
     });
 
     expect(fs.existsSync(path.join(repoRoot, release.datasetManifest))).toBe(true);
@@ -349,8 +335,16 @@ describe('Benchmark release builder', () => {
       fs.readFileSync(path.join(repoRoot, release.datasetManifest), 'utf-8')
     ) as { includedGames: number };
     expect(datasetManifest.includedGames).toBe(1);
+    expect(release.frozenSummaryArtifacts).toContain('paper/arxiv/artifacts/frozen/decision_log.csv');
+
+    const evaluationManifest = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, release.evaluationManifest), 'utf-8')
+    ) as { schemaVersion: number; primaryMetrics: string[] };
+    expect(evaluationManifest.schemaVersion).toBe(4);
+    expect(evaluationManifest.primaryMetrics).toContain('history_conditioned_challenge_accuracy');
 
     const checksumFile = fs.readFileSync(path.join(repoRoot, release.checksums), 'utf-8');
     expect(checksumFile).toContain(release.rawLogArchive.path);
+    expect(checksumFile).toContain('paper/arxiv/artifacts/frozen/decision_log.csv');
   });
 });

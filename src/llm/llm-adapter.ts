@@ -1,4 +1,13 @@
-import { PlayTurnResponse, ChallengeResponse, Card, Turn, Rank, TokenUsage } from '../types/game.js';
+import {
+  PlayTurnResponse,
+  ChallengeResponse,
+  Card,
+  Rank,
+  TokenUsage,
+  PublicTurnHistoryEntry,
+  DecisionTrace,
+  DecisionAttemptTrace,
+} from '../types/game.js';
 import { NimClient } from './nim-api.js';
 import {
   buildSystemPrompt,
@@ -12,13 +21,18 @@ import {
 } from './response-parser.js';
 import { LLMAdapter } from '../engine/turn-manager.js';
 import { LocalPolicyLLMAdapter } from '../baselines/index.js';
+import {
+  assertWithinContextBudget,
+  DecisionContextMetadata,
+  resolveContextBudgetTokens,
+} from './context-budget.js';
 
 interface VisibleState {
   hand: Card[];
   currentRank: Rank;
   pileSize: number;
   otherPlayersCounts: Record<string, number>;
-  recentTurns: Turn[];
+  recentTurns: PublicTurnHistoryEntry[];
 }
 
 interface ChatMessage {
@@ -47,6 +61,7 @@ type ParsedDecision = {
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
   tokenUsageIncomplete?: boolean;
+  decisionTrace?: DecisionTrace;
 };
 
 type ResponseParser<T extends ParsedDecision> = (response: string) => T | null;
@@ -57,8 +72,20 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const PLAY_MAX_TOKENS = parsePositiveInt(process.env.LLM_PLAY_MAX_TOKENS, 8192);
-const CHALLENGE_MAX_TOKENS = parsePositiveInt(process.env.LLM_CHALLENGE_MAX_TOKENS, 4096);
+export const PLAY_MAX_TOKENS = parsePositiveInt(process.env.LLM_PLAY_MAX_TOKENS, 8192);
+export const CHALLENGE_MAX_TOKENS = parsePositiveInt(process.env.LLM_CHALLENGE_MAX_TOKENS, 4096);
+
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+const MOCK_MIN_DELAY_MS = parseNonNegativeInt(process.env.MOCK_LLM_MIN_DELAY_MS, 1000);
+const MOCK_MAX_DELAY_MS = Math.max(
+  MOCK_MIN_DELAY_MS,
+  parseNonNegativeInt(process.env.MOCK_LLM_MAX_DELAY_MS, 2000)
+);
 
 function combineTokenUsage(usages: Array<TokenUsage | undefined>): TokenUsage | undefined {
   const present = usages.filter((usage): usage is TokenUsage => Boolean(usage));
@@ -74,13 +101,30 @@ function combineTokenUsage(usages: Array<TokenUsage | undefined>): TokenUsage | 
   );
 }
 
+function parsedDecisionPayload(response: ParsedDecision): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(response)) {
+    if (
+      key !== 'responseTimeMs' &&
+      key !== 'tokenUsage' &&
+      key !== 'tokenUsageIncomplete' &&
+      key !== 'decisionTrace'
+    ) {
+      payload[key] = value;
+    }
+  }
+  return payload;
+}
+
 class BaseLLMAdapter implements LLMAdapter {
   private client: OpenAICompatibleClient;
   private maxRetries: number;
+  private contextBudgetTokens?: number;
 
-  constructor(client: OpenAICompatibleClient, maxRetries: number = 4) {
+  constructor(client: OpenAICompatibleClient, maxRetries: number = 4, contextBudgetTokens?: number) {
     this.client = client;
     this.maxRetries = maxRetries;
+    this.contextBudgetTokens = contextBudgetTokens;
   }
 
   async getPlayDecision(
@@ -104,8 +148,16 @@ class BaseLLMAdapter implements LLMAdapter {
       systemPrompt,
       userPrompt,
       parsePlayResponse,
+      {
+        decisionType: 'play',
+        playerId,
+        modelId,
+        actingPlayerId: playerId,
+        actingModelId: modelId,
+      },
       onToken,
-      PLAY_MAX_TOKENS
+      PLAY_MAX_TOKENS,
+      visibleState
     );
   }
 
@@ -113,7 +165,13 @@ class BaseLLMAdapter implements LLMAdapter {
     challengerId: string,
     modelId: string,
     visibleState: VisibleState,
-    lastPlay: { playerId: string; claimedCount: number; claimedRank: string },
+    lastPlay: {
+      playerId: string;
+      claimedCount: number;
+      claimedRank: string;
+      actingPlayerId?: string;
+      decisionOrder?: number;
+    },
     experimentId: number,
     onToken?: (text: string) => void
   ): Promise<ChallengeResponse> {
@@ -132,8 +190,20 @@ class BaseLLMAdapter implements LLMAdapter {
       systemPrompt,
       userPrompt,
       parseChallengeResponse,
+      {
+        decisionType: 'challenge',
+        playerId: challengerId,
+        modelId,
+        actingPlayerId: lastPlay.actingPlayerId,
+        actingModelId: lastPlay.playerId,
+        decisionOrder: lastPlay.decisionOrder,
+      },
       onToken,
-      CHALLENGE_MAX_TOKENS
+      CHALLENGE_MAX_TOKENS,
+      {
+        ...visibleState,
+        lastPlay,
+      }
     );
   }
 
@@ -142,11 +212,22 @@ class BaseLLMAdapter implements LLMAdapter {
     systemPrompt: string,
     userPrompt: string,
     parser: ResponseParser<T>,
+    decisionMetadata: DecisionContextMetadata,
     onToken?: (text: string) => void,
-    maxTokens: number = PLAY_MAX_TOKENS
+    maxTokens: number = PLAY_MAX_TOKENS,
+    visibleContext: unknown = {}
   ): Promise<T> {
     const usageParts: Array<TokenUsage | undefined> = [];
     let responseTimeMs = 0;
+    const attempts: DecisionAttemptTrace[] = [];
+    const promptBudgetTokens = resolveContextBudgetTokens('nim', modelId, this.contextBudgetTokens);
+    const contextDetails = assertWithinContextBudget(
+      decisionMetadata,
+      systemPrompt,
+      userPrompt,
+      visibleContext,
+      promptBudgetTokens
+    );
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -161,16 +242,42 @@ class BaseLLMAdapter implements LLMAdapter {
     let lastResponse = result.content;
     let lastTruncated = result.finishReason === 'length';
     const parsed = parser(result.content);
+    attempts.push({
+      attempt: 0,
+      prompt: userPrompt,
+      rawResponse: result.content,
+      finishReason: result.finishReason,
+      parsed: Boolean(parsed),
+      wasRetry: false,
+      wasTruncated: lastTruncated,
+      responseTimeMs: result.responseTimeMs,
+      tokenUsage: result.tokenUsage,
+    });
 
-    if (parsed) {
+    if (parsed && !lastTruncated) {
       parsed.responseTimeMs = responseTimeMs;
       parsed.tokenUsage = combineTokenUsage(usageParts);
       parsed.tokenUsageIncomplete = usageParts.some((usage) => !usage);
+      parsed.decisionTrace = {
+        systemPrompt,
+        userPrompt,
+        visibleContext,
+        visibleContextHash: contextDetails.visibleContextHash,
+        maxTokens,
+        estimatedPromptTokens: contextDetails.estimatedPromptTokens,
+        promptBudgetTokens: contextDetails.promptBudgetTokens,
+        contextLimitExceeded: false,
+        rawResponse: result.content,
+        parsedResponse: parsedDecisionPayload(parsed),
+        attempts,
+        retryCount: 0,
+        finishReason: result.finishReason,
+      };
       return parsed;
     }
 
     if (lastTruncated) {
-      console.warn(`[${modelId}] Response truncated, retrying with brevity hint...`);
+      console.warn(`[${modelId}] Response truncated, retrying with JSON-only brevity hint...`);
     }
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
@@ -185,11 +292,37 @@ class BaseLLMAdapter implements LLMAdapter {
       lastResponse = retryResult.content;
       lastTruncated = retryResult.finishReason === 'length';
       const retryParsed = parser(retryResult.content);
+      attempts.push({
+        attempt,
+        prompt: retryPrompt,
+        rawResponse: retryResult.content,
+        finishReason: retryResult.finishReason,
+        parsed: Boolean(retryParsed),
+        wasRetry: true,
+        wasTruncated: lastTruncated,
+        responseTimeMs: retryResult.responseTimeMs,
+        tokenUsage: retryResult.tokenUsage,
+      });
 
-      if (retryParsed) {
+      if (retryParsed && !lastTruncated) {
         retryParsed.responseTimeMs = responseTimeMs;
         retryParsed.tokenUsage = combineTokenUsage(usageParts);
         retryParsed.tokenUsageIncomplete = usageParts.some((usage) => !usage);
+        retryParsed.decisionTrace = {
+          systemPrompt,
+          userPrompt,
+          visibleContext,
+          visibleContextHash: contextDetails.visibleContextHash,
+          maxTokens,
+          estimatedPromptTokens: contextDetails.estimatedPromptTokens,
+          promptBudgetTokens: contextDetails.promptBudgetTokens,
+          contextLimitExceeded: false,
+          rawResponse: retryResult.content,
+          parsedResponse: parsedDecisionPayload(retryParsed),
+          attempts,
+          retryCount: attempt,
+          finishReason: retryResult.finishReason,
+        };
         return retryParsed;
       }
 
@@ -203,8 +336,8 @@ class BaseLLMAdapter implements LLMAdapter {
 }
 
 export class NimLLMAdapter extends BaseLLMAdapter {
-  constructor(client: NimClient, maxRetries: number = 4) {
-    super(client, maxRetries);
+  constructor(client: NimClient, maxRetries: number = 4, contextBudgetTokens?: number) {
+    super(client, maxRetries, contextBudgetTokens);
   }
 }
 
@@ -221,7 +354,9 @@ export class MockLLMAdapter implements LLMAdapter {
   }
 
   private async randomDelay(minMs: number, maxMs: number): Promise<void> {
-    const delay = minMs + Math.random() * (maxMs - minMs);
+    const effectiveMin = Math.min(minMs, MOCK_MIN_DELAY_MS);
+    const effectiveMax = Math.min(maxMs, MOCK_MAX_DELAY_MS);
+    const delay = effectiveMin + Math.random() * Math.max(0, effectiveMax - effectiveMin);
     await new Promise(r => setTimeout(r, delay));
   }
 

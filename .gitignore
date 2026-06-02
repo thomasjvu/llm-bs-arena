@@ -4,6 +4,7 @@ node_modules/
 
 # Build output
 dist/
+.wrangler/
 *.js.map
 paper/arxiv/build/
 paper/arxiv/submission/bs-bench-arxiv/

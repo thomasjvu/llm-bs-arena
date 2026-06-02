@@ -1,6 +1,7 @@
-import { ExperimentId, Rank, RunMetadata } from '../types/game.js';
+import { ExperimentId, GameState, Rank, RunMetadata } from '../types/game.js';
 
 export type EnvPhase = 'play' | 'challenge' | 'finished';
+export type EnvTerminationReason = NonNullable<GameState['terminationReason']>;
 
 export interface BullshitEnvConfig {
   experimentId: ExperimentId;
@@ -68,7 +69,7 @@ export interface PublicState {
   done: boolean;
   winnerId?: string | null;
   winnerModelId?: string | null;
-  terminationReason?: 'winner' | 'turn_cap';
+  terminationReason?: EnvTerminationReason;
 }
 
 export interface OtherPlayerObservation {
@@ -116,7 +117,7 @@ export interface EnvEvent {
   turn?: TurnSummary;
   winnerId?: string | null;
   winnerModelId?: string | null;
-  terminationReason?: 'winner' | 'turn_cap';
+  terminationReason?: EnvTerminationReason;
 }
 
 export interface ResetResult {
@@ -133,13 +134,13 @@ export interface StepResult {
   done: boolean;
   winnerId?: string | null;
   winnerModelId?: string | null;
-  terminationReason?: 'winner' | 'turn_cap';
+  terminationReason?: EnvTerminationReason;
 }
 
 export interface EnvResult {
   winnerId: string | null;
   winnerModelId: string | null;
-  terminationReason: 'winner' | 'turn_cap' | null;
+  terminationReason: EnvTerminationReason | null;
   totalTurns: number;
   finalHandSizes: Record<string, number>;
   seed?: number;

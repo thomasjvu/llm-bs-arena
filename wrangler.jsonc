@@ -1,0 +1,48 @@
+{
+  "name": "llm-bullshit",
+  "main": "src/cloudflare-worker.ts",
+  "workers_dev": true,
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "routes": [
+    {
+      "pattern": "bs-bench.thomasjvu.com",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "LIVE_NIM_ENABLED": "true"
+  },
+  "assets": {
+    "directory": "./ui",
+    "binding": "ASSETS",
+    "html_handling": "none",
+    "not_found_handling": "none",
+    "run_worker_first": [
+      "/api/*",
+      "/research",
+      "/stats.html"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GAME_SESSIONS",
+        "class_name": "GameSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "GameSession"
+      ]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

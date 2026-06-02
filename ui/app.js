@@ -25,6 +25,7 @@ const app = {
   humanName: FIXED_HUMAN_NAME,
   apiKey: '',
   serverApiKeyAvailable: false,
+  liveProviderAvailable: true,
   launcherOpen: !preferences.mode,
   launcherBusy: false,
   launcherError: '',
@@ -347,11 +348,16 @@ async function hydrateRuntimeStatus() {
   try {
     const status = await fetchRuntimeStatus();
     app.serverApiKeyAvailable = status?.hasServerApiKey === true;
+    app.liveProviderAvailable = status?.liveProviderAvailable !== false;
+    if (!app.liveProviderAvailable && app.provider === 'nim') {
+      app.provider = 'mock';
+    }
 
     if (
       preferences.mode == null &&
       preferences.provider === 'mock' &&
       status?.defaultProvider === 'nim' &&
+      app.liveProviderAvailable &&
       !app.currentGameId
     ) {
       app.provider = 'nim';
@@ -519,7 +525,7 @@ function normalizeState(state) {
 
 function updateMode(mode) {
   app.launcherMode = mode === 'interactive' ? 'interactive' : 'spectator';
-  app.provider = app.launcherMode === 'interactive' ? 'nim' : 'mock';
+  app.provider = app.launcherMode === 'interactive' && app.liveProviderAvailable ? 'nim' : 'mock';
   persistPreferences();
   app.launcherError = '';
   render();
@@ -714,6 +720,7 @@ async function stepOnce() {
 
   try {
     const state = await stepGame(app.currentGameId, {
+      apiKey: app.provider === 'nim' ? app.apiKey.trim() : '',
       onThinking(event) {
         app.ephemeralThinkingPlayerId = event.playerId || null;
         render();

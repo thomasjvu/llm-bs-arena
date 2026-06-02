@@ -2,15 +2,18 @@ import { LLMAdapter } from '../engine/turn-manager.js';
 import {
   NimLLMAdapter,
   MockLLMAdapter,
+  PLAY_MAX_TOKENS,
+  CHALLENGE_MAX_TOKENS,
 } from './llm-adapter.js';
 import { LocalPolicyLLMAdapter, isBaselineModelId } from '../baselines/index.js';
 import { createNimClient } from './nim-api.js';
 import { RunMetadata } from '../types/game.js';
 import { getPromptHash, PROMPT_VERSION } from './prompt-builder.js';
 import { APIConnectionError as NimAPIConnectionError } from './nim-api.js';
+import { resolveRunContextBudgetTokens } from './context-budget.js';
 
 export type Provider = 'nim' | 'mock';
-export const LOG_SCHEMA_VERSION = 3;
+export const LOG_SCHEMA_VERSION = 4;
 export const SCRIPTED_BASELINE_PREFIX = 'baseline/';
 
 export interface ProviderRuntimeConfig {
@@ -201,6 +204,9 @@ export function buildRunMetadata(
     providerBaseUrl: getProviderBaseUrl(provider, runtimeConfig),
     promptVersion: PROMPT_VERSION,
     promptHash: getPromptHash(),
+    contextBudgetTokens: resolveRunContextBudgetTokens(provider, modelIds),
+    playMaxTokens: PLAY_MAX_TOKENS,
+    challengeMaxTokens: CHALLENGE_MAX_TOKENS,
   };
 }
 

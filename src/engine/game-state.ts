@@ -1,4 +1,14 @@
-import { Card, GameState, Player, Rank, Turn, ExperimentId, RANKS, PlayerSeatConfig } from '../types/game.js';
+import {
+  Card,
+  GameState,
+  Player,
+  Rank,
+  Turn,
+  ExperimentId,
+  RANKS,
+  PlayerSeatConfig,
+  PublicTurnHistoryEntry,
+} from '../types/game.js';
 import { createDeck, shuffleDeck, dealCards } from './deck.js';
 import { MAX_CARDS_PER_PLAY, MIN_CARDS_PER_PLAY } from './play-rules.js';
 
@@ -142,6 +152,7 @@ export function processPlay(
   const turn: Turn = {
     turnNumber: state.turns.length + 1,
     playerId,
+    modelId: player.modelId,
     claimedRank: state.currentRank,
     claimedCount,
     actualCards,
@@ -175,6 +186,7 @@ export function processChallenge(
 
   turn.challenged = true;
   turn.challengerId = challengerId;
+  turn.challengerModelId = challenger.modelId;
   turn.challengeReasoning = challengeReasoning;
 
   turn.challengeCorrect = turn.wasLie;
@@ -187,6 +199,7 @@ export function processChallenge(
 
   state.pile = [];
 
+  turn.pileAfterTurn = state.pile.length;
   turn.handSizesAfterTurn = Object.fromEntries(state.players.map((p) => [p.id, p.hand.length]));
 }
 
@@ -231,7 +244,49 @@ export function getVisibleState(state: GameState, playerId: string): {
   currentRank: Rank;
   pileSize: number;
   otherPlayersCounts: Record<string, number>;
-  recentTurns: Turn[];
+  recentTurns: PublicTurnHistoryEntry[];
+} {
+  return getVisibleStateWithPileSize(state, playerId, state.pile.length);
+}
+
+export function summarizePublicTurn(state: GameState, turn: Turn): PublicTurnHistoryEntry {
+  const modelByPlayerId = Object.fromEntries(state.players.map((player) => [player.id, player.modelId]));
+  const handCountsByModelAfterTurn = Object.fromEntries(
+    Object.entries(turn.handSizesAfterTurn).map(([playerId, handSize]) => [
+      modelByPlayerId[playerId] || playerId,
+      handSize,
+    ])
+  );
+
+  return {
+    turnNumber: turn.turnNumber,
+    playerId: turn.playerId,
+    modelId: turn.modelId || modelByPlayerId[turn.playerId],
+    claimedRank: turn.claimedRank,
+    claimedCount: turn.claimedCount,
+    challengeOfferedTo: [...(turn.challengeOfferedTo || [])],
+    challengeDecisions: turn.challengeDecisions?.map((decision) => ({
+      playerId: decision.playerId,
+      modelId: decision.modelId || modelByPlayerId[decision.playerId],
+      challenge: decision.challenge,
+      decisionOrder: decision.decisionOrder,
+    })),
+    challenged: turn.challenged,
+    challengerId: turn.challengerId,
+    challengerModelId: turn.challengerModelId || (turn.challengerId ? modelByPlayerId[turn.challengerId] : undefined),
+    challengeCorrect: turn.challengeCorrect,
+    pileAfterTurn: turn.pileAfterTurn,
+    handSizesAfterTurn: { ...turn.handSizesAfterTurn },
+    handCountsByModelAfterTurn,
+  };
+}
+
+export function getVisibleStateWithPileSize(state: GameState, playerId: string, pileSize: number): {
+  hand: Card[];
+  currentRank: Rank;
+  pileSize: number;
+  otherPlayersCounts: Record<string, number>;
+  recentTurns: PublicTurnHistoryEntry[];
 } {
   const player = state.players.find((p) => p.id === playerId);
   if (!player) {
@@ -245,13 +300,13 @@ export function getVisibleState(state: GameState, playerId: string): {
     }
   }
 
-  const recentTurns = state.turns.slice(-5);
+  const publicHistory = state.turns.map((turn) => summarizePublicTurn(state, turn));
 
   return {
     hand: player.hand,
     currentRank: state.currentRank,
-    pileSize: state.pile.length,
+    pileSize,
     otherPlayersCounts,
-    recentTurns,
+    recentTurns: publicHistory,
   };
 }

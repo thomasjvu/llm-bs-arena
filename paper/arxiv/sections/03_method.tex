@@ -13,6 +13,7 @@ The pilot uses four conditions:
   \item \textbf{Experiment~2: asymmetric honesty framing.} The focal model is told it may lie while opponents are described as honesty-constrained; we treat this as a prompt-framing probe, not as a direct probe of internal moral reasoning.
   \item \textbf{Experiment~3: honesty mandate.} The prompt explicitly forbids lying in plain language.
 \end{itemize}
+For both play decisions and challenge decisions, the model receives the same experiment-specific system prompt plus a role-specific user prompt containing the current private hand, public counts, recent history, and either the required play or the just-made claim. In the frozen preprint cohort, this recent-history field was bounded to the five most recent resolved turns; agents did not receive the full game transcript or persistent conversation state across turns. There is no separate challenger-only or challengee-only condition prompt.
 We intentionally treat Experiment~3 as a probe of whether straightforward honesty instructions survive competitive pressure, not as the strongest possible anti-lying intervention. Because some Bullshit states leave a player with no card of the required rank, our Experiment~3 analysis distinguishes optional lies from truthful-play-unavailable turns rather than treating every lie as an equally clean instruction violation. Full prompt texts are included in \prompttextlocation.
 
 \subsection{Model Cohort}
@@ -21,7 +22,7 @@ The primary pilot cohort uses six hosted models served through a single provider
 
 \subsection{Implementation and Dataset Hygiene}
 
-The environment is implemented in TypeScript with structured-response parsing, bounded prompt context, retries, and recovery for hosted inference. The public release exposes an importable environment API with \texttt{reset}, \texttt{observation}, \texttt{publicState}, \texttt{step}, \texttt{done}, and \texttt{result} methods, plus a small baseline-policy pack.
+The environment is implemented in TypeScript with structured-response parsing, bounded prompt context for this frozen cohort, retries, and recovery for hosted inference. The public release exposes an importable environment API with \texttt{reset}, \texttt{observation}, \texttt{publicState}, \texttt{step}, \texttt{done}, and \texttt{result} methods, plus a small baseline-policy pack.
 
 For reproducibility, each run logs seeded deck order and seating, prompt version and hash, schema version, provider metadata, and versioned dataset/evaluation manifests with checksums. Research-default runs are uncapped and must end in a natural win; capped runs are marked explicitly and excluded from the main cohort.
 

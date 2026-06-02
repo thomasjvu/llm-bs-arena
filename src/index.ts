@@ -5,7 +5,13 @@ import { Command, InvalidArgumentError } from 'commander';
 import { TournamentRunner } from './tournament/tournament-runner.js';
 import { createTournamentConfig, generateMatchups, combinations } from './tournament/matchup-generator.js';
 import { createNimClient } from './llm/nim-api.js';
-import { GameLogger, formatGameSummary, selectComparableGameCohort, buildCohortManifest } from './logging/game-logger.js';
+import {
+  GameLogger,
+  formatGameSummary,
+  selectComparableGameCohort,
+  buildCohortManifest,
+  isBenchmarkCompleteGame,
+} from './logging/game-logger.js';
 import { CSVExporter } from './logging/csv-exporter.js';
 import { calculateAllStats, generateSummaryReport } from './metrics/player-stats.js';
 import { MODELS, BASELINE_MODELS, ExperimentId } from './types/game.js';
@@ -15,6 +21,7 @@ import { buildRunMetadata, createAdapter, detectProvider, Provider } from './llm
 import { assertOutputCohortCompatible } from './tournament/output-guard.js';
 import { buildBenchmarkRelease } from './release/build-release.js';
 import { BENCHMARK_NAME, BENCHMARK_VERSION, DATASET_VERSION, DEFAULT_RELEASE_DIR } from './release/version.js';
+import { auditV3Logs } from './logging/v3-log-audit.js';
 
 const program = new Command();
 
@@ -79,6 +86,8 @@ program
   .option('-t, --max-turns <number>', 'Optional safety cap; omit or pass "none" for uncapped play', parseMaxTurnsOption)
   .option('--matchup-start <number>', 'First matchup index to run (inclusive)', parseIntegerOption)
   .option('--matchup-end <number>', 'Last matchup index to run (inclusive)', parseIntegerOption)
+  .option('--game-start <number>', 'First global game slot to run (inclusive)', parseIntegerOption)
+  .option('--game-end <number>', 'Last global game slot to run (inclusive)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
   .option('-p, --provider <provider>', 'LLM provider: nim or mock')
   .option('--allow-mixed-output', 'Allow writing into an output directory that already contains a different schema/provider/prompt cohort')
@@ -98,6 +107,9 @@ program
     if (options.matchupStart !== undefined || options.matchupEnd !== undefined) {
       console.log(`Matchup shard: ${options.matchupStart ?? 0}-${options.matchupEnd ?? 'end'}`);
     }
+    if (options.gameStart !== undefined || options.gameEnd !== undefined) {
+      console.log(`Game-slot shard: ${options.gameStart ?? 0}-${options.gameEnd ?? 'end'}`);
+    }
     console.log(`Output directory: ${options.output}`);
 
     const config = createTournamentConfig(
@@ -107,7 +119,9 @@ program
       options.maxTurns,
       options.matchupStart,
       options.matchupEnd,
-      models
+      models,
+      options.gameStart,
+      options.gameEnd
     );
 
     const provider = options.provider || detectProvider();
@@ -183,8 +197,9 @@ program
     const logger = new GameLogger(`${options.output}/games`);
     const rawGames = logger.loadAllLogs(options.experiment);
     const selection = options.includeMixed ? null : selectComparableGameCohort(rawGames);
-    const games = (selection ? selection.games : rawGames).filter((game) => game.terminationReason !== 'turn_cap');
-    const excludedTurnCapGames = (selection ? selection.games : rawGames).length - games.length;
+    const selectedGames = selection ? selection.games : rawGames;
+    const games = selectedGames.filter(isBenchmarkCompleteGame);
+    const excludedInvalidGames = selectedGames.length - games.length;
 
     if (games.length === 0) {
       console.log('No games found to analyze');
@@ -201,8 +216,8 @@ program
         console.log(`Excluded ${selection.excludedGames} mixed or legacy games. Pass --include-mixed to override.`);
       }
     }
-    if (excludedTurnCapGames > 0) {
-      console.log(`Excluded ${excludedTurnCapGames} turn-cap games from analysis.`);
+    if (excludedInvalidGames > 0) {
+      console.log(`Excluded ${excludedInvalidGames} incomplete or invalid games from analysis.`);
     }
 
     console.log(`Analyzing ${games.length} games`);
@@ -234,10 +249,12 @@ program
       const summaryPath = exporter.exportGameSummary(games);
       const playerGamePath = exporter.exportPlayerGameStats(games);
       const challengeDecisionsPath = exporter.exportChallengeDecisions(games);
+      const decisionLogPath = exporter.exportDecisionLog(games);
       console.log(`Turns exported to: ${turnsPath}`);
       console.log(`Summary exported to: ${summaryPath}`);
       console.log(`Player-game stats exported to: ${playerGamePath}`);
       console.log(`Challenge decisions exported to: ${challengeDecisionsPath}`);
+      console.log(`Decision log exported to: ${decisionLogPath}`);
     }
   });
 
@@ -257,9 +274,9 @@ program
     const rawCombined = [...rawExp1Games, ...rawExp2Games];
     const selection = options.includeMixed ? null : selectComparableGameCohort(rawCombined);
     const exp1Games = (selection ? selection.games.filter((game) => game.experimentId === options.exp1) : rawExp1Games)
-      .filter((game) => game.terminationReason !== 'turn_cap');
+      .filter(isBenchmarkCompleteGame);
     const exp2Games = (selection ? selection.games.filter((game) => game.experimentId === options.exp2) : rawExp2Games)
-      .filter((game) => game.terminationReason !== 'turn_cap');
+      .filter(isBenchmarkCompleteGame);
 
     if (exp1Games.length === 0 || exp2Games.length === 0) {
       console.log('Need games from both experiments to compare');
@@ -413,6 +430,47 @@ program
     console.log(`Included games: ${manifest.includedGames.length}`);
     console.log(`Excluded for mixed cohort: ${manifest.excludedGamesByReason.mixedCohort.length}`);
     console.log(`Excluded for turn cap: ${manifest.excludedGamesByReason.turnCap.length}`);
+    console.log(`Excluded for context limit: ${manifest.excludedGamesByReason.contextLimit.length}`);
+    console.log(`Excluded for provider error: ${manifest.excludedGamesByReason.providerError.length}`);
+    console.log(`Excluded for parse failure: ${manifest.excludedGamesByReason.parseFailure.length}`);
+    console.log(`Excluded as incomplete: ${manifest.excludedGamesByReason.incomplete.length}`);
+  });
+
+program
+  .command('audit-v3')
+  .description('Audit schema-v4 full-history logs before v3 analysis or release')
+  .option('-o, --output <dir>', 'Logs root containing games/ and optionally csv/', 'logs')
+  .option('--expected-schema <number>', 'Expected log schema version', parseIntegerOption, 4)
+  .option('--expected-prompt-version <version>', 'Expected prompt version')
+  .option('--expected-prompt-hash <hash>', 'Expected prompt hash')
+  .option('--require-csv', 'Require csv/decision_log.csv to exist')
+  .action(async (options) => {
+    const logger = new GameLogger(`${options.output}/games`);
+    const logs = logger.loadAllLogs();
+    const result = auditV3Logs(logs, {
+      logsDir: options.output,
+      expectedSchemaVersion: options.expectedSchema,
+      expectedPromptVersion: options.expectedPromptVersion,
+      expectedPromptHash: options.expectedPromptHash,
+      requireCsv: options.requireCsv,
+    });
+
+    console.log(`Checked games: ${result.checkedGames}`);
+    console.log(`Winner-terminated games: ${result.completeGames}`);
+    console.log(`Incomplete/invalid games: ${result.invalidGames}`);
+    console.log(`Errors: ${result.errors.length}`);
+    console.log(`Warnings: ${result.warnings.length}`);
+
+    for (const warning of result.warnings) {
+      console.warn(`WARN ${warning}`);
+    }
+    for (const error of result.errors) {
+      console.error(`ERROR ${error}`);
+    }
+
+    if (result.errors.length > 0) {
+      process.exitCode = 1;
+    }
   });
 
 program

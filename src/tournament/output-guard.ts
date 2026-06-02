@@ -27,7 +27,10 @@ export function assertOutputCohortCompatible(
     log.metadata?.logSchemaVersion !== runMetadata.logSchemaVersion ||
     log.metadata?.provider !== runMetadata.provider ||
     log.metadata?.promptVersion !== runMetadata.promptVersion ||
-    log.metadata?.promptHash !== runMetadata.promptHash
+    log.metadata?.promptHash !== runMetadata.promptHash ||
+    log.metadata?.contextBudgetTokens !== runMetadata.contextBudgetTokens ||
+    log.metadata?.playMaxTokens !== runMetadata.playMaxTokens ||
+    log.metadata?.challengeMaxTokens !== runMetadata.challengeMaxTokens
   );
 
   if (incompatible.length === 0) {
@@ -36,7 +39,7 @@ export function assertOutputCohortCompatible(
 
   throw new Error(
     `Output directory "${outputDir}" already contains ${incompatible.length} game log(s) from a different ` +
-    'schema/provider/prompt cohort. Use a fresh output directory such as logs-v2-smoke or logs-v2, ' +
+    'schema/provider/prompt/context-budget/token-cap cohort. Use a fresh output directory such as logs-v3-smoke or logs-v3, ' +
     'or pass --allow-mixed-output if you intentionally want to mix cohorts.'
   );
 }

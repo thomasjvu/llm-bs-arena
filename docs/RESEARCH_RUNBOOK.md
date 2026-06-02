@@ -61,6 +61,90 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
    ```
    - For parallel execution, shard by matchup index (0-4, 5-9, 10-14)
 
+### V3 Full-History Rerun Shards
+
+The v3 helper shards by global game slot, not by individual game. With the default roster:
+
+- `C(6,4) = 15` matchups per experiment
+- `10` games per matchup
+- `150` games per experiment
+- `4` experiments
+- `600` games total
+
+Each `npm run v3:shard -- <experiment> <shard-index>` command runs one quarter of one experiment:
+
+| Command | Experiment | Global game slots | Games |
+| --- | ---: | ---: | ---: |
+| `npm run v3:shard -- 0 0` | 0 | `0-37` | 38 |
+| `npm run v3:shard -- 0 1` | 0 | `38-75` | 38 |
+| `npm run v3:shard -- 0 2` | 0 | `76-112` | 37 |
+| `npm run v3:shard -- 0 3` | 0 | `113-149` | 37 |
+
+The same shard split applies to experiments `1`, `2`, and `3`. Therefore:
+
+```text
+4 shard commands per experiment * 4 experiments = 16 shard commands
+150 games per experiment * 4 experiments = 600 games
+```
+
+Run a build once as a paid-run preflight. The shard helper uses the current TypeScript source through `tsx` when available, so stale `dist/` output will not affect shard commands.
+
+```bash
+npm run build
+```
+
+Optional per-experiment API key files keep terminal commands short:
+
+```bash
+printf 'NVIDIA_API_KEY=EXP0_KEY_HERE\n' > .env.v3-exp0.local
+printf 'NVIDIA_API_KEY=EXP1_KEY_HERE\n' > .env.v3-exp1.local
+printf 'NVIDIA_API_KEY=EXP2_KEY_HERE\n' > .env.v3-exp2.local
+printf 'NVIDIA_API_KEY=EXP3_KEY_HERE\n' > .env.v3-exp3.local
+```
+
+Launch four tabs per experiment terminal:
+
+```bash
+# Experiment 0
+npm run v3:shard -- 0 0
+npm run v3:shard -- 0 1
+npm run v3:shard -- 0 2
+npm run v3:shard -- 0 3
+
+# Experiment 1
+npm run v3:shard -- 1 0
+npm run v3:shard -- 1 1
+npm run v3:shard -- 1 2
+npm run v3:shard -- 1 3
+
+# Experiment 2
+npm run v3:shard -- 2 0
+npm run v3:shard -- 2 1
+npm run v3:shard -- 2 2
+npm run v3:shard -- 2 3
+
+# Experiment 3
+npm run v3:shard -- 3 0
+npm run v3:shard -- 3 1
+npm run v3:shard -- 3 2
+npm run v3:shard -- 3 3
+```
+
+All shards write into `logs-v3`, so there is no manual merge step. When all 16 commands finish, finalize once:
+
+```bash
+npm run v3:finalize -- logs-v3
+```
+
+The v3 shard helper defaults to:
+
+- `LLM_CONTEXT_BUDGET_TOKENS=120000`
+- `LLM_PLAY_MAX_TOKENS=2048`
+- `LLM_CHALLENGE_MAX_TOKENS=1024`
+- `TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT=0`
+
+The play/challenge token settings are generated-token completion caps, not context-window limits. A value of `0` for `TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT` means unlimited retries for transient provider failures. Fatal auth/model-access/configuration errors still abort the shard immediately because waiting will not repair them.
+
 ## Phase 3: Analysis
 1. Generate analysis outputs:
    ```bash
@@ -74,6 +158,7 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
    - `logs-v2/csv/game_summary.csv`
    - `logs-v2/csv/all_turns.csv`
    - `logs-v2/csv/challenge_decisions.csv`
+   - `logs-v2/csv/decision_log.csv` for schema-v4 full-history runs
    - `results/figures/*.png`
    - `results/research_summary.md`
 2. Verify success:

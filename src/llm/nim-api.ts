@@ -57,9 +57,9 @@ export class APIConnectionError extends Error {
   }
 }
 
-class NonRetryableAPIError extends Error {
-  constructor(message: string) {
-    super(message);
+export class NonRetryableAPIError extends Error {
+  constructor(public readonly status: number, public readonly shortError: string) {
+    super(`API error ${status}: ${shortError}`);
     this.name = 'NonRetryableAPIError';
   }
 }
@@ -186,7 +186,7 @@ export class NimClient {
           }
 
           if (this.isNonRetryableStatus(response.status)) {
-            throw new NonRetryableAPIError(`API error ${response.status}: ${shortError}`);
+            throw new NonRetryableAPIError(response.status, shortError);
           }
 
           throw new Error(`API error ${response.status}: ${shortError}`);
@@ -325,7 +325,7 @@ export class NimClient {
           }
 
           if (this.isNonRetryableStatus(response.status)) {
-            throw new NonRetryableAPIError(`API error ${response.status}: ${shortError}`);
+            throw new NonRetryableAPIError(response.status, shortError);
           }
 
           throw new Error(`API error ${response.status}: ${shortError}`);

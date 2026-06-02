@@ -21,6 +21,77 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface DecisionAttemptTrace {
+  attempt: number;
+  prompt: string;
+  rawResponse: string;
+  finishReason: string;
+  parsed: boolean;
+  wasRetry: boolean;
+  wasTruncated: boolean;
+  responseTimeMs: number;
+  tokenUsage?: TokenUsage;
+}
+
+export interface DecisionTrace {
+  systemPrompt: string;
+  userPrompt: string;
+  visibleContext: unknown;
+  visibleContextHash: string;
+  maxTokens?: number;
+  estimatedPromptTokens?: number;
+  promptBudgetTokens?: number;
+  contextLimitExceeded?: boolean;
+  rawResponse: string;
+  parsedResponse: unknown;
+  attempts: DecisionAttemptTrace[];
+  retryCount: number;
+  finishReason: string;
+}
+
+export interface InvalidDecisionRecord {
+  terminationReason: 'context_limit' | 'provider_error' | 'parse_failure';
+  decisionType: 'play' | 'challenge';
+  turnNumber: number;
+  playerId: string;
+  modelId: string;
+  actingPlayerId?: string;
+  actingModelId?: string;
+  decisionOrder?: number;
+  systemPrompt?: string;
+  userPrompt?: string;
+  visibleContext?: unknown;
+  visibleContextHash?: string;
+  estimatedPromptTokens?: number;
+  promptBudgetTokens?: number;
+  contextLimitExceeded?: boolean;
+  errorMessage: string;
+}
+
+export interface PublicChallengeHistoryDecision {
+  playerId: string;
+  modelId?: string;
+  challenge: boolean;
+  decisionOrder?: number;
+}
+
+export interface PublicTurnHistoryEntry {
+  turnNumber: number;
+  playerId: string;
+  modelId?: string;
+  claimedRank: Rank;
+  claimedCount: number;
+  challengeOfferedTo: string[];
+  challengeDecisions?: PublicChallengeHistoryDecision[];
+  challenged: boolean;
+  challengerId?: string;
+  challengerModelId?: string;
+  challengeCorrect?: boolean;
+  pileAfterTurn: number;
+  handSizesAfterTurn: Record<string, number>;
+  handCountsByModelAfterTurn: Record<string, number>;
+}
+
 export interface ChallengeDecision {
   playerId: string;
   modelId?: string;
@@ -30,6 +101,7 @@ export interface ChallengeDecision {
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
   tokenUsageIncomplete?: boolean;
+  decisionTrace?: DecisionTrace;
 }
 
 export interface RunMetadata {
@@ -38,11 +110,15 @@ export interface RunMetadata {
   providerBaseUrl?: string;
   promptVersion: string;
   promptHash: string;
+  contextBudgetTokens?: number;
+  playMaxTokens?: number;
+  challengeMaxTokens?: number;
 }
 
 export interface Turn {
   turnNumber: number;
   playerId: string;
+  modelId?: string;
   claimedRank: Rank;
   claimedCount: number;
   actualCards: Card[];
@@ -51,6 +127,7 @@ export interface Turn {
   challengeDecisions?: ChallengeDecision[];
   challenged: boolean;
   challengerId?: string;
+  challengerModelId?: string;
   challengeCorrect?: boolean;
   reasoning: string;
   challengeReasoning?: string;
@@ -59,6 +136,7 @@ export interface Turn {
   playResponseTimeMs?: number;
   playTokenUsage?: TokenUsage;
   playTokenUsageIncomplete?: boolean;
+  playDecisionTrace?: DecisionTrace;
   challengeResponseTimeMs?: number;
   challengeTokenUsage?: TokenUsage;
   challengeTokenUsageIncomplete?: boolean;
@@ -86,7 +164,8 @@ export interface GameState {
   pile: Card[];
   turns: Turn[];
   winner: string | null;
-  terminationReason?: 'winner' | 'turn_cap';
+  terminationReason?: 'winner' | 'turn_cap' | 'context_limit' | 'provider_error' | 'parse_failure';
+  invalidDecision?: InvalidDecisionRecord;
   startTime: Date;
   endTime?: Date;
 }
@@ -98,6 +177,7 @@ export interface PlayTurnResponse {
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
   tokenUsageIncomplete?: boolean;
+  decisionTrace?: DecisionTrace;
 }
 
 export interface ChallengeResponse {
@@ -106,6 +186,7 @@ export interface ChallengeResponse {
   responseTimeMs?: number;
   tokenUsage?: TokenUsage;
   tokenUsageIncomplete?: boolean;
+  decisionTrace?: DecisionTrace;
 }
 
 export interface PlayerStats {
@@ -125,11 +206,29 @@ export interface PlayerStats {
   optionalLies: number;
   optionalLieTurnShare: number;
   optionalLieRateGivenTruthfulAvailable: number;
+  lateGamePlays: number;
+  lateGameLies: number;
+  lateGameBluffRate: number;
   challengesMade: number;
   challengeOpportunities: number;
   paranoiaFrequency: number;
   correctChallenges: number;
   challengeAccuracy: number;
+  historyConditionedChallenges: number;
+  historyConditionedCorrectChallenges: number;
+  historyConditionedChallengeAccuracy: number;
+  repeatedPlayerKnownLieOpportunities: number;
+  repeatedPlayerKnownLieChallenges: number;
+  repeatedPlayerCleanHistoryOpportunities: number;
+  repeatedPlayerCleanHistoryChallenges: number;
+  repeatedPlayerAdaptation: number;
+  passDecisions: number;
+  passRationaleNoRationale: number;
+  passRationalePlausibleClaim: number;
+  passRationaleRiskManagement: number;
+  passRationaleInsufficientEvidence: number;
+  passRationaleTrustOrPattern: number;
+  passRationaleOther: number;
   instructionViolations?: number; // Legacy Experiment 3 overall-lie count for compatibility
   instructionViolationRate?: number; // Legacy Experiment 3 overall-lie rate for compatibility
 }
@@ -147,6 +246,8 @@ export interface TournamentConfig {
   maxTurns?: number;
   matchupStart?: number;
   matchupEnd?: number;
+  gameStart?: number;
+  gameEnd?: number;
   gameRetryDelayMs?: number;
   maxGameFailuresPerSlot?: number;
 }
@@ -161,7 +262,8 @@ export interface GameLog {
   maxTurns?: number;
   turns: Turn[];
   winner: string | null;
-  terminationReason?: 'winner' | 'turn_cap';
+  terminationReason?: 'winner' | 'turn_cap' | 'context_limit' | 'provider_error' | 'parse_failure';
+  invalidDecision?: InvalidDecisionRecord;
   totalTurns: number;
   startTime: string;
   endTime: string;
@@ -172,12 +274,12 @@ export const RANKS: Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10',
 export const SUITS: Suit[] = ['H', 'D', 'C', 'S'];
 
 export const MODELS = [
-  'qwen/qwen3.5-397b-a17b',
-  'minimaxai/minimax-m2.5',
+  'z-ai/glm-5.1',
+  'google/gemma-4-31b-it',
   'nvidia/nemotron-3-super-120b-a12b',
-  'mistralai/mistral-small-4-119b-2603',
-  'z-ai/glm5',
-  'moonshotai/kimi-k2.5',
+  'moonshotai/kimi-k2.6',
+  'minimaxai/minimax-m2.7',
+  'deepseek-ai/deepseek-v4-flash',
 ] as const;
 
 export type ModelId = typeof MODELS[number];

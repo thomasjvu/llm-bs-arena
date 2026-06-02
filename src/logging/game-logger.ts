@@ -7,6 +7,9 @@ export interface AnalysisCohort {
   provider: string;
   promptVersion: string;
   promptHash: string;
+  contextBudgetTokens?: number;
+  playMaxTokens?: number;
+  challengeMaxTokens?: number;
   size: number;
 }
 
@@ -23,12 +26,20 @@ export interface CohortManifest {
   excludedGamesByReason: {
     mixedCohort: string[];
     turnCap: string[];
+    contextLimit: string[];
+    providerError: string[];
+    parseFailure: string[];
+    incomplete: string[];
   };
   comparableCohort: AnalysisCohort | null;
   countsByExperiment: Record<number, {
     included: number;
     excludedMixedCohort: number;
     excludedTurnCap: number;
+    excludedContextLimit: number;
+    excludedProviderError: number;
+    excludedParseFailure: number;
+    excludedIncomplete: number;
   }>;
 }
 
@@ -71,6 +82,7 @@ export class GameLogger {
       turns: state.turns,
       winner: state.winner,
       terminationReason: state.terminationReason,
+      invalidDecision: state.invalidDecision,
       totalTurns: state.turns.length,
       startTime: state.startTime.toISOString(),
       endTime: state.endTime?.toISOString() || new Date().toISOString(),
@@ -153,7 +165,18 @@ export function selectComparableGameCohort(logs: GameLog[]): CohortSelection {
     const provider = log.metadata?.provider || 'unknown';
     const promptVersion = log.metadata?.promptVersion || 'unknown';
     const promptHash = log.metadata?.promptHash || 'unknown';
-    const key = [schemaVersion, provider, promptVersion, promptHash].join('|');
+    const contextBudgetTokens = log.metadata?.contextBudgetTokens;
+    const playMaxTokens = log.metadata?.playMaxTokens;
+    const challengeMaxTokens = log.metadata?.challengeMaxTokens;
+    const key = [
+      schemaVersion,
+      provider,
+      promptVersion,
+      promptHash,
+      contextBudgetTokens ?? 'unknown',
+      playMaxTokens ?? 'unknown',
+      challengeMaxTokens ?? 'unknown',
+    ].join('|');
 
     if (!cohortMap.has(key)) {
       cohortMap.set(key, {
@@ -162,6 +185,9 @@ export function selectComparableGameCohort(logs: GameLog[]): CohortSelection {
           provider,
           promptVersion,
           promptHash,
+          contextBudgetTokens,
+          playMaxTokens,
+          challengeMaxTokens,
           size: 0,
         },
         games: [],
@@ -188,6 +214,10 @@ export function selectComparableGameCohort(logs: GameLog[]): CohortSelection {
   };
 }
 
+export function isBenchmarkCompleteGame(game: GameLog): boolean {
+  return game.terminationReason === 'winner' && game.winner !== null;
+}
+
 export function buildCohortManifest(
   logs: GameLog[],
   options: { includeMixed?: boolean } = {}
@@ -197,13 +227,26 @@ export function buildCohortManifest(
   const includedGames: string[] = [];
   const excludedMixedCohort: string[] = [];
   const excludedTurnCap: string[] = [];
-  const countsByExperiment: CohortManifest['countsByExperiment'] = { 0: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 }, 1: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 }, 2: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 }, 3: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0 } };
+  const excludedContextLimit: string[] = [];
+  const excludedProviderError: string[] = [];
+  const excludedParseFailure: string[] = [];
+  const excludedIncomplete: string[] = [];
+  const countsByExperiment: CohortManifest['countsByExperiment'] = {
+    0: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0, excludedContextLimit: 0, excludedProviderError: 0, excludedParseFailure: 0, excludedIncomplete: 0 },
+    1: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0, excludedContextLimit: 0, excludedProviderError: 0, excludedParseFailure: 0, excludedIncomplete: 0 },
+    2: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0, excludedContextLimit: 0, excludedProviderError: 0, excludedParseFailure: 0, excludedIncomplete: 0 },
+    3: { included: 0, excludedMixedCohort: 0, excludedTurnCap: 0, excludedContextLimit: 0, excludedProviderError: 0, excludedParseFailure: 0, excludedIncomplete: 0 },
+  };
 
   for (const log of logs) {
     const counts = countsByExperiment[log.experimentId] ?? (countsByExperiment[log.experimentId] = {
       included: 0,
       excludedMixedCohort: 0,
       excludedTurnCap: 0,
+      excludedContextLimit: 0,
+      excludedProviderError: 0,
+      excludedParseFailure: 0,
+      excludedIncomplete: 0,
     });
 
     if (!selectionIds.has(log.gameId)) {
@@ -218,6 +261,30 @@ export function buildCohortManifest(
       continue;
     }
 
+    if (log.terminationReason === 'context_limit') {
+      excludedContextLimit.push(log.gameId);
+      counts.excludedContextLimit++;
+      continue;
+    }
+
+    if (log.terminationReason === 'provider_error') {
+      excludedProviderError.push(log.gameId);
+      counts.excludedProviderError++;
+      continue;
+    }
+
+    if (log.terminationReason === 'parse_failure') {
+      excludedParseFailure.push(log.gameId);
+      counts.excludedParseFailure++;
+      continue;
+    }
+
+    if (!isBenchmarkCompleteGame(log)) {
+      excludedIncomplete.push(log.gameId);
+      counts.excludedIncomplete++;
+      continue;
+    }
+
     includedGames.push(log.gameId);
     counts.included++;
   }
@@ -229,6 +296,10 @@ export function buildCohortManifest(
     excludedGamesByReason: {
       mixedCohort: excludedMixedCohort,
       turnCap: excludedTurnCap,
+      contextLimit: excludedContextLimit,
+      providerError: excludedProviderError,
+      parseFailure: excludedParseFailure,
+      incomplete: excludedIncomplete,
     },
     comparableCohort: selection.cohort,
     countsByExperiment,
@@ -282,6 +353,16 @@ export function formatGameSummary(log: GameLog, options: { verbose?: boolean } =
   lines.push(`Winner: ${winner}`);
   if (log.terminationReason === 'turn_cap') {
     lines.push('Termination: turn cap');
+  } else if (log.terminationReason) {
+    lines.push(`Termination: ${log.terminationReason}`);
+  }
+  if (log.invalidDecision) {
+    lines.push(`Invalid decision: ${log.invalidDecision.decisionType} by ${log.invalidDecision.modelId}`);
+    if (log.invalidDecision.estimatedPromptTokens !== undefined && log.invalidDecision.promptBudgetTokens !== undefined) {
+      lines.push(
+        `Prompt budget: ${log.invalidDecision.estimatedPromptTokens}/${log.invalidDecision.promptBudgetTokens} estimated tokens`
+      );
+    }
   }
 
   if (options.verbose) {

@@ -1,32 +1,32 @@
 window.ModelThemes = (() => {
   const HUMAN_MODEL_ID = 'human/player';
   const REQUIRED_MODEL_IDS = [
-    'qwen/qwen3.5-397b-a17b',
-    'minimaxai/minimax-m2.5',
+    'z-ai/glm-5.1',
+    'google/gemma-4-31b-it',
     'nvidia/nemotron-3-super-120b-a12b',
-    'mistralai/mistral-small-4-119b-2603',
-    'z-ai/glm5',
-    'moonshotai/kimi-k2.5',
+    'moonshotai/kimi-k2.6',
+    'minimaxai/minimax-m2.7',
+    'deepseek-ai/deepseek-v4-flash',
     HUMAN_MODEL_ID,
   ];
 
-  const KNOWN_IMAGE_FOLDERS = new Set(['qwen', 'minimax', 'mistral', 'glm', 'kimi']);
+  const KNOWN_IMAGE_FOLDERS = new Set(['qwen', 'minimax', 'mistral', 'glm', 'kimi', 'nemotron', 'deepseek', 'gemma']);
 
   // Frontend asset audit:
-  // - Active folders in use by the current live cohort: qwen, minimax, mistral, glm, kimi.
+  // - Active folders in use by the current live cohort: glm, gemma, nemotron, kimi, minimax, deepseek.
   // - Human seat uses generated art instead of a folder-backed portrait set.
-  // - nvidia/nemotron-3-super-120b-a12b currently uses the GLM folder as a temporary placeholder.
-  // - Unused image folders currently present in the repo: deepseek, gemma.
+  // - Legacy frozen-cohort folders still present: qwen, mistral.
   // - Actively used states in gameplay: default, judged, judging, thinking/raising-hand, win, lose.
   // - Reveal-only states now available for challenge outcomes: objection_safe, objection_correct.
   // - Any unregistered provider/model id falls back to the GLM portrait set until dedicated art is added.
-  const PLACEHOLDER_THEME_IDS = new Set([
-    'nvidia/nemotron-3-super-120b-a12b',
-  ]);
+  const PLACEHOLDER_THEME_IDS = new Set([]);
 
   const LEGACY_ALIASES = {
-    'moonshotai/kimi-k2-instruct': 'moonshotai/kimi-k2.5',
-    'z-ai/glm4.7': 'z-ai/glm5',
+    'moonshotai/kimi-k2-instruct': 'moonshotai/kimi-k2.6',
+    'moonshotai/kimi-k2.5': 'moonshotai/kimi-k2.6',
+    'z-ai/glm4.7': 'z-ai/glm-5.1',
+    'z-ai/glm5': 'z-ai/glm-5.1',
+    'minimaxai/minimax-m2.5': 'minimaxai/minimax-m2.7',
   };
 
   function svgDataUri(svg) {
@@ -88,26 +88,26 @@ window.ModelThemes = (() => {
   }
 
   const registry = {
-    'qwen/qwen3.5-397b-a17b': {
-      name: 'Qwen 3.5 397B',
-      shortName: 'Qwen',
-      title: 'THE STRATAGEM',
-      accent: '#ff8b47',
-      accentBright: '#ffc26d',
-      accentDim: '#a85421',
-      secondary: '#ffe8c4',
-      folder: 'qwen',
+    'z-ai/glm-5.1': {
+      name: 'GLM 5.1',
+      shortName: 'GLM',
+      title: 'THE ANALYST',
+      accent: '#54c4d8',
+      accentBright: '#b9f4ff',
+      accentDim: '#267f90',
+      secondary: '#dcfcff',
+      folder: 'glm',
       bg: '#fafafa',
     },
-    'minimaxai/minimax-m2.5': {
-      name: 'MiniMax M2.5',
-      shortName: 'MiniMax',
-      title: 'THE INSTIGATOR',
-      accent: '#ff6d60',
-      accentBright: '#ffb18a',
-      accentDim: '#b14239',
-      secondary: '#ffe1d8',
-      folder: 'minimax',
+    'google/gemma-4-31b-it': {
+      name: 'Gemma 4 31B IT',
+      shortName: 'Gemma',
+      title: 'THE SCHOLAR',
+      accent: '#7ba7ff',
+      accentBright: '#d6e4ff',
+      accentDim: '#3b66b8',
+      secondary: '#edf3ff',
+      folder: 'gemma',
       bg: '#fafafa',
     },
     'nvidia/nemotron-3-super-120b-a12b': {
@@ -118,33 +118,11 @@ window.ModelThemes = (() => {
       accentBright: '#b8ffd2',
       accentDim: '#2d8a61',
       secondary: '#e8fff2',
-      folder: 'glm',
-      placeholderSource: 'z-ai/glm5',
-    },
-    'mistralai/mistral-small-4-119b-2603': {
-      name: 'Mistral Small 4',
-      shortName: 'Mistral',
-      title: 'THE SQUALL',
-      accent: '#8db7d8',
-      accentBright: '#d7efff',
-      accentDim: '#4c708d',
-      secondary: '#eff8ff',
-      folder: 'mistral',
+      folder: 'nemotron',
       bg: '#fafafa',
     },
-    'z-ai/glm5': {
-      name: 'GLM 5',
-      shortName: 'GLM',
-      title: 'THE ANALYST',
-      accent: '#54c4d8',
-      accentBright: '#b9f4ff',
-      accentDim: '#267f90',
-      secondary: '#dcfcff',
-      folder: 'glm',
-      bg: '#fafafa',
-    },
-    'moonshotai/kimi-k2.5': {
-      name: 'Kimi K2.5',
+    'moonshotai/kimi-k2.6': {
+      name: 'Kimi K2.6',
       shortName: 'Kimi',
       title: 'THE ORACLE',
       accent: '#bb87ff',
@@ -152,6 +130,28 @@ window.ModelThemes = (() => {
       accentDim: '#7448a8',
       secondary: '#f3e9ff',
       folder: 'kimi',
+      bg: '#fafafa',
+    },
+    'minimaxai/minimax-m2.7': {
+      name: 'MiniMax M2.7',
+      shortName: 'MiniMax',
+      title: 'THE INSTIGATOR',
+      accent: '#ff6d60',
+      accentBright: '#ffb18a',
+      accentDim: '#b14239',
+      secondary: '#ffe1d8',
+      folder: 'minimax',
+      bg: '#fafafa',
+    },
+    'deepseek-ai/deepseek-v4-flash': {
+      name: 'DeepSeek V4 Flash',
+      shortName: 'DeepSeek',
+      title: 'THE SPARK',
+      accent: '#ff8b47',
+      accentBright: '#ffc26d',
+      accentDim: '#a85421',
+      secondary: '#ffe8c4',
+      folder: 'deepseek',
       bg: '#fafafa',
     },
     [HUMAN_MODEL_ID]: {
@@ -177,7 +177,7 @@ window.ModelThemes = (() => {
     secondary: '#f2ecff',
     bg: '#fafafa',
     folder: 'glm',
-    placeholderSource: 'z-ai/glm5',
+    placeholderSource: 'z-ai/glm-5.1',
     renderCharacter: unknownPortrait,
   };
 
@@ -211,10 +211,7 @@ window.ModelThemes = (() => {
     };
   }
 
-  function getFolderState(theme, state) {
-    if (theme.folder === 'minimax' && state === 'thinking') {
-      return 'hand-raised';
-    }
+  function getFolderState(_theme, state) {
     return imageStates[state] || 'default';
   }
 
@@ -280,9 +277,9 @@ window.ModelThemes = (() => {
 
   function getAssetAudit() {
     return {
-      activeFolders: ['qwen', 'minimax', 'mistral', 'glm', 'kimi'],
+      activeFolders: ['glm', 'gemma', 'nemotron', 'kimi', 'minimax', 'deepseek'],
       placeholderThemes: [...PLACEHOLDER_THEME_IDS],
-      unusedFolders: ['deepseek', 'gemma'],
+      unusedFolders: ['qwen', 'mistral'],
       activeStates: ['default', 'judged', 'judging', 'thinking', 'win', 'lose'],
       revealStates: ['objection_safe', 'objection_correct'],
     };

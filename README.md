@@ -32,6 +32,8 @@ The strongest results from the frozen cohort are:
 - Kimi leads Exp1, Exp2, and Exp3; Nemotron leads Exp0
 - Mistral is the clearest high-challenge, zero-win profile
 
+Interpretation note: the frozen preprint cohort used bounded per-turn context, not full-game memory. Current development code is set up for the next full-public-history run with schema-v4 decision logging.
+
 Tracked frozen artifacts live in `paper/arxiv/artifacts/frozen/` and tracked paper figures live in `paper/arxiv/figures/`.
 
 ## Version Tags
@@ -39,6 +41,7 @@ Tracked frozen artifacts live in `paper/arxiv/artifacts/frozen/` and tracked pap
 Use git tags to recover the exact code state for each public milestone:
 - `v1.0.0`: frozen 600-game cohort and arXiv paper release state.
 - `v2-run-ready`: schema-v3 logging and methodology updates for the next NIM run. This tag is code-ready only; it does not include a new paid cohort.
+- current branch: full-public-history v3 study protocol with schema-v4 decision logs.
 
 ## Release Surface
 
@@ -80,11 +83,14 @@ Optional NIM tuning for the published roster:
 
 ```bash
 NVIDIA_NIM_TIMEOUT_MS=180000
+# Generated-token caps for the model response, not context-window limits.
+# v3:shard defaults to 2048/1024; direct tournament commands use adapter defaults unless set.
 LLM_PLAY_MAX_TOKENS=8192
 LLM_CHALLENGE_MAX_TOKENS=4096
 LLM_RECOVERY_WINDOW_MS=36000000
 LLM_RECOVERY_BACKOFF_MS=30000
 TOURNAMENT_GAME_RETRY_DELAY_MS=30000
+# Generic tournament default; v3:shard defaults this to 0, meaning unlimited transient retries.
 TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT=10
 ```
 
@@ -107,6 +113,21 @@ Tournament:
 
 ```bash
 npm start -- tournament -e 1 -g 10 -p nim -o logs-v2
+```
+
+V3 full-history parallel rerun:
+
+```bash
+npm run v3:shard -- 0 0
+npm run v3:shard -- 0 1
+npm run v3:shard -- 0 2
+npm run v3:shard -- 0 3
+```
+
+Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/1024`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors. All shards can write to `logs-v3`; finalize once after all 16 shard commands finish:
+
+```bash
+npm run v3:finalize -- logs-v3
 ```
 
 Visualizer:
@@ -143,8 +164,8 @@ import { createBullshitEnv, createBaselinePolicy } from 'llm-bullshit';
 const env = createBullshitEnv({
   experimentId: 1,
   players: [
-    'qwen/qwen3.5-397b-a17b',
-    'minimaxai/minimax-m2.5',
+    'z-ai/glm-5.1',
+    'google/gemma-4-31b-it',
     'nvidia/nemotron-3-super-120b-a12b',
     'baseline/scripted',
   ],

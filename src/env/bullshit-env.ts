@@ -146,7 +146,7 @@ export class BullshitEnvController implements BullshitEnv {
           modelId: entry.modelId,
           handSize: entry.hand.length,
         })),
-      recentTurns: state.turns.slice(-5).map((turn) => summarizeTurn(state, turn)),
+      recentTurns: state.turns.map((turn) => summarizeTurn(state, turn)),
       phase: this.phase,
       expectedActorId: this.expectedActorId(),
       expectedActorModelId: this.expectedActorModelId(),
@@ -251,10 +251,10 @@ export class BullshitEnvController implements BullshitEnv {
 
     const actualCards = strictParseCards(action.cards, player.hand);
     const turn = processPlay(state, action.playerId, actualCards, action.claimCount, action.reasoning ?? '');
-    turn.challengeOfferedTo = getOtherPlayers(state).map((entry) => entry.id);
+    turn.challengeOfferedTo = [];
 
     this.pendingTurn = turn;
-    this.challengeQueue = [...(turn.challengeOfferedTo || [])];
+    this.challengeQueue = getOtherPlayers(state).map((entry) => entry.id);
     this.phase = 'challenge';
 
     const pendingPlay = summarizePendingPlay(state, turn, this.challengeQueue);
@@ -285,6 +285,18 @@ export class BullshitEnvController implements BullshitEnv {
     if (action.playerId !== actingChallenger) {
       throw new Error(`Challenge action player ${action.playerId} does not match queued challenger ${actingChallenger}`);
     }
+
+    const challenger = state.players.find((entry) => entry.id === action.playerId);
+    pendingTurn.challengeOfferedTo ??= [];
+    pendingTurn.challengeOfferedTo.push(action.playerId);
+    pendingTurn.challengeDecisions ??= [];
+    pendingTurn.challengeDecisions.push({
+      playerId: action.playerId,
+      modelId: challenger?.modelId,
+      challenge: action.challenge,
+      reasoning: action.reasoning ?? '',
+      decisionOrder: pendingTurn.challengeDecisions.length,
+    });
 
     if (action.challenge) {
       processChallenge(state, pendingTurn, action.playerId, action.reasoning ?? '');

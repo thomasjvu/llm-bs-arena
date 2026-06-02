@@ -1,4 +1,4 @@
-import { GameState, Turn, Card, PlayTurnResponse, ChallengeResponse } from '../types/game.js';
+import { GameState, Turn, Card, PlayTurnResponse, ChallengeResponse, InvalidDecisionRecord } from '../types/game.js';
 import {
   getCurrentPlayer,
   getOtherPlayers,
@@ -8,8 +8,10 @@ import {
   checkWinner,
   finalizeGame,
   getVisibleState,
+  getVisibleStateWithPileSize,
 } from './game-state.js';
 import { normalizePlaySelection } from './play-rules.js';
+import { ContextLimitError } from '../llm/context-budget.js';
 
 export interface LLMAdapter {
   getPlayDecision(
@@ -24,7 +26,13 @@ export interface LLMAdapter {
     challengerId: string,
     modelId: string,
     visibleState: ReturnType<typeof getVisibleState>,
-    lastPlay: { playerId: string; claimedCount: number; claimedRank: string },
+    lastPlay: {
+      playerId: string;
+      claimedCount: number;
+      claimedRank: string;
+      actingPlayerId?: string;
+      decisionOrder?: number;
+    },
     experimentId: number,
     onToken?: (text: string) => void
   ): Promise<ChallengeResponse>;
@@ -38,6 +46,33 @@ export interface TurnManagerConfig {
 const DEFAULT_CONFIG: TurnManagerConfig = {
   challengeOrder: 'sequential',
 };
+
+function invalidDecisionFromContextLimit(error: ContextLimitError, state: GameState): InvalidDecisionRecord {
+  const details = error.details;
+  const latestTurn = state.turns[state.turns.length - 1];
+  const turnNumber = details.decisionType === 'challenge'
+    ? latestTurn?.turnNumber ?? state.turns.length + 1
+    : state.turns.length + 1;
+
+  return {
+    terminationReason: 'context_limit',
+    decisionType: details.decisionType,
+    turnNumber,
+    playerId: details.playerId,
+    modelId: details.modelId,
+    actingPlayerId: details.actingPlayerId,
+    actingModelId: details.actingModelId,
+    decisionOrder: details.decisionOrder,
+    systemPrompt: details.systemPrompt,
+    userPrompt: details.userPrompt,
+    visibleContext: details.visibleContext,
+    visibleContextHash: details.visibleContextHash,
+    estimatedPromptTokens: details.estimatedPromptTokens,
+    promptBudgetTokens: details.promptBudgetTokens,
+    contextLimitExceeded: true,
+    errorMessage: error.message,
+  };
+}
 
 /**
  * Manages the turn flow of a Bullshit game
@@ -70,7 +105,21 @@ export class TurnManager {
     state.maxTurns = this.config.maxTurns;
 
     while (!state.winner && (this.config.maxTurns === undefined || state.turns.length < this.config.maxTurns)) {
-      await this.executeTurn(state, llm);
+      try {
+        await this.executeTurn(state, llm);
+      } catch (error) {
+        if (error instanceof ContextLimitError) {
+          state.winner = null;
+          state.terminationReason = 'context_limit';
+          state.invalidDecision = invalidDecisionFromContextLimit(error, state);
+          state.endTime = new Date();
+          if (onTurnComplete) {
+            await onTurnComplete(state);
+          }
+          return state;
+        }
+        throw error;
+      }
       if (onTurnComplete) {
         await onTurnComplete(state);
       }
@@ -129,6 +178,7 @@ export class TurnManager {
     turn.playResponseTimeMs = playResponse.responseTimeMs;
     turn.playTokenUsage = playResponse.tokenUsage;
     turn.playTokenUsageIncomplete = playResponse.tokenUsageIncomplete;
+    turn.playDecisionTrace = playResponse.decisionTrace;
 
     const otherPlayers = getOtherPlayers(state);
     const challengeOrder =
@@ -136,19 +186,33 @@ export class TurnManager {
 
     for (const [decisionIndex, challenger] of challengeOrder.entries()) {
       turn.challengeOfferedTo?.push(challenger.id);
-      const challengerVisibleState = getVisibleState(state, challenger.id);
-
-      const challengeResponse = await llm.getChallengeDecision(
+      const challengerVisibleState = getVisibleStateWithPileSize(
+        state,
         challenger.id,
-        challenger.modelId,
-        challengerVisibleState,
-        {
-          playerId: currentPlayer.modelId,
-          claimedCount: turn.claimedCount,
-          claimedRank: turn.claimedRank,
-        },
-        state.experimentId
+        state.pile.length - turn.actualCards.length
       );
+
+      let challengeResponse: ChallengeResponse;
+      try {
+        challengeResponse = await llm.getChallengeDecision(
+          challenger.id,
+          challenger.modelId,
+          challengerVisibleState,
+          {
+            playerId: currentPlayer.modelId,
+            actingPlayerId: currentPlayer.id,
+            claimedCount: turn.claimedCount,
+            claimedRank: turn.claimedRank,
+            decisionOrder: decisionIndex,
+          },
+          state.experimentId
+        );
+      } catch (error) {
+        if (error instanceof ContextLimitError && !state.turns.includes(turn)) {
+          state.turns.push(turn);
+        }
+        throw error;
+      }
       turn.challengeDecisions ??= [];
       turn.challengeDecisions.push({
         playerId: challenger.id,
@@ -159,6 +223,7 @@ export class TurnManager {
         responseTimeMs: challengeResponse.responseTimeMs,
         tokenUsage: challengeResponse.tokenUsage,
         tokenUsageIncomplete: challengeResponse.tokenUsageIncomplete,
+        decisionTrace: challengeResponse.decisionTrace,
       });
 
       if (challengeResponse.challenge) {

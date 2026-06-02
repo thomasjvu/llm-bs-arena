@@ -59,12 +59,12 @@ Interpretation note: distinguish optional lies from truthful-play-unavailable tu
 ## Current Model Roster
 
 Default tournament roster:
-1. `qwen/qwen3.5-397b-a17b`
-2. `minimaxai/minimax-m2.5`
+1. `z-ai/glm-5.1`
+2. `google/gemma-4-31b-it`
 3. `nvidia/nemotron-3-super-120b-a12b`
-4. `mistralai/mistral-small-4-119b-2603`
-5. `z-ai/glm5`
-6. `moonshotai/kimi-k2.5`
+4. `moonshotai/kimi-k2.6`
+5. `minimaxai/minimax-m2.7`
+6. `deepseek-ai/deepseek-v4-flash`
 
 ### Matchup Design
 - 4-player games

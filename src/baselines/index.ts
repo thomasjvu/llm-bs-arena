@@ -10,7 +10,7 @@ import {
   PublicState,
   TurnSummary,
 } from '../env/types.js';
-import { BASELINE_MODELS, ChallengeResponse, PlayTurnResponse, RANKS, Rank, Turn } from '../types/game.js';
+import { BASELINE_MODELS, ChallengeResponse, PlayTurnResponse, RANKS, Rank, PublicTurnHistoryEntry } from '../types/game.js';
 
 const RANK_ORDER = new Map(RANKS.map((rank, index) => [rank, index]));
 const SUIT_ORDER = new Map(['C', 'D', 'H', 'S'].map((suit, index) => [suit, index]));
@@ -83,16 +83,16 @@ function getPlayerHandSize(publicState: PublicState, playerId: string): number |
   return publicState.players.find((player) => player.playerId === playerId)?.handSize;
 }
 
-function mapVisibleTurnSummary(turn: Turn): TurnSummary {
+function mapVisibleTurnSummary(turn: PublicTurnHistoryEntry): TurnSummary {
   return {
     turnNumber: turn.turnNumber,
     playerId: turn.playerId,
-    modelId: turn.playerId,
+    modelId: turn.modelId || turn.playerId,
     claimedRank: turn.claimedRank,
     claimedCount: turn.claimedCount,
     challenged: turn.challenged,
     challengerId: turn.challengerId,
-    challengerModelId: turn.challengerId,
+    challengerModelId: turn.challengerModelId || turn.challengerId,
     challengeCorrect: turn.challengeCorrect,
     pileAfterTurn: turn.pileAfterTurn,
     handSizesAfterTurn: { ...turn.handSizesAfterTurn },

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GameLog, Turn, PlayerStats } from '../types/game.js';
+import { challengeDecisionForPlayer, classifyPassRationale } from '../metrics/player-stats.js';
 import { replayTurnTruthfulAvailability } from '../metrics/truthful-availability.js';
 
 /**
@@ -30,6 +31,18 @@ export class CSVExporter {
     }
 
     return turn.challengeTokenUsage ? [turn.challengeTokenUsage] : [];
+  }
+
+  private jsonCell(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    return JSON.stringify(value);
+  }
+
+  private priorActorTurns(game: GameLog, turn: Turn): Turn[] {
+    return game.turns.filter((priorTurn) =>
+      priorTurn.turnNumber < turn.turnNumber &&
+      priorTurn.playerId === turn.playerId
+    );
   }
 
   /**
@@ -321,6 +334,204 @@ export class CSVExporter {
   }
 
   /**
+   * Exports every model decision point, including full prompts and raw responses when available.
+   */
+  exportDecisionLog(games: GameLog[]): string {
+    const filepath = path.join(this.outputDir, 'decision_log.csv');
+
+    const headers = [
+      'game_id',
+      'experiment_id',
+      'provider',
+      'provider_base_url',
+      'prompt_version',
+      'prompt_hash',
+      'log_schema_version',
+      'turn_number',
+      'decision_type',
+      'player_id',
+      'model_id',
+      'acting_player_id',
+      'acting_model_id',
+      'decision_order',
+      'challenge',
+      'challenge_correct',
+      'reasoning',
+      'visible_context_hash',
+      'visible_context',
+      'system_prompt',
+      'user_prompt',
+      'raw_response',
+      'parsed_response',
+      'attempts',
+      'retry_count',
+      'finish_reason',
+      'max_tokens',
+      'estimated_prompt_tokens',
+      'prompt_budget_tokens',
+      'context_limit_exceeded',
+      'response_time_ms',
+      'prompt_tokens',
+      'completion_tokens',
+      'total_tokens',
+      'token_usage_incomplete',
+      'error_message',
+    ];
+
+    const rows: string[] = [headers.join(',')];
+
+    for (const game of games) {
+      const modelMap: Record<string, string> = {};
+      for (const player of game.players) {
+        modelMap[player.id] = player.modelId;
+      }
+
+      for (const turn of game.turns) {
+        const playTrace = turn.playDecisionTrace;
+        rows.push([
+          game.gameId,
+          game.experimentId,
+          game.metadata?.provider || '',
+          game.metadata?.providerBaseUrl || '',
+          game.metadata?.promptVersion || '',
+          game.metadata?.promptHash || '',
+          game.metadata?.logSchemaVersion ?? '',
+          turn.turnNumber,
+          'play',
+          turn.playerId,
+          turn.modelId || modelMap[turn.playerId] || '',
+          turn.playerId,
+          turn.modelId || modelMap[turn.playerId] || '',
+          '',
+          '',
+          '',
+          turn.reasoning || '',
+          playTrace?.visibleContextHash || '',
+          this.jsonCell(playTrace?.visibleContext),
+          playTrace?.systemPrompt || '',
+          playTrace?.userPrompt || '',
+          playTrace?.rawResponse || '',
+          this.jsonCell(playTrace?.parsedResponse),
+          this.jsonCell(playTrace?.attempts),
+          playTrace?.retryCount ?? '',
+          playTrace?.finishReason || '',
+          playTrace?.maxTokens ?? '',
+          playTrace?.estimatedPromptTokens ?? '',
+          playTrace?.promptBudgetTokens ?? '',
+          playTrace?.contextLimitExceeded === undefined ? '' : (playTrace.contextLimitExceeded ? 1 : 0),
+          turn.playResponseTimeMs ?? '',
+          turn.playTokenUsage?.promptTokens ?? '',
+          turn.playTokenUsage?.completionTokens ?? '',
+          turn.playTokenUsage?.totalTokens ?? '',
+          turn.playTokenUsageIncomplete === undefined ? '' : (turn.playTokenUsageIncomplete ? 1 : 0),
+          '',
+        ].map((cell) => this.csvCell(cell)).join(','));
+
+        const decisions = turn.challengeDecisions && turn.challengeDecisions.length > 0
+          ? turn.challengeDecisions
+          : (turn.challengeOfferedTo ?? []).map((playerId, decisionOrder) => ({
+              playerId,
+              modelId: modelMap[playerId],
+              decisionOrder,
+              challenge: turn.challengerId === playerId,
+              reasoning: turn.challengerId === playerId ? turn.challengeReasoning || '' : '',
+              responseTimeMs: turn.challengerId === playerId ? turn.challengeResponseTimeMs : undefined,
+              tokenUsage: turn.challengerId === playerId ? turn.challengeTokenUsage : undefined,
+              tokenUsageIncomplete: turn.challengerId === playerId ? turn.challengeTokenUsageIncomplete : undefined,
+              decisionTrace: undefined,
+            }));
+
+        for (const [index, decision] of decisions.entries()) {
+          const trace = decision.decisionTrace;
+          rows.push([
+            game.gameId,
+            game.experimentId,
+            game.metadata?.provider || '',
+            game.metadata?.providerBaseUrl || '',
+            game.metadata?.promptVersion || '',
+            game.metadata?.promptHash || '',
+            game.metadata?.logSchemaVersion ?? '',
+            turn.turnNumber,
+            'challenge',
+            decision.playerId,
+            decision.modelId || modelMap[decision.playerId] || '',
+            turn.playerId,
+            turn.modelId || modelMap[turn.playerId] || '',
+            decision.decisionOrder ?? index,
+            decision.challenge ? 1 : 0,
+            decision.challenge ? (turn.challengeCorrect !== undefined ? (turn.challengeCorrect ? 1 : 0) : '') : '',
+            decision.reasoning || '',
+            trace?.visibleContextHash || '',
+            this.jsonCell(trace?.visibleContext),
+            trace?.systemPrompt || '',
+            trace?.userPrompt || '',
+            trace?.rawResponse || '',
+            this.jsonCell(trace?.parsedResponse),
+            this.jsonCell(trace?.attempts),
+            trace?.retryCount ?? '',
+            trace?.finishReason || '',
+            trace?.maxTokens ?? '',
+            trace?.estimatedPromptTokens ?? '',
+            trace?.promptBudgetTokens ?? '',
+            trace?.contextLimitExceeded === undefined ? '' : (trace.contextLimitExceeded ? 1 : 0),
+            decision.responseTimeMs ?? '',
+            decision.tokenUsage?.promptTokens ?? '',
+            decision.tokenUsage?.completionTokens ?? '',
+            decision.tokenUsage?.totalTokens ?? '',
+            decision.tokenUsageIncomplete === undefined ? '' : (decision.tokenUsageIncomplete ? 1 : 0),
+            '',
+          ].map((cell) => this.csvCell(cell)).join(','));
+        }
+      }
+
+      if (game.invalidDecision) {
+        const invalid = game.invalidDecision;
+        rows.push([
+          game.gameId,
+          game.experimentId,
+          game.metadata?.provider || '',
+          game.metadata?.providerBaseUrl || '',
+          game.metadata?.promptVersion || '',
+          game.metadata?.promptHash || '',
+          game.metadata?.logSchemaVersion ?? '',
+          invalid.turnNumber,
+          invalid.decisionType,
+          invalid.playerId,
+          invalid.modelId,
+          invalid.actingPlayerId || '',
+          invalid.actingModelId || '',
+          invalid.decisionOrder ?? '',
+          '',
+          '',
+          '',
+          invalid.visibleContextHash || '',
+          this.jsonCell(invalid.visibleContext),
+          invalid.systemPrompt || '',
+          invalid.userPrompt || '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          invalid.decisionType === 'play' ? game.metadata?.playMaxTokens ?? '' : game.metadata?.challengeMaxTokens ?? '',
+          invalid.estimatedPromptTokens ?? '',
+          invalid.promptBudgetTokens ?? '',
+          invalid.contextLimitExceeded === undefined ? '' : (invalid.contextLimitExceeded ? 1 : 0),
+          '',
+          '',
+          '',
+          '',
+          '',
+          invalid.errorMessage,
+        ].map((cell) => this.csvCell(cell)).join(','));
+      }
+    }
+
+    fs.writeFileSync(filepath, rows.join('\n'));
+    return filepath;
+  }
+
+  /**
    * Exports one row per player per game for downstream statistics.
    */
   exportPlayerGameStats(games: GameLog[]): string {
@@ -353,11 +564,29 @@ export class CSVExporter {
       'optional_lies',
       'optional_lie_turn_share',
       'optional_lie_rate_given_truthful_available',
+      'late_game_plays',
+      'late_game_lies',
+      'late_game_bluff_rate',
       'challenges_made',
       'challenge_opportunities',
       'paranoia_frequency',
       'correct_challenges',
       'challenge_accuracy',
+      'history_conditioned_challenges',
+      'history_conditioned_correct_challenges',
+      'history_conditioned_challenge_accuracy',
+      'repeated_player_known_lie_opportunities',
+      'repeated_player_known_lie_challenges',
+      'repeated_player_clean_history_opportunities',
+      'repeated_player_clean_history_challenges',
+      'repeated_player_adaptation',
+      'pass_decisions',
+      'pass_rationale_no_rationale',
+      'pass_rationale_plausible_claim',
+      'pass_rationale_risk_management',
+      'pass_rationale_insufficient_evidence',
+      'pass_rationale_trust_or_pattern',
+      'pass_rationale_other',
       'instruction_violations',
       'instruction_violation_rate',
     ];
@@ -378,6 +607,10 @@ export class CSVExporter {
         const truthfulAvailableTurns = playerTurnAvailability.filter((turn) => turn.truthfulAvailable).length;
         const truthfulUnavailableTurns = playerTurnAvailability.filter((turn) => turn.truthfulPlayUnavailable).length;
         const optionalLies = playerTurnAvailability.filter((turn) => turn.optionalLie).length;
+        const lateGameCutoff = game.totalTurns / 2;
+        const lateGameTurns = playerTurns.filter((turn) => turn.turnNumber > lateGameCutoff);
+        const lateGamePlays = lateGameTurns.length;
+        const lateGameLies = lateGameTurns.filter((turn) => turn.wasLie).length;
         const challengesMade = opponentTurns.filter((turn) => turn.challengerId === playerId).length;
         const challengeOpportunities = opponentTurns.filter((turn) => {
           if (Array.isArray(turn.challengeOfferedTo)) {
@@ -386,6 +619,86 @@ export class CSVExporter {
           return true;
         }).length;
         const correctChallenges = opponentTurns.filter((turn) => turn.challengerId === playerId && turn.challengeCorrect).length;
+        let historyConditionedChallenges = 0;
+        let historyConditionedCorrectChallenges = 0;
+        let repeatedPlayerKnownLieOpportunities = 0;
+        let repeatedPlayerKnownLieChallenges = 0;
+        let repeatedPlayerCleanHistoryOpportunities = 0;
+        let repeatedPlayerCleanHistoryChallenges = 0;
+        let passDecisions = 0;
+        let passRationaleNoRationale = 0;
+        let passRationalePlausibleClaim = 0;
+        let passRationaleRiskManagement = 0;
+        let passRationaleInsufficientEvidence = 0;
+        let passRationaleTrustOrPattern = 0;
+        let passRationaleOther = 0;
+
+        for (const turn of opponentTurns) {
+          const offered = Array.isArray(turn.challengeOfferedTo)
+            ? turn.challengeOfferedTo.includes(playerId)
+            : true;
+          if (!offered) {
+            continue;
+          }
+
+          const decision = challengeDecisionForPlayer(turn, playerId);
+          const hasRecordedDecision = Boolean(
+            turn.challengeDecisions?.some((recorded) => recorded.playerId === playerId)
+          );
+          const priorTurns = this.priorActorTurns(game, turn);
+          if (hasRecordedDecision && decision && !decision.challenge) {
+            passDecisions++;
+            switch (classifyPassRationale(decision.reasoning)) {
+              case 'no_rationale':
+                passRationaleNoRationale++;
+                break;
+              case 'plausible_claim':
+                passRationalePlausibleClaim++;
+                break;
+              case 'risk_management':
+                passRationaleRiskManagement++;
+                break;
+              case 'insufficient_evidence':
+                passRationaleInsufficientEvidence++;
+                break;
+              case 'trust_or_pattern':
+                passRationaleTrustOrPattern++;
+                break;
+              case 'other':
+                passRationaleOther++;
+                break;
+            }
+          }
+
+          if (priorTurns.length > 0) {
+            const actorHadPriorCaughtLie = priorTurns.some((priorTurn) => priorTurn.challengeCorrect === true);
+            if (actorHadPriorCaughtLie) {
+              repeatedPlayerKnownLieOpportunities++;
+              if (decision?.challenge) {
+                repeatedPlayerKnownLieChallenges++;
+              }
+            } else {
+              repeatedPlayerCleanHistoryOpportunities++;
+              if (decision?.challenge) {
+                repeatedPlayerCleanHistoryChallenges++;
+              }
+            }
+          }
+
+          if (turn.challengerId === playerId && priorTurns.length > 0) {
+            historyConditionedChallenges++;
+            if (turn.challengeCorrect) {
+              historyConditionedCorrectChallenges++;
+            }
+          }
+        }
+
+        const repeatedPlayerKnownLieChallengeRate = repeatedPlayerKnownLieOpportunities > 0
+          ? repeatedPlayerKnownLieChallenges / repeatedPlayerKnownLieOpportunities
+          : 0;
+        const repeatedPlayerCleanHistoryChallengeRate = repeatedPlayerCleanHistoryOpportunities > 0
+          ? repeatedPlayerCleanHistoryChallenges / repeatedPlayerCleanHistoryOpportunities
+          : 0;
         const instructionViolations = game.experimentId === 3 ? totalLies : '';
         const instructionViolationRate = game.experimentId === 3
           ? (totalPlays > 0 ? (totalLies / totalPlays).toFixed(4) : '0.0000')
@@ -418,11 +731,31 @@ export class CSVExporter {
           optionalLies,
           totalPlays > 0 ? (optionalLies / totalPlays).toFixed(4) : '0.0000',
           truthfulAvailableTurns > 0 ? (optionalLies / truthfulAvailableTurns).toFixed(4) : '0.0000',
+          lateGamePlays,
+          lateGameLies,
+          lateGamePlays > 0 ? (lateGameLies / lateGamePlays).toFixed(4) : '0.0000',
           challengesMade,
           challengeOpportunities,
           challengeOpportunities > 0 ? (challengesMade / challengeOpportunities).toFixed(4) : '0.0000',
           correctChallenges,
           challengesMade > 0 ? (correctChallenges / challengesMade).toFixed(4) : '0.0000',
+          historyConditionedChallenges,
+          historyConditionedCorrectChallenges,
+          historyConditionedChallenges > 0
+            ? (historyConditionedCorrectChallenges / historyConditionedChallenges).toFixed(4)
+            : '0.0000',
+          repeatedPlayerKnownLieOpportunities,
+          repeatedPlayerKnownLieChallenges,
+          repeatedPlayerCleanHistoryOpportunities,
+          repeatedPlayerCleanHistoryChallenges,
+          (repeatedPlayerKnownLieChallengeRate - repeatedPlayerCleanHistoryChallengeRate).toFixed(4),
+          passDecisions,
+          passRationaleNoRationale,
+          passRationalePlausibleClaim,
+          passRationaleRiskManagement,
+          passRationaleInsufficientEvidence,
+          passRationaleTrustOrPattern,
+          passRationaleOther,
           instructionViolations,
           instructionViolationRate,
         ];
@@ -458,11 +791,29 @@ export class CSVExporter {
       'optional_lies',
       'optional_lie_turn_share',
       'optional_lie_rate_given_truthful_available',
+      'late_game_plays',
+      'late_game_lies',
+      'late_game_bluff_rate',
       'challenges_made',
       'challenge_opportunities',
       'paranoia_frequency',
       'correct_challenges',
       'challenge_accuracy',
+      'history_conditioned_challenges',
+      'history_conditioned_correct_challenges',
+      'history_conditioned_challenge_accuracy',
+      'repeated_player_known_lie_opportunities',
+      'repeated_player_known_lie_challenges',
+      'repeated_player_clean_history_opportunities',
+      'repeated_player_clean_history_challenges',
+      'repeated_player_adaptation',
+      'pass_decisions',
+      'pass_rationale_no_rationale',
+      'pass_rationale_plausible_claim',
+      'pass_rationale_risk_management',
+      'pass_rationale_insufficient_evidence',
+      'pass_rationale_trust_or_pattern',
+      'pass_rationale_other',
       'instruction_violations',
       'instruction_violation_rate',
     ];
@@ -487,11 +838,29 @@ export class CSVExporter {
         s.optionalLies,
         s.optionalLieTurnShare.toFixed(4),
         s.optionalLieRateGivenTruthfulAvailable.toFixed(4),
+        s.lateGamePlays,
+        s.lateGameLies,
+        s.lateGameBluffRate.toFixed(4),
         s.challengesMade,
         s.challengeOpportunities,
         s.paranoiaFrequency.toFixed(4),
         s.correctChallenges,
         s.challengeAccuracy.toFixed(4),
+        s.historyConditionedChallenges,
+        s.historyConditionedCorrectChallenges,
+        s.historyConditionedChallengeAccuracy.toFixed(4),
+        s.repeatedPlayerKnownLieOpportunities,
+        s.repeatedPlayerKnownLieChallenges,
+        s.repeatedPlayerCleanHistoryOpportunities,
+        s.repeatedPlayerCleanHistoryChallenges,
+        s.repeatedPlayerAdaptation.toFixed(4),
+        s.passDecisions,
+        s.passRationaleNoRationale,
+        s.passRationalePlausibleClaim,
+        s.passRationaleRiskManagement,
+        s.passRationaleInsufficientEvidence,
+        s.passRationaleTrustOrPattern,
+        s.passRationaleOther,
         s.instructionViolations ?? '',
         s.instructionViolationRate?.toFixed(4) ?? '',
       ];
@@ -523,6 +892,15 @@ export class CSVExporter {
       'exp1_paranoia',
       'exp2_paranoia',
       'paranoia_change',
+      'exp1_late_game_bluff_rate',
+      'exp2_late_game_bluff_rate',
+      'late_game_bluff_rate_change',
+      'exp1_history_conditioned_challenge_accuracy',
+      'exp2_history_conditioned_challenge_accuracy',
+      'history_conditioned_challenge_accuracy_change',
+      'exp1_repeated_player_adaptation',
+      'exp2_repeated_player_adaptation',
+      'repeated_player_adaptation_change',
     ];
 
     const rows: string[] = [headers.join(',')];
@@ -542,6 +920,15 @@ export class CSVExporter {
         s1.paranoiaFrequency.toFixed(4),
         s2.paranoiaFrequency.toFixed(4),
         (s2.paranoiaFrequency - s1.paranoiaFrequency).toFixed(4),
+        s1.lateGameBluffRate.toFixed(4),
+        s2.lateGameBluffRate.toFixed(4),
+        (s2.lateGameBluffRate - s1.lateGameBluffRate).toFixed(4),
+        s1.historyConditionedChallengeAccuracy.toFixed(4),
+        s2.historyConditionedChallengeAccuracy.toFixed(4),
+        (s2.historyConditionedChallengeAccuracy - s1.historyConditionedChallengeAccuracy).toFixed(4),
+        s1.repeatedPlayerAdaptation.toFixed(4),
+        s2.repeatedPlayerAdaptation.toFixed(4),
+        (s2.repeatedPlayerAdaptation - s1.repeatedPlayerAdaptation).toFixed(4),
       ];
       rows.push(row.join(','));
     }

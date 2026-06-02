@@ -1,5 +1,39 @@
-import { GameLog, PlayerStats, Turn } from '../types/game.js';
+import { ChallengeDecision, GameLog, PlayerStats, Turn } from '../types/game.js';
 import { replayTurnTruthfulAvailability } from './truthful-availability.js';
+import { isBenchmarkCompleteGame } from '../logging/game-logger.js';
+
+export type PassRationaleCategory =
+  | 'no_rationale'
+  | 'plausible_claim'
+  | 'risk_management'
+  | 'insufficient_evidence'
+  | 'trust_or_pattern'
+  | 'other';
+
+export function classifyPassRationale(reasoning: string | undefined): PassRationaleCategory {
+  const text = (reasoning ?? '').trim().toLowerCase();
+  if (text.length === 0) {
+    return 'no_rationale';
+  }
+
+  if (/\b(insufficient|not enough|not have enough|no evidence|lack(?:ing)? evidence|uncertain|unsure|cannot tell|can't tell|hard to know|not convinced)\b/.test(text)) {
+    return 'insufficient_evidence';
+  }
+
+  if (/\b(risk|risky|penalty|penal|pile|cost|not worth|avoid|danger|backfire|too much to lose)\b/.test(text)) {
+    return 'risk_management';
+  }
+
+  if (/\b(trust|honest|history|previous|pattern|usually|consistent|track record|reputation)\b/.test(text)) {
+    return 'trust_or_pattern';
+  }
+
+  if (/\b(plausible|possible|reasonable|believable|credible|likely|could have|may have|might have|seems true|seems valid|claim seems)\b/.test(text)) {
+    return 'plausible_claim';
+  }
+
+  return 'other';
+}
 
 function wasChallengeOffered(turn: Turn, playerId: string): boolean {
   if (Array.isArray(turn.challengeOfferedTo)) {
@@ -10,8 +44,32 @@ function wasChallengeOffered(turn: Turn, playerId: string): boolean {
   return turn.playerId !== playerId;
 }
 
-function isCompleteGame(game: GameLog): boolean {
-  return game.terminationReason !== 'turn_cap';
+export function challengeDecisionForPlayer(turn: Turn, playerId: string): ChallengeDecision | null {
+  const recordedDecision = turn.challengeDecisions?.find((decision) => decision.playerId === playerId);
+  if (recordedDecision) {
+    return recordedDecision;
+  }
+
+  if (!wasChallengeOffered(turn, playerId)) {
+    return null;
+  }
+
+  const challenged = turn.challengerId === playerId;
+  return {
+    playerId,
+    challenge: challenged,
+    reasoning: challenged ? turn.challengeReasoning || '' : '',
+    responseTimeMs: challenged ? turn.challengeResponseTimeMs : undefined,
+    tokenUsage: challenged ? turn.challengeTokenUsage : undefined,
+    tokenUsageIncomplete: challenged ? turn.challengeTokenUsageIncomplete : undefined,
+  };
+}
+
+function priorActorTurns(game: GameLog, turn: Turn): Turn[] {
+  return game.turns.filter((priorTurn) =>
+    priorTurn.turnNumber < turn.turnNumber &&
+    priorTurn.playerId === turn.playerId
+  );
 }
 
 /**
@@ -26,13 +84,28 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
   let truthfulAvailableTurns = 0;
   let truthfulUnavailableTurns = 0;
   let optionalLies = 0;
+  let lateGamePlays = 0;
+  let lateGameLies = 0;
   let challengesMade = 0;
   let challengeOpportunities = 0;
   let correctChallenges = 0;
+  let historyConditionedChallenges = 0;
+  let historyConditionedCorrectChallenges = 0;
+  let repeatedPlayerKnownLieOpportunities = 0;
+  let repeatedPlayerKnownLieChallenges = 0;
+  let repeatedPlayerCleanHistoryOpportunities = 0;
+  let repeatedPlayerCleanHistoryChallenges = 0;
+  let passDecisions = 0;
+  let passRationaleNoRationale = 0;
+  let passRationalePlausibleClaim = 0;
+  let passRationaleRiskManagement = 0;
+  let passRationaleInsufficientEvidence = 0;
+  let passRationaleTrustOrPattern = 0;
+  let passRationaleOther = 0;
   let instructionViolations = 0;
 
   for (const game of games) {
-    if (!isCompleteGame(game)) {
+    if (!isBenchmarkCompleteGame(game)) {
       continue;
     }
 
@@ -47,10 +120,18 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
     }
 
     const turnAvailability = replayTurnTruthfulAvailability(game);
+    const lateGameCutoff = game.totalTurns / 2;
 
     for (const turn of game.turns) {
       if (turn.playerId === playerId) {
         totalPlays++;
+
+        if (turn.turnNumber > lateGameCutoff) {
+          lateGamePlays++;
+          if (turn.wasLie) {
+            lateGameLies++;
+          }
+        }
 
         const availability = turnAvailability[turn.turnNumber - 1];
         if (availability?.playerId !== playerId) {
@@ -85,6 +166,52 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
       } else {
         if (wasChallengeOffered(turn, playerId)) {
           challengeOpportunities++;
+
+          const decision = challengeDecisionForPlayer(turn, playerId);
+          const hasRecordedDecision = Boolean(
+            turn.challengeDecisions?.some((recorded) => recorded.playerId === playerId)
+          );
+          const priorTurns = priorActorTurns(game, turn);
+          const hasPriorActorHistory = priorTurns.length > 0;
+
+          if (hasRecordedDecision && decision && !decision.challenge) {
+            passDecisions++;
+            switch (classifyPassRationale(decision.reasoning)) {
+              case 'no_rationale':
+                passRationaleNoRationale++;
+                break;
+              case 'plausible_claim':
+                passRationalePlausibleClaim++;
+                break;
+              case 'risk_management':
+                passRationaleRiskManagement++;
+                break;
+              case 'insufficient_evidence':
+                passRationaleInsufficientEvidence++;
+                break;
+              case 'trust_or_pattern':
+                passRationaleTrustOrPattern++;
+                break;
+              case 'other':
+                passRationaleOther++;
+                break;
+            }
+          }
+
+          if (hasPriorActorHistory) {
+            const actorHadPriorCaughtLie = priorTurns.some((priorTurn) => priorTurn.challengeCorrect === true);
+            if (actorHadPriorCaughtLie) {
+              repeatedPlayerKnownLieOpportunities++;
+              if (decision?.challenge) {
+                repeatedPlayerKnownLieChallenges++;
+              }
+            } else {
+              repeatedPlayerCleanHistoryOpportunities++;
+              if (decision?.challenge) {
+                repeatedPlayerCleanHistoryChallenges++;
+              }
+            }
+          }
         }
 
         if (turn.challengerId === playerId) {
@@ -92,10 +219,24 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
           if (turn.challengeCorrect) {
             correctChallenges++;
           }
+
+          if (priorActorTurns(game, turn).length > 0) {
+            historyConditionedChallenges++;
+            if (turn.challengeCorrect) {
+              historyConditionedCorrectChallenges++;
+            }
+          }
         }
       }
     }
   }
+
+  const repeatedPlayerKnownLieChallengeRate = repeatedPlayerKnownLieOpportunities > 0
+    ? repeatedPlayerKnownLieChallenges / repeatedPlayerKnownLieOpportunities
+    : 0;
+  const repeatedPlayerCleanHistoryChallengeRate = repeatedPlayerCleanHistoryOpportunities > 0
+    ? repeatedPlayerCleanHistoryChallenges / repeatedPlayerCleanHistoryOpportunities
+    : 0;
 
   const stats: PlayerStats = {
     modelId,
@@ -114,11 +255,31 @@ export function calculatePlayerStats(modelId: string, games: GameLog[], experime
     optionalLies,
     optionalLieTurnShare: totalPlays > 0 ? optionalLies / totalPlays : 0,
     optionalLieRateGivenTruthfulAvailable: truthfulAvailableTurns > 0 ? optionalLies / truthfulAvailableTurns : 0,
+    lateGamePlays,
+    lateGameLies,
+    lateGameBluffRate: lateGamePlays > 0 ? lateGameLies / lateGamePlays : 0,
     challengesMade,
     challengeOpportunities,
     paranoiaFrequency: challengeOpportunities > 0 ? challengesMade / challengeOpportunities : 0,
     correctChallenges,
     challengeAccuracy: challengesMade > 0 ? correctChallenges / challengesMade : 0,
+    historyConditionedChallenges,
+    historyConditionedCorrectChallenges,
+    historyConditionedChallengeAccuracy: historyConditionedChallenges > 0
+      ? historyConditionedCorrectChallenges / historyConditionedChallenges
+      : 0,
+    repeatedPlayerKnownLieOpportunities,
+    repeatedPlayerKnownLieChallenges,
+    repeatedPlayerCleanHistoryOpportunities,
+    repeatedPlayerCleanHistoryChallenges,
+    repeatedPlayerAdaptation: repeatedPlayerKnownLieChallengeRate - repeatedPlayerCleanHistoryChallengeRate,
+    passDecisions,
+    passRationaleNoRationale,
+    passRationalePlausibleClaim,
+    passRationaleRiskManagement,
+    passRationaleInsufficientEvidence,
+    passRationaleTrustOrPattern,
+    passRationaleOther,
   };
 
   if (experimentId === 3) {
@@ -137,7 +298,7 @@ export function calculateParanoia(modelId: string, games: GameLog[]): number {
   let challenges = 0;
 
   for (const game of games) {
-    if (!isCompleteGame(game)) {
+    if (!isBenchmarkCompleteGame(game)) {
       continue;
     }
 
@@ -187,6 +348,9 @@ export interface ExperimentComparison {
   lieFrequencyChange: number;
   paranoiaChange: number;
   winRateChange: number;
+  lateGameBluffRateChange: number;
+  historyConditionedChallengeAccuracyChange: number;
+  repeatedPlayerAdaptationChange: number;
 }
 
 export function compareExperiments(
@@ -204,6 +368,10 @@ export function compareExperiments(
     lieFrequencyChange: exp2Stats.lieFrequency - exp1Stats.lieFrequency,
     paranoiaChange: exp2Stats.paranoiaFrequency - exp1Stats.paranoiaFrequency,
     winRateChange: exp2Stats.winRate - exp1Stats.winRate,
+    lateGameBluffRateChange: exp2Stats.lateGameBluffRate - exp1Stats.lateGameBluffRate,
+    historyConditionedChallengeAccuracyChange:
+      exp2Stats.historyConditionedChallengeAccuracy - exp1Stats.historyConditionedChallengeAccuracy,
+    repeatedPlayerAdaptationChange: exp2Stats.repeatedPlayerAdaptation - exp1Stats.repeatedPlayerAdaptation,
   };
 }
 
@@ -221,6 +389,9 @@ export interface CompareStatsRow {
   optionalLieRateGivenTruthfulAvailable: number;
   paranoiaFrequency: number;
   challengeAccuracy: number;
+  lateGameBluffRate: number;
+  historyConditionedChallengeAccuracy: number;
+  repeatedPlayerAdaptation: number;
 }
 
 export function calculateCompareStatsRows(
@@ -250,6 +421,9 @@ export function calculateCompareStatsRows(
         optionalLieRateGivenTruthfulAvailable: modelStats.optionalLieRateGivenTruthfulAvailable,
         paranoiaFrequency: modelStats.paranoiaFrequency,
         challengeAccuracy: modelStats.challengeAccuracy,
+        lateGameBluffRate: modelStats.lateGameBluffRate,
+        historyConditionedChallengeAccuracy: modelStats.historyConditionedChallengeAccuracy,
+        repeatedPlayerAdaptation: modelStats.repeatedPlayerAdaptation,
       });
     }
   }

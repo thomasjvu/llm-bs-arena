@@ -21,11 +21,7 @@ export interface DatasetManifest {
   totalGamesFound: number;
   includedGames: number;
   playerGameRows: number;
-  countsByExperiment: Record<number, {
-    included: number;
-    excludedMixedCohort: number;
-    excludedTurnCap: number;
-  }>;
+  countsByExperiment: ReturnType<typeof buildCohortManifest>['countsByExperiment'];
   comparableCohort: ReturnType<typeof buildCohortManifest>['comparableCohort'];
   rawLogArchive: ReleaseFileEntry;
   frozenArtifacts: ReleaseFileEntry[];
@@ -114,6 +110,10 @@ export const SCHEMA_V3_FROZEN_ARTIFACTS = [
   'paper/arxiv/artifacts/frozen/challenge_decisions.csv',
 ] as const;
 
+export const SCHEMA_V4_FROZEN_ARTIFACTS = [
+  'paper/arxiv/artifacts/frozen/decision_log.csv',
+] as const;
+
 export const DEFAULT_TRACKED_FIGURES = [
   'paper/arxiv/figures/benchmark_overview.png',
   'paper/arxiv/figures/compare_lie_frequency.png',
@@ -187,7 +187,7 @@ ${benchmarkRelease.trackedFigures.map((figure) => `  - \`${figure}\``).join('\n'
 
 - Same dominant comparable cohort across provider, prompt version/hash, and schema version
 - Winner-terminated games only
-- No turn-cap games in the main dataset
+- No turn-cap, context-limit, provider-error, parse-failure, or incomplete games in the main dataset
 - Baseline policy IDs are shipped for side comparisons, but are not part of the primary hosted-model cohort
 `;
 }
@@ -223,6 +223,7 @@ export function buildBenchmarkRelease(
   const requestedFrozenArtifacts = options.frozenArtifacts ?? [
     ...DEFAULT_FROZEN_ARTIFACTS,
     ...(comparableCohort.schemaVersion >= 3 ? SCHEMA_V3_FROZEN_ARTIFACTS : []),
+    ...(comparableCohort.schemaVersion >= 4 ? SCHEMA_V4_FROZEN_ARTIFACTS : []),
   ];
   const frozenArtifacts = requestedFrozenArtifacts.map((entry) => path.resolve(repoRoot, entry));
 
@@ -264,6 +265,24 @@ export function buildBenchmarkRelease(
     frozenArtifacts: frozenArtifactEntries,
     trackedFigures: trackedFigureEntries,
   };
+  const primaryMetrics = [
+    'win_rate',
+    'lie_frequency',
+    'optional_lie_rate_given_truthful_available',
+    'truthful_unavailable_turn_share',
+    'lie_success_rate',
+    'challenge_frequency',
+    'challenge_accuracy',
+    ...(comparableCohort.schemaVersion >= 4
+      ? [
+          'late_game_bluff_rate',
+          'history_conditioned_challenge_accuracy',
+          'repeated_player_adaptation',
+          'pass_rationale_category',
+        ]
+      : []),
+    'legacy_instruction_violation_rate_exp3',
+  ];
 
   const evaluationManifest: EvaluationManifest = {
     benchmarkName: BENCHMARK_NAME,
@@ -311,25 +330,20 @@ export function buildBenchmarkRelease(
       challengeOrder: 'sequential',
       uncappedDefault: true,
     },
-    primaryMetrics: [
-      'win_rate',
-      'lie_frequency',
-      'optional_lie_rate_given_truthful_available',
-      'truthful_unavailable_turn_share',
-      'lie_success_rate',
-      'challenge_frequency',
-      'challenge_accuracy',
-      'legacy_instruction_violation_rate_exp3',
-    ],
+    primaryMetrics,
     validityRules: {
       included: [
         'provider/prompt/schema metadata present',
         'game belongs to the dominant comparable cohort',
-        'game ends with terminationReason = winner',
+        'game ends with terminationReason = winner and has a non-null winner',
       ],
       excluded: [
         'mixed cohort logs outside the official comparable cohort',
         'turn-cap runs',
+        'context-limit runs',
+        'provider-error runs',
+        'parse-failure runs',
+        'runs without a winner-terminated completion',
         'legacy pre-fix logs',
       ],
     },

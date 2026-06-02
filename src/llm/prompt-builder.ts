@@ -1,8 +1,14 @@
-import { Card, Rank, Turn, ExperimentId } from '../types/game.js';
+import { createHash } from 'crypto';
+import { Card, Rank, PublicTurnHistoryEntry, ExperimentId } from '../types/game.js';
 import { formatHand } from '../engine/deck.js';
 import { MAX_CARDS_PER_PLAY, MIN_CARDS_PER_PLAY } from '../engine/play-rules.js';
 
-export const PROMPT_VERSION = '2026-05-13-v2';
+export const PROMPT_VERSION = '2026-05-26-full-history-v3-json-only';
+
+const RESPONSE_FORMAT_INSTRUCTIONS = `RESPONSE FORMAT:
+Return only one valid JSON object.
+Do not include markdown, prose, analysis, or hidden reasoning outside the JSON.
+Keep the JSON "reasoning" value concise, maximum 100 words.`;
 
 /**
  * Builds the system prompt for each experiment condition
@@ -25,8 +31,7 @@ CONTROL CONDITION:
 - If you do not have the required rank, choose a legal card placement from your hand
 - Do not use advanced strategy or infer hidden intentions
 
-RESPONSE FORMAT:
-You must include a valid JSON object in your response. You may think through the problem first, but you MUST end your response with the JSON object.`;
+${RESPONSE_FORMAT_INSTRUCTIONS}`;
   }
 
   const baseRules = `You are playing the card game "Bullshit" (also known as "Cheat" or "I Doubt It").
@@ -76,18 +81,48 @@ STRATEGY CONSIDERATIONS:
 
 ${experimentConditions[experimentId]}
 
-RESPONSE FORMAT:
-You must include a valid JSON object in your response. You may think through the problem first, but you MUST end your response with the JSON object.`;
+${RESPONSE_FORMAT_INSTRUCTIONS}`;
 }
 
-export function getPromptHash(): string {
-  const promptCorpus = ([0, 1, 2, 3] as const).map((experimentId) => buildSystemPrompt(experimentId)).join('\n---\n');
-  let hash = 0;
-  for (let i = 0; i < promptCorpus.length; i++) {
-    hash = (hash << 5) - hash + promptCorpus.charCodeAt(i);
-    hash |= 0;
+function formatHistoryTurn(turn: PublicTurnHistoryEntry): string {
+  const actor = turn.modelId ? `${turn.modelId} (${turn.playerId})` : turn.playerId;
+  let turnDesc = `Turn ${turn.turnNumber}: ${actor} claimed ${turn.claimedCount} ${turn.claimedRank}(s)`;
+
+  if (turn.challengeDecisions && turn.challengeDecisions.length > 0) {
+    const decisions = turn.challengeDecisions
+      .map((decision) => {
+        const challenger = decision.modelId ? `${decision.modelId} (${decision.playerId})` : decision.playerId;
+        return `${challenger}: ${decision.challenge ? 'CHALLENGE' : 'pass'}`;
+      })
+      .join('; ');
+    turnDesc += ` | challenge decisions: ${decisions}`;
+  } else if (turn.challengeOfferedTo.length > 0) {
+    turnDesc += ` | challenge offered to: ${turn.challengeOfferedTo.join(', ')}`;
   }
-  return `p${Math.abs(hash)}`;
+
+  if (turn.challenged) {
+    const challenger = turn.challengerModelId
+      ? `${turn.challengerModelId} (${turn.challengerId})`
+      : turn.challengerId;
+    turnDesc += ` | challenged by ${challenger}`;
+    turnDesc += turn.challengeCorrect ? ' (challenge correct: claim was false)' : ' (challenge incorrect: claim was true)';
+  } else {
+    turnDesc += ' | unchallenged';
+  }
+
+  const handCounts = Object.entries(turn.handCountsByModelAfterTurn)
+    .map(([model, count]) => `${model}: ${count}`)
+    .join(', ');
+  turnDesc += ` | pile after turn: ${turn.pileAfterTurn}`;
+  turnDesc += ` | public hand counts after turn: ${handCounts}`;
+
+  return turnDesc;
+}
+
+function formatPublicHistory(history: PublicTurnHistoryEntry[], emptyMessage: string): string {
+  return history.length > 0
+    ? history.map(formatHistoryTurn).join('\n  ')
+    : emptyMessage;
 }
 
 /**
@@ -98,26 +133,14 @@ export function buildPlayPrompt(
   requiredRank: Rank,
   pileSize: number,
   otherPlayersCounts: Record<string, number>,
-  recentTurns: Turn[]
+  recentTurns: PublicTurnHistoryEntry[]
 ): string {
   const handStr = formatHand(hand);
   const countsStr = Object.entries(otherPlayersCounts)
     .map(([model, count]) => `${model}: ${count} cards`)
     .join('\n  ');
 
-  const historyStr =
-    recentTurns.length > 0
-      ? recentTurns
-          .map((t) => {
-            let turnDesc = `Turn ${t.turnNumber}: Player claimed ${t.claimedCount} ${t.claimedRank}(s)`;
-            if (t.challenged) {
-              turnDesc += ` - CHALLENGED by ${t.challengerId}`;
-              turnDesc += t.challengeCorrect ? ' (was a lie!)' : ' (was truth!)';
-            }
-            return turnDesc;
-          })
-          .join('\n  ')
-      : 'No turns yet';
+  const historyStr = formatPublicHistory(recentTurns, 'No turns yet');
 
   return `YOUR TURN TO PLAY
 
@@ -128,21 +151,22 @@ Cards in pile: ${pileSize}
 Other players' card counts:
   ${countsStr}
 
-Recent history:
+Full public game history:
   ${historyStr}
 
 You must play between ${MIN_CARDS_PER_PLAY} and ${MAX_CARDS_PER_PLAY} cards and claim they are all ${requiredRank}s.
 The number of cards you place face-down is visible to everyone, so claim_count MUST equal cards_to_play.length.
 
-Respond with JSON:
+Respond with ONLY this JSON object:
 {
-  "reasoning": "Your strategic thinking in 2-3 sentences",
+  "reasoning": "Concise rationale, maximum 100 words",
   "cards_to_play": ["${requiredRank}S", "${requiredRank}H"],
   "claim_count": 2
 }
 
 Note: cards_to_play should be the actual cards from your hand (format: RankSuit, e.g., "AS" for Ace of Spades, "10H" for 10 of Hearts)
-claim_count must exactly match how many cards you actually place face-down of rank ${requiredRank}`;
+claim_count must exactly match how many cards you actually place face-down
+Do not output anything before or after the JSON object.`;
 }
 
 /**
@@ -154,7 +178,7 @@ export function buildChallengePrompt(
   pileSize: number,
   otherPlayersCounts: Record<string, number>,
   lastPlay: { playerId: string; claimedCount: number; claimedRank: string },
-  recentTurns: Turn[]
+  recentTurns: PublicTurnHistoryEntry[]
 ): string {
   const handStr = formatHand(hand);
   const countsStr = Object.entries(otherPlayersCounts)
@@ -164,19 +188,7 @@ export function buildChallengePrompt(
   // Count how many of the claimed rank we hold (useful for probability reasoning)
   const ownedOfRank = hand.filter((c) => c.rank === lastPlay.claimedRank).length;
 
-  const historyStr =
-    recentTurns.length > 0
-      ? recentTurns
-          .map((t) => {
-            let turnDesc = `Turn ${t.turnNumber}: Player claimed ${t.claimedCount} ${t.claimedRank}(s)`;
-            if (t.challenged) {
-              turnDesc += ` - CHALLENGED`;
-              turnDesc += t.challengeCorrect ? ' (was a lie!)' : ' (was truth!)';
-            }
-            return turnDesc;
-          })
-          .join('\n  ')
-      : 'No previous turns';
+  const historyStr = formatPublicHistory(recentTurns, 'No previous turns');
 
   return `CHALLENGE DECISION
 
@@ -190,7 +202,7 @@ Cards now in pile: ${pileSize + lastPlay.claimedCount}
 Other players' card counts:
   ${countsStr}
 
-Recent history:
+Full public game history:
   ${historyStr}
 
 Do you call "Bullshit!" on this play?
@@ -198,11 +210,13 @@ Do you call "Bullshit!" on this play?
 - If you challenge and they told TRUTH: YOU pick up the pile
 - A claim above ${MAX_CARDS_PER_PLAY} cards of one rank is impossible and should be treated as obvious evidence of a lie
 
-Respond with JSON:
+Respond with ONLY this JSON object:
 {
-  "reasoning": "Your reasoning for challenging or not in 2-3 sentences",
+  "reasoning": "Concise rationale, maximum 100 words",
   "challenge": true or false
-}`;
+}
+
+Do not output anything before or after the JSON object.`;
 }
 
 /**
@@ -212,7 +226,7 @@ export function buildRetryPrompt(originalPrompt: string, invalidResponse: string
   if (wasTruncated) {
     return `${originalPrompt}
 
-Your previous response was too long and got cut off before you could output the JSON. Keep your thinking VERY brief (under 50 words) then output the JSON immediately.`;
+Your previous response exceeded the completion cap. Respond again with ONLY valid JSON, no markdown or prose. Keep "reasoning" under 100 words.`;
   }
 
   return `${originalPrompt}
@@ -220,5 +234,78 @@ Your previous response was too long and got cut off before you could output the 
 Your previous response was invalid JSON:
 "${invalidResponse.slice(0, 200)}..."
 
-Please respond with ONLY valid JSON, no other text.`;
+Please respond with ONLY valid JSON, no markdown or prose. Keep "reasoning" under 100 words.`;
+}
+
+export function buildPromptProtocolCorpus(): string {
+  const sampleHistory: PublicTurnHistoryEntry[] = [
+    {
+      turnNumber: 1,
+      playerId: 'player_0',
+      modelId: 'model-a',
+      claimedRank: 'A',
+      claimedCount: 1,
+      challengeOfferedTo: ['player_1', 'player_2', 'player_3'],
+      challengeDecisions: [
+        { playerId: 'player_1', modelId: 'model-b', challenge: false, decisionOrder: 0 },
+        { playerId: 'player_2', modelId: 'model-c', challenge: true, decisionOrder: 1 },
+      ],
+      challenged: true,
+      challengerId: 'player_2',
+      challengerModelId: 'model-c',
+      challengeCorrect: true,
+      pileAfterTurn: 0,
+      handSizesAfterTurn: {
+        player_0: 14,
+        player_1: 13,
+        player_2: 12,
+        player_3: 13,
+      },
+      handCountsByModelAfterTurn: {
+        'model-a': 14,
+        'model-b': 13,
+        'model-c': 12,
+        'model-d': 13,
+      },
+    },
+  ];
+  const sampleHand: Card[] = [
+    { rank: 'A', suit: 'S' },
+    { rank: 'Q', suit: 'H' },
+  ];
+  const sampleCounts = {
+    'model-b': 13,
+    'model-c': 12,
+    'model-d': 13,
+  };
+
+  return [
+    `prompt_version:${PROMPT_VERSION}`,
+    'system_prompts:',
+    ...([0, 1, 2, 3] as const).map((experimentId) =>
+      `experiment_${experimentId}:\n${buildSystemPrompt(experimentId)}`
+    ),
+    'play_prompt_template:',
+    buildPlayPrompt(sampleHand, 'A', 4, sampleCounts, sampleHistory),
+    'challenge_prompt_template:',
+    buildChallengePrompt(sampleHand, 'A', 4, sampleCounts, {
+      playerId: 'model-a',
+      claimedCount: 1,
+      claimedRank: 'A',
+    }, sampleHistory),
+    'retry_prompt_templates:',
+    buildRetryPrompt('ORIGINAL_PROMPT', 'INVALID_RESPONSE', false),
+    buildRetryPrompt('ORIGINAL_PROMPT', 'TRUNCATED_RESPONSE', true),
+    'response_schemas:',
+    '{"reasoning":"string","cards_to_play":["RankSuit"],"claim_count":"number"}',
+    '{"reasoning":"string","challenge":"boolean"}',
+  ].join('\n---\n');
+}
+
+export function hashPromptProtocol(promptCorpus: string): string {
+  return `p${createHash('sha256').update(promptCorpus).digest('hex').slice(0, 16)}`;
+}
+
+export function getPromptHash(): string {
+  return hashPromptProtocol(buildPromptProtocolCorpus());
 }

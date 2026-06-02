@@ -7,6 +7,13 @@ export interface MatchupShard {
   label: string;
 }
 
+export interface GameSlotShard {
+  start: number;
+  end: number;
+  count: number;
+  label: string;
+}
+
 /**
  * Generates all C(n, k) combinations of items
  */
@@ -73,7 +80,9 @@ export function createTournamentConfig(
   maxTurns?: number,
   matchupStart?: number,
   matchupEnd?: number,
-  models: readonly string[] = MODELS
+  models: readonly string[] = MODELS,
+  gameStart?: number,
+  gameEnd?: number
 ): TournamentConfig {
   if (maxTurns !== undefined && (!Number.isInteger(maxTurns) || maxTurns <= 0)) {
     throw new Error(`maxTurns must be a positive integer, got: ${maxTurns}`);
@@ -85,6 +94,14 @@ export function createTournamentConfig(
 
   if (matchupEnd !== undefined && (!Number.isInteger(matchupEnd) || matchupEnd < 0)) {
     throw new Error(`matchupEnd must be a non-negative integer, got: ${matchupEnd}`);
+  }
+
+  if (gameStart !== undefined && (!Number.isInteger(gameStart) || gameStart < 0)) {
+    throw new Error(`gameStart must be a non-negative integer, got: ${gameStart}`);
+  }
+
+  if (gameEnd !== undefined && (!Number.isInteger(gameEnd) || gameEnd < 0)) {
+    throw new Error(`gameEnd must be a non-negative integer, got: ${gameEnd}`);
   }
 
   if (models.length < 4) {
@@ -104,8 +121,10 @@ export function createTournamentConfig(
     maxTurns,
     matchupStart,
     matchupEnd,
+    gameStart,
+    gameEnd,
     gameRetryDelayMs: parsePositiveIntegerEnv('TOURNAMENT_GAME_RETRY_DELAY_MS', 30_000),
-    maxGameFailuresPerSlot: parsePositiveIntegerEnv('TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT', 10),
+    maxGameFailuresPerSlot: parseGameFailureLimitEnv('TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT', 10),
   };
 }
 
@@ -113,6 +132,24 @@ function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) {
     return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+function parseGameFailureLimitEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) {
+    return fallback;
+  }
+
+  if (raw === '0' || raw === 'none' || raw === 'unlimited' || raw === 'infinite') {
+    return 0;
   }
 
   const parsed = Number.parseInt(raw, 10);
@@ -141,6 +178,34 @@ export function resolveMatchupShard(
 
   if (!Number.isInteger(end) || end < start || end >= totalMatchups) {
     throw new Error(`matchupEnd must be between ${start} and ${totalMatchups - 1}, got: ${end}`);
+  }
+
+  return {
+    start,
+    end,
+    count: end - start + 1,
+    label: `${start}-${end}`,
+  };
+}
+
+export function resolveGameSlotShard(
+  totalGameSlots: number,
+  gameStart?: number,
+  gameEnd?: number
+): GameSlotShard {
+  if (!Number.isInteger(totalGameSlots) || totalGameSlots <= 0) {
+    throw new Error(`totalGameSlots must be a positive integer, got: ${totalGameSlots}`);
+  }
+
+  const start = gameStart ?? 0;
+  const end = gameEnd ?? totalGameSlots - 1;
+
+  if (!Number.isInteger(start) || start < 0 || start >= totalGameSlots) {
+    throw new Error(`gameStart must be between 0 and ${totalGameSlots - 1}, got: ${start}`);
+  }
+
+  if (!Number.isInteger(end) || end < start || end >= totalGameSlots) {
+    throw new Error(`gameEnd must be between ${start} and ${totalGameSlots - 1}, got: ${end}`);
   }
 
   return {

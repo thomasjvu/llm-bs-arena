@@ -81,6 +81,10 @@ export async function startGame(options) {
 export async function stepGame(gameId, handlers = {}) {
   const response = await fetch(`${API_BASE}/game/${gameId}/step?stream=1`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      apiKey: handlers.apiKey || '',
+    }),
   });
 
   if (response.headers.get('content-type')?.includes('text/event-stream') && response.body) {

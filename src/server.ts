@@ -15,7 +15,7 @@ import {
   Provider,
   ProviderRuntimeConfig,
 } from './llm/provider.js';
-import { GameLogger, selectComparableGameCohort } from './logging/game-logger.js';
+import { GameLogger, selectComparableGameCohort, isBenchmarkCompleteGame } from './logging/game-logger.js';
 import { calculateAllStats, calculateCompareStatsRows } from './metrics/player-stats.js';
 import { normalizePlaySelection } from './engine/play-rules.js';
 
@@ -59,6 +59,10 @@ interface FrozenResearchManifest {
     included: number;
     excludedMixedCohort: number;
     excludedTurnCap: number;
+    excludedContextLimit?: number;
+    excludedProviderError?: number;
+    excludedParseFailure?: number;
+    excludedIncomplete?: number;
   }>;
   excludedGamesByReason?: Record<string, string[]>;
 }
@@ -460,7 +464,32 @@ function buildVisibleStateForPlayer(game: ActiveGame, playerId: string, pileSize
         .filter((entry) => entry.id !== player.id && !entry.isEliminated)
         .map((entry) => [entry.modelId, entry.hand.length])
     ),
-    recentTurns: game.state.turns.slice(-5),
+    recentTurns: game.state.turns.map((turn) => ({
+      turnNumber: turn.turnNumber,
+      playerId: turn.playerId,
+      modelId: turn.modelId || game.state.players.find((entry) => entry.id === turn.playerId)?.modelId,
+      claimedRank: turn.claimedRank,
+      claimedCount: turn.claimedCount,
+      challengeOfferedTo: [...(turn.challengeOfferedTo || [])],
+      challengeDecisions: turn.challengeDecisions?.map((decision) => ({
+        playerId: decision.playerId,
+        modelId: decision.modelId || game.state.players.find((entry) => entry.id === decision.playerId)?.modelId,
+        challenge: decision.challenge,
+        decisionOrder: decision.decisionOrder,
+      })),
+      challenged: turn.challenged,
+      challengerId: turn.challengerId,
+      challengerModelId: turn.challengerModelId || (turn.challengerId ? game.state.players.find((entry) => entry.id === turn.challengerId)?.modelId : undefined),
+      challengeCorrect: turn.challengeCorrect,
+      pileAfterTurn: turn.pileAfterTurn,
+      handSizesAfterTurn: { ...turn.handSizesAfterTurn },
+      handCountsByModelAfterTurn: Object.fromEntries(
+        Object.entries(turn.handSizesAfterTurn).map(([playerId, handSize]) => [
+          game.state.players.find((entry) => entry.id === playerId)?.modelId || playerId,
+          handSize,
+        ])
+      ),
+    })),
   };
 }
 
@@ -472,7 +501,8 @@ function recordChallengeDecision(
   reasoning: string,
   responseTimeMs?: number,
   tokenUsage?: Turn['challengeTokenUsage'],
-  tokenUsageIncomplete?: boolean
+  tokenUsageIncomplete?: boolean,
+  decisionTrace?: NonNullable<Turn['challengeDecisions']>[number]['decisionTrace']
 ) {
   turn.challengeOfferedTo ??= [];
   turn.challengeOfferedTo.push(playerId);
@@ -486,6 +516,7 @@ function recordChallengeDecision(
     responseTimeMs,
     tokenUsage,
     tokenUsageIncomplete,
+    decisionTrace,
   });
 }
 
@@ -607,6 +638,7 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
       turn.playResponseTimeMs = playResponse.responseTimeMs;
       turn.playTokenUsage = playResponse.tokenUsage;
       turn.playTokenUsageIncomplete = playResponse.tokenUsageIncomplete;
+      turn.playDecisionTrace = playResponse.decisionTrace;
 
       game.pendingTurn = turn;
       game.challengeQueue = getOtherPlayers(game.state).map(p => p.id);
@@ -655,7 +687,8 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
           challengeResponse.reasoning,
           challengeResponse.responseTimeMs,
           challengeResponse.tokenUsage,
-          challengeResponse.tokenUsageIncomplete
+          challengeResponse.tokenUsageIncomplete,
+          challengeResponse.decisionTrace
         );
 
         if (challengeResponse.challenge) {
@@ -884,6 +917,7 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
     turn.playResponseTimeMs = playResponse.responseTimeMs;
     turn.playTokenUsage = playResponse.tokenUsage;
     turn.playTokenUsageIncomplete = playResponse.tokenUsageIncomplete;
+    turn.playDecisionTrace = playResponse.decisionTrace;
     console.log(`[auto]   ${turn.claimedCount}× ${turn.claimedRank} (${turn.wasLie ? 'LIE' : 'TRUTH'})`);
 
     game.pendingTurn = turn;
@@ -929,7 +963,8 @@ async function handleNextStepInternal(game: ActiveGame): Promise<boolean> {
       challengeResponse.reasoning,
       challengeResponse.responseTimeMs,
       challengeResponse.tokenUsage,
-      challengeResponse.tokenUsageIncomplete
+      challengeResponse.tokenUsageIncomplete,
+      challengeResponse.decisionTrace
     );
 
     if (challengeResponse.challenge) {
@@ -979,7 +1014,7 @@ function handleGetStats(res: http.ServerResponse, experiment?: string) {
     const selection = selectComparableGameCohort(rawGames);
     const games = selection.games;
     const counts = logger.getGameCounts();
-    const includedCount = games.filter((game) => game.terminationReason !== 'turn_cap').length;
+    const includedCount = games.filter(isBenchmarkCompleteGame).length;
 
     if (games.length === 0) {
       const placeholderStats: Record<string, any> = {};
@@ -1034,7 +1069,7 @@ function handleGetStatsCompare(res: http.ServerResponse) {
 
     for (const experimentId of [0, 1, 2, 3]) {
       includedCounts[experimentId] = games.filter(
-        (game) => game.experimentId === experimentId && game.terminationReason !== 'turn_cap'
+        (game) => game.experimentId === experimentId && isBenchmarkCompleteGame(game)
       ).length;
     }
 
@@ -1066,7 +1101,13 @@ function handleGetResearchStats(res: http.ServerResponse, experiment?: string) {
     }
 
     const experimentCounts = frozen.manifest.countsByExperiment[experimentId];
-    const excludedGames = (experimentCounts?.excludedMixedCohort || 0) + (experimentCounts?.excludedTurnCap || 0);
+    const excludedGames =
+      (experimentCounts?.excludedMixedCohort || 0) +
+      (experimentCounts?.excludedTurnCap || 0) +
+      (experimentCounts?.excludedContextLimit || 0) +
+      (experimentCounts?.excludedProviderError || 0) +
+      (experimentCounts?.excludedParseFailure || 0) +
+      (experimentCounts?.excludedIncomplete || 0);
     const countsByExperiment = Object.fromEntries(
       Object.entries(frozen.manifest.countsByExperiment).map(([key, value]) => [key, value.included])
     );
