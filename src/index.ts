@@ -79,7 +79,7 @@ function resolveModelSelection(models?: string[], expectedCount?: number): strin
 // Run tournament command
 program
   .command('tournament')
-  .description('Run a tournament experiment')
+  .description('Run benchmark cohort games')
   .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseIntegerOption)
   .option('-g, --games <number>', 'Games per matchup', parseIntegerOption, 10)
   .option('-m, --models <models...>', 'Optional custom model roster (4+ model IDs)')
@@ -139,7 +139,7 @@ program
       );
     });
 
-    console.log('\nTournament complete!');
+    console.log('\nBenchmark cohort run complete!');
   });
 
 // Run single game command
@@ -188,7 +188,7 @@ program
 // Analyze results command
 program
   .command('analyze')
-  .description('Analyze tournament results')
+  .description('Analyze benchmark run results')
   .option('-e, --experiment <number>', 'Experiment ID to analyze (or all)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
   .option('--csv', 'Export results to CSV')
@@ -329,9 +329,9 @@ program
 // List models command
 program
   .command('models')
-  .description('List all models in the tournament')
+  .description('List default benchmark roster')
   .action(() => {
-    console.log('Default tournament models:');
+    console.log('Default benchmark roster:');
     MODELS.forEach((model, i) => {
       console.log(`  ${i + 1}. ${model}`);
     });
@@ -386,7 +386,7 @@ program
 // Status command
 program
   .command('status')
-  .description('Show tournament progress')
+  .description('Show benchmark run progress')
   .option('-o, --output <dir>', 'Output directory', 'logs')
   .action(async (options) => {
     const logger = new GameLogger(`${options.output}/games`);
@@ -395,7 +395,7 @@ program
     const totalMatchups = combinations([...MODELS], 4).length;
     const gamesPerExp = totalMatchups * 10; // Assuming 10 games per matchup
 
-    console.log('Tournament Status:');
+    console.log('Benchmark Run Status:');
     console.log('='.repeat(50));
 
     for (const exp of [0, 1, 2, 3] as const) {
@@ -494,5 +494,10 @@ program
     console.log(`Raw log archive: ${release.rawLogArchive.path}`);
     console.log(`Included games: ${release.comparableCohort?.size ?? 'n/a'}`);
   });
+
+if (process.argv.length <= 2) {
+  program.outputHelp();
+  process.exit(0);
+}
 
 program.parse();

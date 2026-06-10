@@ -46,6 +46,9 @@ This runbook provides a step-by-step guide to reproduce the Bullshit-Bench pilot
    ```
 
 ## Phase 2: Dataset Collection
+
+The `tournament` command is the benchmark batch runner over all unique four-player model matchups; it is the reproducible cohort-collection path used by the paper and release artifacts.
+
 1. Freeze pilot dataset settings (do not change after this point):
    - Provider: nim
    - Roster: 6-model default
@@ -140,7 +143,7 @@ The v3 shard helper defaults to:
 
 - `LLM_CONTEXT_BUDGET_TOKENS=120000`
 - `LLM_PLAY_MAX_TOKENS=2048`
-- `LLM_CHALLENGE_MAX_TOKENS=1024`
+- `LLM_CHALLENGE_MAX_TOKENS=4096`
 - `TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT=0`
 
 The play/challenge token settings are generated-token completion caps, not context-window limits. A value of `0` for `TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT` means unlimited retries for transient provider failures. Fatal auth/model-access/configuration errors still abort the shard immediately because waiting will not repair them.

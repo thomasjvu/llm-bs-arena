@@ -9,8 +9,9 @@ const DEFAULT_OUTPUT_DIR = 'logs-v3';
 const DEFAULT_CONTEXT_BUDGET_TOKENS = '120000';
 const DEFAULT_NIM_TIMEOUT_MS = '180000';
 const DEFAULT_PLAY_MAX_TOKENS = '2048';
-const DEFAULT_CHALLENGE_MAX_TOKENS = '1024';
+const DEFAULT_CHALLENGE_MAX_TOKENS = '4096';
 const DEFAULT_MAX_GAME_FAILURES_PER_SLOT = '0';
+const DEFAULT_NODE_MAX_OLD_SPACE_SIZE_MB = '8192';
 
 function parseEnvFile(filepath) {
   if (!fs.existsSync(filepath)) return {};
@@ -131,6 +132,16 @@ function resolveShardRange(totalSlots, shardIndex, shardCount) {
 
 function formatFailureLimit(value) {
   return value === '0' ? 'unlimited' : value;
+}
+
+function withDefaultNodeHeapOptions(existingOptions, maxOldSpaceSizeMb) {
+  if (/\b--max-old-space-size(?:=|\s+)/.test(existingOptions || '')) {
+    return existingOptions;
+  }
+
+  return [existingOptions, `--max-old-space-size=${maxOldSpaceSizeMb}`]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function latestSourceMtimeMs(dir) {
@@ -271,6 +282,10 @@ async function main() {
   };
   const childEnv = {
     ...mergedEnv,
+    NODE_OPTIONS: withDefaultNodeHeapOptions(
+      mergedEnv.NODE_OPTIONS,
+      mergedEnv.V3_NODE_MAX_OLD_SPACE_SIZE_MB || DEFAULT_NODE_MAX_OLD_SPACE_SIZE_MB
+    ),
     LLM_CONTEXT_BUDGET_TOKENS:
       mergedEnv.LLM_CONTEXT_BUDGET_TOKENS ||
       DEFAULT_CONTEXT_BUDGET_TOKENS,
@@ -312,6 +327,7 @@ async function main() {
   console.log(`context prompt budget: ${childEnv.LLM_CONTEXT_BUDGET_TOKENS}`);
   console.log(`play completion max tokens: ${childEnv.LLM_PLAY_MAX_TOKENS}`);
   console.log(`challenge completion max tokens: ${childEnv.LLM_CHALLENGE_MAX_TOKENS}`);
+  console.log(`node max old space: ${childEnv.NODE_OPTIONS.match(/--max-old-space-size(?:=|\s+)(\d+)/)?.[1] || 'custom'} MB`);
   console.log(`max failed attempts per game slot: ${formatFailureLimit(childEnv.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT)}`);
   console.log(`env files checked: ${envFilePaths.filter((file) => fs.existsSync(file)).join(', ') || 'none'}`);
   console.log(`NVIDIA API key loaded: ${Boolean(childEnv.NVIDIA_API_KEY || childEnv.NVIDIA_NIM_API_KEY)}`);

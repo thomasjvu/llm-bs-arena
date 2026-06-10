@@ -84,7 +84,7 @@ Optional NIM tuning for the published roster:
 ```bash
 NVIDIA_NIM_TIMEOUT_MS=180000
 # Generated-token caps for the model response, not context-window limits.
-# v3:shard defaults to 2048/1024; direct tournament commands use adapter defaults unless set.
+# v3:shard defaults to 2048/4096; direct tournament commands use adapter defaults unless set.
 LLM_PLAY_MAX_TOKENS=8192
 LLM_CHALLENGE_MAX_TOKENS=4096
 LLM_RECOVERY_WINDOW_MS=36000000
@@ -103,6 +103,26 @@ npm run python:setup
 
 ## Usage
 
+Development server:
+
+```bash
+npm run dev
+```
+
+This starts the visualizer at `http://localhost:3001`.
+
+Source CLI during development:
+
+```bash
+npm run cli:dev -- <command>
+```
+
+Built CLI after `npm run build`:
+
+```bash
+npm start -- <command>
+```
+
 Single game:
 
 ```bash
@@ -115,6 +135,8 @@ Tournament:
 npm start -- tournament -e 1 -g 10 -p nim -o logs-v2
 ```
 
+In this repository, `tournament` means the benchmark batch runner over all unique four-player model matchups. It is the cohort collection command used by the paper and release pipeline, not a separate product feature.
+
 V3 full-history parallel rerun:
 
 ```bash
@@ -124,7 +146,7 @@ npm run v3:shard -- 0 2
 npm run v3:shard -- 0 3
 ```
 
-Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/1024`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors. All shards can write to `logs-v3`; finalize once after all 16 shard commands finish:
+Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/4096`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors. All shards can write to `logs-v3`; finalize once after all 16 shard commands finish:
 
 ```bash
 npm run v3:finalize -- logs-v3
@@ -133,7 +155,7 @@ npm run v3:finalize -- logs-v3
 Visualizer:
 
 ```bash
-npm run visualizer
+npm run dev
 ```
 
 Open `http://localhost:3001`.
