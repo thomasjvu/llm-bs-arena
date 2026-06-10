@@ -12,7 +12,7 @@ import {
   resolveMatchupShard,
   resolveGameSlotShard,
 } from './matchup-generator.js';
-import { NonRetryableAPIError } from '../llm/nim-api.js';
+
 
 interface Checkpoint {
   experimentId: ExperimentId;
@@ -37,7 +37,7 @@ function formatFailureLimit(limit: number): string {
 }
 
 function isFatalTournamentError(error: unknown): boolean {
-  return error instanceof NonRetryableAPIError;
+  return error instanceof Error && error.name === 'NonRetryableAPIError';
 }
 
 export function formatTournamentGameCompletion(gameLog: GameLog, percentComplete: number): string {

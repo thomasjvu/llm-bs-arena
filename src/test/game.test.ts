@@ -1799,6 +1799,37 @@ describe('Matchup Generator', () => {
     }
   });
 
+  it('should abort fatal Venice auth or balance errors without retrying the slot', async () => {
+    const original = process.env.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT;
+    process.env.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT = '0';
+
+    try {
+      const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-venice-fatal-retry-'));
+      const config = createTournamentConfig(1, 1, outputDir, undefined, 0, 0);
+      const runner = new TournamentRunner(config, {} as LLMAdapter);
+      let callCount = 0;
+      let sleepCount = 0;
+
+      (runner as any).sleep = async () => {
+        sleepCount++;
+      };
+      (runner as any).runSingleGame = async () => {
+        callCount++;
+        throw new VeniceNonRetryableAPIError(402, 'Insufficient USD or Diem balance');
+      };
+
+      await expect(runner.run()).rejects.toThrow(/API error 402/);
+      expect(callCount).toBe(1);
+      expect(sleepCount).toBe(0);
+    } finally {
+      if (original === undefined) {
+        delete process.env.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT;
+      } else {
+        process.env.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT = original;
+      }
+    }
+  });
+
   it('should repair legacy checkpoints with holes instead of skipping missing game slots', async () => {
     const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-hole-'));
     const config = createTournamentConfig(0, 4, outputDir, undefined, 0, 0);
