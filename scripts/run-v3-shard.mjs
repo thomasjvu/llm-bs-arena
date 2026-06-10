@@ -234,7 +234,7 @@ Examples:
   npm run v3:shard -- 0 0
   npm run v3:shard -- 2 3 --shards 4 --out logs-v3
   npm run v3:shard -- 0 0 --games 1 --shards 15 --provider mock --out /private/tmp/llm-bullshit-v3-smoke
-  V3_OUTPUT=logs-v3-venice-4096 npm run v3:shard -- 0 0 --provider venice
+  V3_PROVIDER=venice npm run v3:shard -- 0 0
 
 Optional per-experiment env file:
   .env.v3-exp0.local

@@ -159,19 +159,17 @@ npm run v3:shard -- 0 3
 
 Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/4096`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors.
 
-For the paid Venice primary cohort, use a fresh output directory and do not mix it with older NIM runs:
+For the paid Venice primary cohort:
 
 ```bash
-V3_OUTPUT=logs-v3-venice-4096 V3_PROVIDER=venice npm run v3:shard -- 0 0
+V3_PROVIDER=venice npm run v3:shard -- 0 0
 ```
 
-Finalize once after all 16 shard commands finish:
+All shards write to `logs-v3` by default. Finalize once after all 16 shard commands finish:
 
 ```bash
-npm run v3:finalize -- logs-v3-venice-4096
+npm run v3:finalize -- logs-v3
 ```
-
-The older `logs-v3` NIM directory (1024 challenge cap) should be treated as exploratory only.
 
 Visualizer:
 
