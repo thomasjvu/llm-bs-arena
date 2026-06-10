@@ -75,7 +75,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export const PLAY_MAX_TOKENS = parsePositiveInt(process.env.LLM_PLAY_MAX_TOKENS, 8192);
+export const PLAY_MAX_TOKENS = parsePositiveInt(process.env.LLM_PLAY_MAX_TOKENS, 4096);
 export const CHALLENGE_MAX_TOKENS = parsePositiveInt(process.env.LLM_CHALLENGE_MAX_TOKENS, 4096);
 
 function parseNonNegativeInt(value: string | undefined, fallback: number): number {

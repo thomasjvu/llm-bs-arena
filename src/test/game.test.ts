@@ -2552,7 +2552,7 @@ describe('CSVExporter', () => {
       userPrompt: 'play prompt',
       visibleContext: { currentRank: 'A', recentTurns: [] },
       visibleContextHash: 'a'.repeat(64),
-      maxTokens: 2048,
+      maxTokens: 4096,
       estimatedPromptTokens: 12,
       promptBudgetTokens: 100,
       contextLimitExceeded: false,
@@ -2592,7 +2592,7 @@ describe('CSVExporter', () => {
         providerBaseUrl: 'https://example.invalid/v1',
         promptVersion: '2026-03-26',
         promptHash: 'p123',
-        playMaxTokens: 2048,
+        playMaxTokens: 4096,
         challengeMaxTokens: 1024,
       },
       turns: [
@@ -2804,7 +2804,7 @@ describe('V3 Log Audit', () => {
       handSizesAfterTurn: {},
       playResponseTimeMs: 10,
       playTokenUsageIncomplete: false,
-      playDecisionTrace: auditTrace({ recentTurns: [] }, 2048),
+      playDecisionTrace: auditTrace({ recentTurns: [] }, 4096),
     };
 
     return {
@@ -2822,7 +2822,7 @@ describe('V3 Log Audit', () => {
         promptVersion: PROMPT_VERSION,
         promptHash,
         contextBudgetTokens: 200,
-        playMaxTokens: 2048,
+        playMaxTokens: 4096,
         challengeMaxTokens: 1024,
       },
       turns: [turn],

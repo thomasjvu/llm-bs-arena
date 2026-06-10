@@ -9,8 +9,9 @@ const DEFAULT_OUTPUT_DIR = 'logs-v3';
 const DEFAULT_CONTEXT_BUDGET_TOKENS = '120000';
 const DEFAULT_NIM_TIMEOUT_MS = '180000';
 const DEFAULT_VENICE_TIMEOUT_MS = '180000';
-const DEFAULT_PLAY_MAX_TOKENS = '2048';
+const DEFAULT_PLAY_MAX_TOKENS = '4096';
 const DEFAULT_CHALLENGE_MAX_TOKENS = '4096';
+const SUPPORTED_PROVIDERS = ['nim', 'mock', 'venice'];
 const DEFAULT_MAX_GAME_FAILURES_PER_SLOT = '0';
 const DEFAULT_NODE_MAX_OLD_SPACE_SIZE_MB = '8192';
 
@@ -77,6 +78,24 @@ function parseVeniceKeyAliases(keysValue, singleKeyValue) {
     aliases.push('default');
   }
   return aliases;
+}
+
+function resolveProvider(options, mergedEnv) {
+  if (options.provider) {
+    return { provider: options.provider, source: '--provider' };
+  }
+
+  const llmProvider = mergedEnv.LLM_PROVIDER?.trim();
+  if (llmProvider) {
+    return { provider: llmProvider, source: 'LLM_PROVIDER' };
+  }
+
+  const legacyProvider = mergedEnv.V3_PROVIDER?.trim();
+  if (legacyProvider) {
+    return { provider: legacyProvider, source: 'V3_PROVIDER (deprecated)' };
+  }
+
+  return { provider: 'nim', source: 'default' };
 }
 
 function resolveApiKeySource(parsedEnvFiles, mergedEnv, provider) {
@@ -234,9 +253,8 @@ Examples:
   npm run v3:shard -- 0 0
   npm run v3:shard -- 2 3 --shards 4 --out logs-v3
   npm run v3:shard -- 0 0 --games 1 --shards 15 --provider mock --out /private/tmp/llm-bullshit-v3-smoke
-  V3_PROVIDER=venice npm run v3:shard -- 0 0
 
-Optional per-experiment env file:
+Set LLM_PROVIDER=venice in .env (same as the CLI). Optional per-experiment env file:
   .env.v3-exp0.local
   .env.v3-exp1.local
   .env.v3-exp2.local
@@ -287,7 +305,6 @@ async function main() {
     DEFAULT_GAMES_PER_MATCHUP
   );
   const outputDir = options.output ?? process.env.V3_OUTPUT ?? DEFAULT_OUTPUT_DIR;
-  const provider = options.provider ?? process.env.V3_PROVIDER ?? 'nim';
   const maxTurns = options.maxTurns ?? process.env.V3_MAX_TURNS;
 
   if (![0, 1, 2, 3].includes(experiment)) {
@@ -299,17 +316,6 @@ async function main() {
   if (shardIndex >= shardCount) {
     throw new Error(`shard index ${shardIndex} must be less than shard count ${shardCount}`);
   }
-  if (!['nim', 'mock', 'venice'].includes(provider)) {
-    throw new Error(`provider must be "nim", "mock", or "venice", got ${provider}`);
-  }
-
-  const cliCommand = resolveCliCommand();
-
-  const totalSlots = DEFAULT_MATCHUP_COUNT * gamesPerMatchup;
-  const range = resolveShardRange(totalSlots, shardIndex, shardCount);
-  if (range.size <= 0) {
-    throw new Error(`shard ${shardIndex}/${shardCount} has no game slots`);
-  }
 
   const envFilePaths = [
     path.join(process.cwd(), '.env'),
@@ -320,16 +326,35 @@ async function main() {
     filepath,
     env: parseEnvFile(filepath),
   }));
-  for (const entry of parsedEnvFiles) {
-    assertValidExperimentEnvFile(entry.filepath, entry.env, provider);
-  }
   const fileEnv = Object.assign({}, ...parsedEnvFiles.map((entry) => entry.env));
   const mergedEnv = {
     ...process.env,
     ...fileEnv,
   };
+  const { provider, source: providerSource } = resolveProvider(options, mergedEnv);
+
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    throw new Error(
+      `provider must be one of ${SUPPORTED_PROVIDERS.join(', ')}, got ${provider} ` +
+      `(from ${providerSource})`
+    );
+  }
+
+  for (const entry of parsedEnvFiles) {
+    assertValidExperimentEnvFile(entry.filepath, entry.env, provider);
+  }
+
+  const cliCommand = resolveCliCommand();
+
+  const totalSlots = DEFAULT_MATCHUP_COUNT * gamesPerMatchup;
+  const range = resolveShardRange(totalSlots, shardIndex, shardCount);
+  if (range.size <= 0) {
+    throw new Error(`shard ${shardIndex}/${shardCount} has no game slots`);
+  }
+
   const childEnv = {
     ...mergedEnv,
+    LLM_PROVIDER: provider,
     NODE_OPTIONS: withDefaultNodeHeapOptions(
       mergedEnv.NODE_OPTIONS,
       mergedEnv.V3_NODE_MAX_OLD_SPACE_SIZE_MB || DEFAULT_NODE_MAX_OLD_SPACE_SIZE_MB
@@ -338,11 +363,11 @@ async function main() {
       mergedEnv.LLM_CONTEXT_BUDGET_TOKENS ||
       DEFAULT_CONTEXT_BUDGET_TOKENS,
     LLM_PLAY_MAX_TOKENS:
-      process.env.LLM_PLAY_MAX_TOKENS ||
+      mergedEnv.LLM_PLAY_MAX_TOKENS ||
       mergedEnv.V3_PLAY_MAX_TOKENS ||
       DEFAULT_PLAY_MAX_TOKENS,
     LLM_CHALLENGE_MAX_TOKENS:
-      process.env.LLM_CHALLENGE_MAX_TOKENS ||
+      mergedEnv.LLM_CHALLENGE_MAX_TOKENS ||
       mergedEnv.V3_CHALLENGE_MAX_TOKENS ||
       DEFAULT_CHALLENGE_MAX_TOKENS,
     NVIDIA_NIM_TIMEOUT_MS:
@@ -352,7 +377,7 @@ async function main() {
       mergedEnv.VENICE_TIMEOUT_MS ||
       DEFAULT_VENICE_TIMEOUT_MS,
     TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT:
-      process.env.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT ||
+      mergedEnv.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT ||
       mergedEnv.V3_MAX_GAME_FAILURES_PER_SLOT ||
       DEFAULT_MAX_GAME_FAILURES_PER_SLOT,
   };
@@ -374,7 +399,7 @@ async function main() {
   console.log(`v3 experiment ${experiment}, shard ${shardIndex + 1}/${shardCount}`);
   console.log(`global game slots: ${range.start}-${range.end} (${range.size})`);
   console.log(`output: ${outputDir}`);
-  console.log(`provider: ${provider}`);
+  console.log(`provider: ${provider} (${providerSource})`);
   console.log(`context prompt budget: ${childEnv.LLM_CONTEXT_BUDGET_TOKENS}`);
   console.log(`play completion max tokens: ${childEnv.LLM_PLAY_MAX_TOKENS}`);
   console.log(`challenge completion max tokens: ${childEnv.LLM_CHALLENGE_MAX_TOKENS}`);

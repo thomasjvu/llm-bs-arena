@@ -146,7 +146,7 @@ For the paid primary rerun, use Venice as an explicit provider cohort in `logs-v
 ```bash
 LLM_PROVIDER=venice
 VENICE_API_KEYS=acct1:venice-...,acct2:venice-...
-V3_PROVIDER=venice npm run v3:shard -- 0 0
+npm run v3:shard -- 0 0
 ```
 
 Run all 16 shard commands against `logs-v3`, then finalize:
@@ -158,7 +158,7 @@ npm run v3:finalize -- logs-v3
 The v3 shard helper defaults to:
 
 - `LLM_CONTEXT_BUDGET_TOKENS=120000`
-- `LLM_PLAY_MAX_TOKENS=2048`
+- `LLM_PLAY_MAX_TOKENS=4096`
 - `LLM_CHALLENGE_MAX_TOKENS=4096`
 - `TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT=0`
 

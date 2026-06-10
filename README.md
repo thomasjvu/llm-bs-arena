@@ -95,8 +95,8 @@ Optional NIM tuning for the published roster:
 ```bash
 NVIDIA_NIM_TIMEOUT_MS=180000
 # Generated-token caps for the model response, not context-window limits.
-# v3:shard defaults to 2048/4096; direct tournament commands use adapter defaults unless set.
-LLM_PLAY_MAX_TOKENS=8192
+# v3:shard and the CLI default to 4096/4096 generated-token completion caps unless overridden.
+LLM_PLAY_MAX_TOKENS=4096
 LLM_CHALLENGE_MAX_TOKENS=4096
 LLM_RECOVERY_WINDOW_MS=36000000
 LLM_RECOVERY_BACKOFF_MS=30000
@@ -157,12 +157,12 @@ npm run v3:shard -- 0 2
 npm run v3:shard -- 0 3
 ```
 
-Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/4096`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors.
+Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, reads `LLM_PROVIDER` from `.env` (same as the CLI), sets play/challenge generated-token caps to `4096/4096` by default, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors.
 
-For the paid Venice primary cohort:
+For the paid Venice primary cohort, set `LLM_PROVIDER=venice` in `.env`, then:
 
 ```bash
-V3_PROVIDER=venice npm run v3:shard -- 0 0
+npm run v3:shard -- 0 0
 ```
 
 All shards write to `logs-v3` by default. Finalize once after all 16 shard commands finish:

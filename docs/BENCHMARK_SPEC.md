@@ -169,7 +169,7 @@ V3 full-history rerun helper protocol:
 - each experiment therefore needs four shard commands: `38 + 38 + 37 + 37 = 150` games
 - the full four-experiment rerun needs `4 * 4 = 16` shard commands and produces `4 * 150 = 600` attempted game slots
 - all shard commands may write to the same output directory, e.g. `logs-v3`; the analysis/finalize step reads the combined `games/` directory directly
-- v3 shard play decisions default to a `2048` generated-token completion cap and challenge decisions default to `4096`
+- v3 shard play and challenge decisions both default to a `4096` generated-token completion cap
 - v3 shards default to unlimited transient game-slot retries and fail fast on fatal auth/model-access/configuration errors
 
 ## Primary Metrics
