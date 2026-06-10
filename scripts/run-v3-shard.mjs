@@ -8,6 +8,7 @@ const DEFAULT_SHARD_COUNT = 4;
 const DEFAULT_OUTPUT_DIR = 'logs-v3';
 const DEFAULT_CONTEXT_BUDGET_TOKENS = '120000';
 const DEFAULT_NIM_TIMEOUT_MS = '180000';
+const DEFAULT_VENICE_TIMEOUT_MS = '180000';
 const DEFAULT_PLAY_MAX_TOKENS = '2048';
 const DEFAULT_CHALLENGE_MAX_TOKENS = '4096';
 const DEFAULT_MAX_GAME_FAILURES_PER_SLOT = '0';
@@ -34,10 +35,26 @@ function parseEnvFile(filepath) {
   return env;
 }
 
-function assertValidExperimentEnvFile(filepath, env) {
+function hasVeniceKeys(env) {
+  return Boolean(env.VENICE_API_KEYS?.trim() || env.VENICE_API_KEY?.trim());
+}
+
+function assertValidExperimentEnvFile(filepath, env, provider) {
   if (!fs.existsSync(filepath) || !path.basename(filepath).startsWith('.env.v3-exp')) return;
   const raw = fs.readFileSync(filepath, 'utf8').trim();
-  if (raw && !env.NVIDIA_API_KEY && !env.NVIDIA_NIM_API_KEY) {
+  if (!raw) return;
+
+  if (provider === 'venice') {
+    if (!hasVeniceKeys(env)) {
+      throw new Error(
+        `${path.basename(filepath)} does not define VENICE_API_KEYS or VENICE_API_KEY. ` +
+        `Use: VENICE_API_KEYS=acct1:venice-...,acct2:venice-...`
+      );
+    }
+    return;
+  }
+
+  if (!env.NVIDIA_API_KEY && !env.NVIDIA_NIM_API_KEY) {
     throw new Error(
       `${path.basename(filepath)} does not define NVIDIA_API_KEY. ` +
       `Use: NVIDIA_API_KEY=nvapi-...`
@@ -45,7 +62,37 @@ function assertValidExperimentEnvFile(filepath, env) {
   }
 }
 
-function resolveApiKeySource(parsedEnvFiles, mergedEnv) {
+function parseVeniceKeyAliases(keysValue, singleKeyValue) {
+  const aliases = [];
+  if (keysValue?.trim()) {
+    for (const rawEntry of keysValue.split(',')) {
+      const entry = rawEntry.trim();
+      if (!entry) continue;
+      const separatorIndex = entry.indexOf(':');
+      if (separatorIndex <= 0) continue;
+      aliases.push(entry.slice(0, separatorIndex).trim());
+    }
+  }
+  if (aliases.length === 0 && singleKeyValue?.trim()) {
+    aliases.push('default');
+  }
+  return aliases;
+}
+
+function resolveApiKeySource(parsedEnvFiles, mergedEnv, provider) {
+  if (provider === 'venice') {
+    for (let i = parsedEnvFiles.length - 1; i >= 0; i -= 1) {
+      const { filepath, env } = parsedEnvFiles[i];
+      if (hasVeniceKeys(env)) {
+        return path.basename(filepath);
+      }
+    }
+    if (hasVeniceKeys(process.env)) {
+      return 'shell environment';
+    }
+    return 'none';
+  }
+
   for (let i = parsedEnvFiles.length - 1; i >= 0; i -= 1) {
     const { filepath, env } = parsedEnvFiles[i];
     if (env.NVIDIA_API_KEY || env.NVIDIA_NIM_API_KEY) {
@@ -180,13 +227,14 @@ function freshDistCommand() {
 
 function usage() {
   return `Usage:
-  npm run v3:shard -- <experiment> <shard-index> [--shards 4] [--games 10] [--out logs-v3] [--provider nim|mock]
+  npm run v3:shard -- <experiment> <shard-index> [--shards 4] [--games 10] [--out logs-v3] [--provider nim|mock|venice]
   V3_EXPERIMENT=0 npm run v3:shard -- <shard-index>
 
 Examples:
   npm run v3:shard -- 0 0
   npm run v3:shard -- 2 3 --shards 4 --out logs-v3
   npm run v3:shard -- 0 0 --games 1 --shards 15 --provider mock --out /private/tmp/llm-bullshit-v3-smoke
+  V3_OUTPUT=logs-v3-venice-4096 npm run v3:shard -- 0 0 --provider venice
 
 Optional per-experiment env file:
   .env.v3-exp0.local
@@ -251,8 +299,8 @@ async function main() {
   if (shardIndex >= shardCount) {
     throw new Error(`shard index ${shardIndex} must be less than shard count ${shardCount}`);
   }
-  if (!['nim', 'mock'].includes(provider)) {
-    throw new Error(`provider must be "nim" or "mock", got ${provider}`);
+  if (!['nim', 'mock', 'venice'].includes(provider)) {
+    throw new Error(`provider must be "nim", "mock", or "venice", got ${provider}`);
   }
 
   const cliCommand = resolveCliCommand();
@@ -273,7 +321,7 @@ async function main() {
     env: parseEnvFile(filepath),
   }));
   for (const entry of parsedEnvFiles) {
-    assertValidExperimentEnvFile(entry.filepath, entry.env);
+    assertValidExperimentEnvFile(entry.filepath, entry.env, provider);
   }
   const fileEnv = Object.assign({}, ...parsedEnvFiles.map((entry) => entry.env));
   const mergedEnv = {
@@ -300,6 +348,9 @@ async function main() {
     NVIDIA_NIM_TIMEOUT_MS:
       mergedEnv.NVIDIA_NIM_TIMEOUT_MS ||
       DEFAULT_NIM_TIMEOUT_MS,
+    VENICE_TIMEOUT_MS:
+      mergedEnv.VENICE_TIMEOUT_MS ||
+      DEFAULT_VENICE_TIMEOUT_MS,
     TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT:
       process.env.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT ||
       mergedEnv.V3_MAX_GAME_FAILURES_PER_SLOT ||
@@ -330,8 +381,15 @@ async function main() {
   console.log(`node max old space: ${childEnv.NODE_OPTIONS.match(/--max-old-space-size(?:=|\s+)(\d+)/)?.[1] || 'custom'} MB`);
   console.log(`max failed attempts per game slot: ${formatFailureLimit(childEnv.TOURNAMENT_MAX_GAME_FAILURES_PER_SLOT)}`);
   console.log(`env files checked: ${envFilePaths.filter((file) => fs.existsSync(file)).join(', ') || 'none'}`);
-  console.log(`NVIDIA API key loaded: ${Boolean(childEnv.NVIDIA_API_KEY || childEnv.NVIDIA_NIM_API_KEY)}`);
-  console.log(`NVIDIA API key source: ${resolveApiKeySource(parsedEnvFiles, childEnv)}`);
+  if (provider === 'venice') {
+    const veniceAliases = parseVeniceKeyAliases(childEnv.VENICE_API_KEYS, childEnv.VENICE_API_KEY);
+    console.log(`Venice API keys loaded: ${veniceAliases.length > 0}`);
+    console.log(`Venice API key aliases: ${veniceAliases.join(', ') || 'none'}`);
+    console.log(`Venice API key source: ${resolveApiKeySource(parsedEnvFiles, childEnv, provider)}`);
+  } else {
+    console.log(`NVIDIA API key loaded: ${Boolean(childEnv.NVIDIA_API_KEY || childEnv.NVIDIA_NIM_API_KEY)}`);
+    console.log(`NVIDIA API key source: ${resolveApiKeySource(parsedEnvFiles, childEnv, provider)}`);
+  }
   console.log('');
 
   const child = spawn(cliCommand.command, cliArgs, {

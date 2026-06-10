@@ -26,7 +26,7 @@ export {
   ScriptedPolicy,
   TruthfulGreedyPolicy,
 } from './baselines/index.js';
-export { EXPERIMENT_NAMES, MODELS, BASELINE_MODELS } from './types/game.js';
+export { EXPERIMENT_NAMES, MODELS, VENICE_MODELS, BASELINE_MODELS } from './types/game.js';
 export {
   buildBenchmarkRelease,
   DEFAULT_FROZEN_ARTIFACTS,

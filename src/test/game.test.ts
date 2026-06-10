@@ -24,11 +24,18 @@ import { formatTournamentGameCompletion, TournamentRunner } from '../tournament/
 import { calculatePlayerStats, calculateParanoia, calculateCompareStatsRows } from '../metrics/player-stats.js';
 import { replayTurnTruthfulAvailability } from '../metrics/truthful-availability.js';
 import { parsePlayResponse, parseChallengeResponse, extractJSON } from '../llm/response-parser.js';
-import { MODELS, BASELINE_MODELS, RANKS, Card, GameLog, PublicTurnHistoryEntry, DecisionTrace } from '../types/game.js';
+import { MODELS, VENICE_MODELS, BASELINE_MODELS, RANKS, Card, GameLog, PublicTurnHistoryEntry, DecisionTrace } from '../types/game.js';
 import { GameLogger, selectComparableGameCohort, buildCohortManifest } from '../logging/game-logger.js';
 import { CSVExporter } from '../logging/csv-exporter.js';
-import { ResilientLLMAdapter, buildRunMetadata } from '../llm/provider.js';
+import { ResilientLLMAdapter, buildRunMetadata, detectProvider, resolveDefaultRoster } from '../llm/provider.js';
 import { APIConnectionError as NimAPIConnectionError, NimClient, NonRetryableAPIError } from '../llm/nim-api.js';
+import {
+  APIConnectionError as VeniceAPIConnectionError,
+  VeniceClient,
+  VeniceKeyPool,
+  NonRetryableAPIError as VeniceNonRetryableAPIError,
+  parseVeniceKeyEntries,
+} from '../llm/venice-api.js';
 import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
 import { NimLLMAdapter, ScriptedBaselineAdapter, PLAY_MAX_TOKENS, CHALLENGE_MAX_TOKENS } from '../llm/llm-adapter.js';
 import {
@@ -1102,6 +1109,290 @@ describe('NVIDIA NIM Client', () => {
   });
 });
 
+describe('Venice AI Client', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+    delete process.env.VENICE_API_KEYS;
+    delete process.env.VENICE_API_KEY;
+  });
+
+  it('should parse alias:key entries for VENICE_API_KEYS', () => {
+    const entries = parseVeniceKeyEntries('acct1:secret-one,acct2:secret-two', undefined);
+    expect(entries).toEqual([
+      { alias: 'acct1', apiKey: 'secret-one' },
+      { alias: 'acct2', apiKey: 'secret-two' },
+    ]);
+  });
+
+  it('should send max_completion_tokens with temperature 0 and seed 42', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          id: 'resp-venice',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'venice-test' }]),
+      maxRetries: 1,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    await client.chatCompletion('deepseek-v4-flash', [{ role: 'user', content: 'hi' }], 128);
+
+    expect(requestBody).toMatchObject({
+      model: 'deepseek-v4-flash',
+      temperature: 0,
+      seed: 42,
+      max_completion_tokens: 128,
+    });
+    expect(requestBody).not.toHaveProperty('max_tokens');
+    const headers = (globalThis.fetch as any).mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe('Bearer venice-test');
+  });
+
+  it('should round-robin keys and expose aliases only in traces', async () => {
+    const seenAliases: string[] = [];
+    let calls = 0;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      calls++;
+      const headers = init?.headers as Record<string, string>;
+      seenAliases.push(headers.Authorization);
+      return new Response(
+        JSON.stringify({
+          id: `resp-${calls}`,
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([
+        { alias: 'acct1', apiKey: 'key-one' },
+        { alias: 'acct2', apiKey: 'key-two' },
+      ]),
+      maxRetries: 1,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    const first = await client.chatCompletion('deepseek-v4-flash', [{ role: 'user', content: 'one' }], 32);
+    const second = await client.chatCompletion('deepseek-v4-flash', [{ role: 'user', content: 'two' }], 32);
+
+    expect(seenAliases).toEqual(['Bearer key-one', 'Bearer key-two']);
+    expect(first.providerKeyAlias).toBe('acct1');
+    expect(second.providerKeyAlias).toBe('acct2');
+    expect(JSON.stringify(first)).not.toContain('key-one');
+    expect(JSON.stringify(second)).not.toContain('key-two');
+  });
+
+  it('should rotate keys on 429 and eventually succeed', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      calls++;
+      const headers = init?.headers as Record<string, string>;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+          status: 429,
+          headers: { 'Retry-After': '0', 'Content-Type': 'application/json' },
+        });
+      }
+
+      expect(headers.Authorization).toBe('Bearer key-two');
+      return new Response(
+        JSON.stringify({
+          id: 'resp-ok',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([
+        { alias: 'acct1', apiKey: 'key-one' },
+        { alias: 'acct2', apiKey: 'key-two' },
+      ]),
+      maxRetries: 3,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    const response = await client.chatCompletion('deepseek-v4-flash', [{ role: 'user', content: 'hi' }], 32);
+
+    expect(calls).toBe(2);
+    expect(response.providerKeyAlias).toBe('acct2');
+  });
+
+  it('should retry gateway 503 responses with backoff', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      calls++;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: 'model at capacity' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 'resp-ok',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'key-one' }]),
+      maxRetries: 3,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    await client.chatCompletion('deepseek-v4-flash', [{ role: 'user', content: 'hi' }], 32);
+    expect(calls).toBe(2);
+  });
+
+  it('should fail fast on auth and balance errors', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'Insufficient USD or Diem balance to complete request' }), {
+        status: 402,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    ) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'key-one' }]),
+      maxRetries: 3,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    await expect(
+      client.chatCompletion('deepseek-v4-flash', [{ role: 'user', content: 'hi' }], 32)
+    ).rejects.toBeInstanceOf(VeniceNonRetryableAPIError);
+    expect((globalThis.fetch as any).mock.calls.length).toBe(1);
+  });
+
+  it('should fail fast on invalid model and context-length errors', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'Invalid model specified' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    ) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'key-one' }]),
+      maxRetries: 3,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    await expect(
+      client.chatCompletion('missing-model', [{ role: 'user', content: 'hi' }], 32)
+    ).rejects.toBeInstanceOf(VeniceNonRetryableAPIError);
+  });
+});
+
+describe('Venice provider wiring', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('should detect venice when LLM_PROVIDER=venice and keys are configured', () => {
+    process.env.LLM_PROVIDER = 'venice';
+    process.env.VENICE_API_KEYS = 'acct1:test-key';
+    delete process.env.NVIDIA_API_KEY;
+    delete process.env.NVIDIA_NIM_API_KEY;
+
+    expect(detectProvider()).toBe('venice');
+    expect(resolveDefaultRoster('venice')).toEqual(VENICE_MODELS);
+  });
+
+  it('should build venice run metadata with the Venice base URL', () => {
+    const metadata = buildRunMetadata('venice', [...VENICE_MODELS]);
+    expect(metadata.provider).toBe('venice');
+    expect(metadata.providerBaseUrl).toBe('https://api.venice.ai/api/v1');
+  });
+
+  it('should reject mixing nim and venice cohorts in the output guard', () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'llm-bullshit-venice-guard-'));
+    const gamesDir = path.join(outputDir, 'games');
+    fs.mkdirSync(gamesDir, { recursive: true });
+
+    const nimMetadata = buildRunMetadata('nim', ['a', 'b', 'c', 'd']);
+    fs.writeFileSync(
+      path.join(gamesDir, 'nim.json'),
+      JSON.stringify({
+        gameId: 'nim',
+        experimentId: 1,
+        players: [],
+        metadata: nimMetadata,
+        turns: [],
+        winner: null,
+        totalTurns: 0,
+        startTime: new Date().toISOString(),
+        endTime: new Date().toISOString(),
+        durationMs: 0,
+      } satisfies GameLog)
+    );
+
+    const veniceMetadata = buildRunMetadata('venice', [...VENICE_MODELS]);
+
+    expect(() => assertOutputCohortCompatible(outputDir, veniceMetadata)).toThrow(
+      /different schema\/provider\/prompt\/context-budget\/token-cap cohort/
+    );
+  });
+});
+
 describe('Matchup Generator', () => {
   it('should ship the current default 6-model roster', () => {
     expect(MODELS).toEqual([
@@ -1115,6 +1406,15 @@ describe('Matchup Generator', () => {
     expect(MODELS).toContain('minimaxai/minimax-m2.7');
     expect(MODELS).not.toContain('minimaxai/minimax-m2.1');
     expect(MODELS.length).toBe(6);
+    expect(VENICE_MODELS).toEqual([
+      'zai-org-glm-5-1',
+      'google-gemma-4-31b-it',
+      'nvidia-nemotron-3-ultra-550b-a55b',
+      'kimi-k2-6',
+      'minimax-m27',
+      'deepseek-v4-flash',
+    ]);
+    expect(VENICE_MODELS.length).toBe(6);
     expect(BASELINE_MODELS).toEqual([
       'baseline/scripted',
       'baseline/random-legal',

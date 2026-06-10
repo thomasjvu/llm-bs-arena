@@ -14,10 +14,16 @@ import {
 } from './logging/game-logger.js';
 import { CSVExporter } from './logging/csv-exporter.js';
 import { calculateAllStats, generateSummaryReport } from './metrics/player-stats.js';
-import { MODELS, BASELINE_MODELS, ExperimentId } from './types/game.js';
+import { MODELS, VENICE_MODELS, BASELINE_MODELS, ExperimentId } from './types/game.js';
 import { createGameState } from './engine/game-state.js';
 import { TurnManager } from './engine/turn-manager.js';
-import { buildRunMetadata, createAdapter, detectProvider, Provider } from './llm/provider.js';
+import {
+  buildRunMetadata,
+  createAdapter,
+  detectProvider,
+  Provider,
+  resolveDefaultRoster,
+} from './llm/provider.js';
 import { assertOutputCohortCompatible } from './tournament/output-guard.js';
 import { buildBenchmarkRelease } from './release/build-release.js';
 import { BENCHMARK_NAME, BENCHMARK_VERSION, DATASET_VERSION, DEFAULT_RELEASE_DIR } from './release/version.js';
@@ -55,9 +61,13 @@ function parseMaxTurnsOption(value: string): number | undefined {
   return parsed;
 }
 
-function resolveModelSelection(models?: string[], expectedCount?: number): string[] {
+function resolveModelSelection(
+  models: string[] | undefined,
+  expectedCount: number | undefined,
+  provider: Provider
+): string[] {
   if (!models || models.length === 0) {
-    return [...MODELS];
+    return [...resolveDefaultRoster(provider)];
   }
 
   const uniqueModels = [...new Set(models)];
@@ -89,7 +99,7 @@ program
   .option('--game-start <number>', 'First global game slot to run (inclusive)', parseIntegerOption)
   .option('--game-end <number>', 'Last global game slot to run (inclusive)', parseIntegerOption)
   .option('-o, --output <dir>', 'Output directory', 'logs')
-  .option('-p, --provider <provider>', 'LLM provider: nim or mock')
+  .option('-p, --provider <provider>', 'LLM provider: nim, mock, or venice')
   .option('--allow-mixed-output', 'Allow writing into an output directory that already contains a different schema/provider/prompt cohort')
   .action(async (options) => {
     const experimentId = options.experiment as ExperimentId;
@@ -98,7 +108,8 @@ program
       process.exit(1);
     }
 
-    const models = resolveModelSelection(options.models);
+    const provider = (options.provider || detectProvider()) as Provider;
+    const models = resolveModelSelection(options.models, undefined, provider);
 
     console.log(`Starting Experiment ${experimentId}`);
     console.log(`Games per matchup: ${options.games}`);
@@ -124,9 +135,9 @@ program
       options.gameEnd
     );
 
-    const provider = options.provider || detectProvider();
-    const adapter = createAdapter(provider as Provider, config.models);
-    const runMetadata = buildRunMetadata(provider as Provider, config.models);
+    console.log(`Provider: ${provider}`);
+    const adapter = createAdapter(provider, config.models);
+    const runMetadata = buildRunMetadata(provider, config.models);
     assertOutputCohortCompatible(options.output, runMetadata, {
       allowMixedOutput: Boolean(options.allowMixedOutput),
     });
@@ -148,7 +159,7 @@ program
   .description('Run a single game')
   .requiredOption('-e, --experiment <number>', 'Experiment ID (0, 1, 2, or 3)', parseIntegerOption)
   .option('-m, --models <models...>', 'Model IDs (exactly 4)')
-  .option('-p, --provider <provider>', 'LLM provider: nim or mock')
+  .option('-p, --provider <provider>', 'LLM provider: nim, mock, or venice')
   .option('-s, --seed <number>', 'Deterministic deck/shuffle seed', parseIntegerOption)
   .option('-t, --max-turns <number>', 'Optional safety cap; omit or pass "none" for uncapped play', parseMaxTurnsOption)
   .option('-v, --verbose', 'Show detailed turn-by-turn output')
@@ -159,19 +170,20 @@ program
       process.exit(1);
     }
 
-    const models = options.models ? resolveModelSelection(options.models, 4) : MODELS.slice(0, 4);
+    const provider = (options.provider || detectProvider()) as Provider;
+    const defaultRoster = resolveDefaultRoster(provider);
+    const models = options.models ? resolveModelSelection(options.models, 4, provider) : defaultRoster.slice(0, 4);
     console.log(`Running single game with: ${models.join(', ')}`);
 
     const seed = Number.isFinite(options.seed) ? options.seed : Date.now();
     console.log(`Seed: ${seed}`);
     console.log(`Max turns: ${options.maxTurns ?? 'none'}`);
 
-    const provider = options.provider || detectProvider();
-    const adapter = createAdapter(provider as Provider, models);
+    const adapter = createAdapter(provider, models);
 
     const gameId = `single_${Date.now()}`;
     const state = createGameState(gameId, experimentId, [...models], seed);
-    state.metadata = buildRunMetadata(provider as Provider, models);
+    state.metadata = buildRunMetadata(provider, models);
     const turnManager = new TurnManager({ maxTurns: options.maxTurns });
 
     const finalState = await turnManager.runGame(state, adapter);
@@ -330,13 +342,22 @@ program
 program
   .command('models')
   .description('List default benchmark roster')
-  .action(() => {
-    console.log('Default benchmark roster:');
-    MODELS.forEach((model, i) => {
+  .option('-p, --provider <provider>', 'Roster provider: nim, mock, or venice', 'nim')
+  .action((options) => {
+    const provider = options.provider as Provider;
+    const roster = resolveDefaultRoster(provider);
+    console.log(`Default ${provider} benchmark roster:`);
+    roster.forEach((model, i) => {
       console.log(`  ${i + 1}. ${model}`);
     });
-    console.log(`\nTotal: ${MODELS.length} models`);
-    console.log(`Total matchups (C(${MODELS.length}, 4)): ${combinations([...MODELS], 4).length}`);
+    console.log(`\nTotal: ${roster.length} models`);
+    console.log(`Total matchups (C(${roster.length}, 4)): ${combinations([...roster], 4).length}`);
+    if (provider === 'nim') {
+      console.log('\nVenice roster (use -p venice):');
+      VENICE_MODELS.forEach((model, i) => {
+        console.log(`  ${i + 1}. ${model}`);
+      });
+    }
     console.log('\nOptional local baseline models:');
     BASELINE_MODELS.forEach((model, i) => {
       console.log(`  ${i + 1}. ${model}`);
@@ -388,11 +409,13 @@ program
   .command('status')
   .description('Show benchmark run progress')
   .option('-o, --output <dir>', 'Output directory', 'logs')
+  .option('-p, --provider <provider>', 'Roster provider: nim, mock, or venice', 'nim')
   .action(async (options) => {
     const logger = new GameLogger(`${options.output}/games`);
     const counts = logger.getGameCounts();
 
-    const totalMatchups = combinations([...MODELS], 4).length;
+    const roster = resolveDefaultRoster(options.provider as Provider);
+    const totalMatchups = combinations([...roster], 4).length;
     const gamesPerExp = totalMatchups * 10; // Assuming 10 games per matchup
 
     console.log('Benchmark Run Status:');

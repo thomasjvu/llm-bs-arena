@@ -31,6 +31,8 @@ export interface DecisionAttemptTrace {
   wasTruncated: boolean;
   responseTimeMs: number;
   tokenUsage?: TokenUsage;
+  providerKeyAlias?: string;
+  providerRequestAttempt?: number;
 }
 
 export interface DecisionTrace {
@@ -283,6 +285,17 @@ export const MODELS = [
 ] as const;
 
 export type ModelId = typeof MODELS[number];
+
+export const VENICE_MODELS = [
+  'zai-org-glm-5-1',
+  'google-gemma-4-31b-it',
+  'nvidia-nemotron-3-ultra-550b-a55b',
+  'kimi-k2-6',
+  'minimax-m27',
+  'deepseek-v4-flash',
+] as const;
+
+export type VeniceModelId = typeof VENICE_MODELS[number];
 
 export const BASELINE_MODELS = [
   'baseline/scripted',

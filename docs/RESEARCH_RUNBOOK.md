@@ -139,6 +139,22 @@ All shards write into `logs-v3`, so there is no manual merge step. When all 16 c
 npm run v3:finalize -- logs-v3
 ```
 
+### V3 Venice Primary Cohort
+
+For the paid primary rerun, use Venice as an explicit provider cohort in a fresh output directory. Do not mix this directory with the older exploratory `logs-v3` NIM run that used a `1024` challenge cap.
+
+```bash
+LLM_PROVIDER=venice
+VENICE_API_KEYS=acct1:venice-...,acct2:venice-...
+V3_OUTPUT=logs-v3-venice-4096 V3_PROVIDER=venice npm run v3:shard -- 0 0
+```
+
+Run all 16 shard commands against `logs-v3-venice-4096`, then finalize:
+
+```bash
+npm run v3:finalize -- logs-v3-venice-4096
+```
+
 The v3 shard helper defaults to:
 
 - `LLM_CONTEXT_BUDGET_TOKENS=120000`

@@ -9,6 +9,7 @@ import {
   DecisionAttemptTrace,
 } from '../types/game.js';
 import { NimClient } from './nim-api.js';
+import { VeniceClient } from './venice-api.js';
 import {
   buildSystemPrompt,
   buildPlayPrompt,
@@ -45,6 +46,8 @@ interface ChatCompletionResult {
   tokenUsage?: TokenUsage;
   responseTimeMs: number;
   finishReason: string;
+  providerKeyAlias?: string;
+  providerRequestAttempt?: number;
 }
 
 interface OpenAICompatibleClient {
@@ -120,11 +123,18 @@ class BaseLLMAdapter implements LLMAdapter {
   private client: OpenAICompatibleClient;
   private maxRetries: number;
   private contextBudgetTokens?: number;
+  private providerName: string;
 
-  constructor(client: OpenAICompatibleClient, maxRetries: number = 4, contextBudgetTokens?: number) {
+  constructor(
+    client: OpenAICompatibleClient,
+    maxRetries: number = 4,
+    contextBudgetTokens?: number,
+    providerName: string = 'nim'
+  ) {
     this.client = client;
     this.maxRetries = maxRetries;
     this.contextBudgetTokens = contextBudgetTokens;
+    this.providerName = providerName;
   }
 
   async getPlayDecision(
@@ -220,7 +230,7 @@ class BaseLLMAdapter implements LLMAdapter {
     const usageParts: Array<TokenUsage | undefined> = [];
     let responseTimeMs = 0;
     const attempts: DecisionAttemptTrace[] = [];
-    const promptBudgetTokens = resolveContextBudgetTokens('nim', modelId, this.contextBudgetTokens);
+    const promptBudgetTokens = resolveContextBudgetTokens(this.providerName, modelId, this.contextBudgetTokens);
     const contextDetails = assertWithinContextBudget(
       decisionMetadata,
       systemPrompt,
@@ -252,6 +262,8 @@ class BaseLLMAdapter implements LLMAdapter {
       wasTruncated: lastTruncated,
       responseTimeMs: result.responseTimeMs,
       tokenUsage: result.tokenUsage,
+      providerKeyAlias: result.providerKeyAlias,
+      providerRequestAttempt: result.providerRequestAttempt,
     });
 
     if (parsed && !lastTruncated) {
@@ -302,6 +314,8 @@ class BaseLLMAdapter implements LLMAdapter {
         wasTruncated: lastTruncated,
         responseTimeMs: retryResult.responseTimeMs,
         tokenUsage: retryResult.tokenUsage,
+        providerKeyAlias: retryResult.providerKeyAlias,
+        providerRequestAttempt: retryResult.providerRequestAttempt,
       });
 
       if (retryParsed && !lastTruncated) {
@@ -336,8 +350,14 @@ class BaseLLMAdapter implements LLMAdapter {
 }
 
 export class NimLLMAdapter extends BaseLLMAdapter {
-  constructor(client: NimClient, maxRetries: number = 4, contextBudgetTokens?: number) {
-    super(client, maxRetries, contextBudgetTokens);
+  constructor(client: NimClient, maxRetries: number = 4, contextBudgetTokens?: number, providerName: string = 'nim') {
+    super(client, maxRetries, contextBudgetTokens, providerName);
+  }
+}
+
+export class VeniceLLMAdapter extends BaseLLMAdapter {
+  constructor(client: VeniceClient, maxRetries: number = 4, contextBudgetTokens?: number, providerName: string = 'venice') {
+    super(client, maxRetries, contextBudgetTokens, providerName);
   }
 }
 

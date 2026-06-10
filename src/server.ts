@@ -6,6 +6,7 @@ import { GameState, ExperimentId, MODELS, Card, Turn, PlayerSeatConfig } from '.
 import { createGameState, getCurrentPlayer, getOtherPlayers, processPlay, processChallenge, advanceTurn, checkWinner, finalizeGame } from './engine/game-state.js';
 import { LLMAdapter } from './engine/turn-manager.js';
 import { APIConnectionError as NimAPIConnectionError } from './llm/nim-api.js';
+import { APIConnectionError as VeniceAPIConnectionError } from './llm/venice-api.js';
 import { buildClientGameState, getAwaitingHumanAction } from './server-state.js';
 import {
   buildRunMetadata,
@@ -717,6 +718,7 @@ async function handleNextStep(res: http.ServerResponse, gameId: string, stream =
     // Check if this is a connection error that requires adapter reset
     const errorStr = String(error);
     const isConnectionError = error instanceof NimAPIConnectionError ||
+      error instanceof VeniceAPIConnectionError ||
                               errorStr.includes('API connection unstable') ||
                               errorStr.includes('TimeoutError') ||
                               errorStr.includes('terminated');

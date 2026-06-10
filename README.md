@@ -79,6 +79,17 @@ LLM_PROVIDER=nim
 NVIDIA_API_KEY=your_nvidia_api_key_here
 ```
 
+Venice AI (paid provider) for the primary v3 cohort:
+
+```bash
+LLM_PROVIDER=venice
+VENICE_API_KEYS=acct1:venice-...,acct2:venice-...
+# or single-key fallback:
+# VENICE_API_KEY=venice-...
+VENICE_TIMEOUT_MS=180000
+LLM_CONTEXT_BUDGET_TOKENS_VENICE=120000
+```
+
 Optional NIM tuning for the published roster:
 
 ```bash
@@ -146,11 +157,21 @@ npm run v3:shard -- 0 2
 npm run v3:shard -- 0 3
 ```
 
-Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/4096`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors. All shards can write to `logs-v3`; finalize once after all 16 shard commands finish:
+Each `v3:shard` command runs one quarter of one experiment. With defaults, one experiment is `15` matchups times `10` games, or `150` games. The four shards cover slots `0-37`, `38-75`, `76-112`, and `113-149`, so all four commands above complete experiment `0`. Running the same four-shard pattern for experiments `1`, `2`, and `3` gives the full `600` game rerun. The helper runs the current TypeScript source through `tsx` when available, sets play/challenge generated-token caps to `2048/4096`, sets transient game-slot retries to unlimited by default, and still aborts immediately on fatal auth/model-access errors.
+
+For the paid Venice primary cohort, use a fresh output directory and do not mix it with older NIM runs:
 
 ```bash
-npm run v3:finalize -- logs-v3
+V3_OUTPUT=logs-v3-venice-4096 V3_PROVIDER=venice npm run v3:shard -- 0 0
 ```
+
+Finalize once after all 16 shard commands finish:
+
+```bash
+npm run v3:finalize -- logs-v3-venice-4096
+```
+
+The older `logs-v3` NIM directory (1024 challenge cap) should be treated as exploratory only.
 
 Visualizer:
 

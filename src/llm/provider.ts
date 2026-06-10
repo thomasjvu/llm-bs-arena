@@ -2,17 +2,20 @@ import { LLMAdapter } from '../engine/turn-manager.js';
 import {
   NimLLMAdapter,
   MockLLMAdapter,
+  VeniceLLMAdapter,
   PLAY_MAX_TOKENS,
   CHALLENGE_MAX_TOKENS,
 } from './llm-adapter.js';
 import { LocalPolicyLLMAdapter, isBaselineModelId } from '../baselines/index.js';
 import { createNimClient } from './nim-api.js';
-import { RunMetadata } from '../types/game.js';
+import { createVeniceClient } from './venice-api.js';
+import { MODELS, VENICE_MODELS, RunMetadata } from '../types/game.js';
 import { getPromptHash, PROMPT_VERSION } from './prompt-builder.js';
 import { APIConnectionError as NimAPIConnectionError } from './nim-api.js';
+import { APIConnectionError as VeniceAPIConnectionError } from './venice-api.js';
 import { resolveRunContextBudgetTokens } from './context-budget.js';
 
-export type Provider = 'nim' | 'mock';
+export type Provider = 'nim' | 'mock' | 'venice';
 export const LOG_SCHEMA_VERSION = 4;
 export const SCRIPTED_BASELINE_PREFIX = 'baseline/';
 
@@ -30,6 +33,16 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 const DEFAULT_RECOVERY_WINDOW_MS = parsePositiveInt(process.env.LLM_RECOVERY_WINDOW_MS, 36_000_000);
 const DEFAULT_RECOVERY_BACKOFF_MS = parsePositiveInt(process.env.LLM_RECOVERY_BACKOFF_MS, 30_000);
 
+export function resolveDefaultRoster(provider: Provider): readonly string[] {
+  switch (provider) {
+    case 'venice':
+      return VENICE_MODELS;
+    case 'nim':
+    case 'mock':
+      return MODELS;
+  }
+}
+
 function createBaseAdapter(provider: Provider = 'nim', runtimeConfig: ProviderRuntimeConfig = {}): LLMAdapter {
   switch (provider) {
     case 'mock':
@@ -40,7 +53,13 @@ function createBaseAdapter(provider: Provider = 'nim', runtimeConfig: ProviderRu
         throw new Error('NVIDIA_API_KEY or NVIDIA_NIM_BASE_URL environment variable is required for nim provider');
       }
       console.log('Using NVIDIA NIM provider');
-      return new NimLLMAdapter(createNimClient(runtimeConfig));
+      return new NimLLMAdapter(createNimClient(runtimeConfig), 4, undefined, 'nim');
+    case 'venice':
+      if (!hasVeniceConfig()) {
+        throw new Error('VENICE_API_KEYS or VENICE_API_KEY environment variable is required for venice provider');
+      }
+      console.log('Using Venice AI provider');
+      return new VeniceLLMAdapter(createVeniceClient({ baseUrl: runtimeConfig.baseUrl }), 4, undefined, 'venice');
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
@@ -83,6 +102,7 @@ class RoutedLLMAdapter implements LLMAdapter {
 export function isRecoverableAdapterError(error: unknown): boolean {
   const errorStr = String(error);
   return error instanceof NimAPIConnectionError ||
+    error instanceof VeniceAPIConnectionError ||
     errorStr.includes('API connection unstable') ||
     errorStr.includes('TimeoutError') ||
     errorStr.includes('terminated');
@@ -178,9 +198,11 @@ export function createAdapter(
 export function detectProvider(runtimeConfig: ProviderRuntimeConfig = {}): Provider {
   const requestedProvider = process.env.LLM_PROVIDER as Provider | undefined;
   if (requestedProvider === 'mock') return 'mock';
+  if (requestedProvider === 'venice' && hasVeniceConfig()) return 'venice';
   if (requestedProvider === 'nim' && hasNimConfig(runtimeConfig)) return 'nim';
 
   if (hasNimConfig(runtimeConfig)) return 'nim';
+  if (hasVeniceConfig()) return 'venice';
   return 'mock';
 }
 
@@ -188,6 +210,8 @@ export function getProviderDisplayName(provider: Provider): string {
   switch (provider) {
     case 'nim':
       return 'NVIDIA NIM';
+    case 'venice':
+      return 'Venice AI';
     case 'mock':
       return 'Mock LLM';
   }
@@ -220,10 +244,16 @@ function hasNimConfig(runtimeConfig: ProviderRuntimeConfig = {}): boolean {
   );
 }
 
+export function hasVeniceConfig(): boolean {
+  return Boolean(process.env.VENICE_API_KEYS?.trim() || process.env.VENICE_API_KEY?.trim());
+}
+
 function getProviderBaseUrl(provider: Provider, runtimeConfig: ProviderRuntimeConfig = {}): string | undefined {
   switch (provider) {
     case 'nim':
       return runtimeConfig.baseUrl || process.env.NVIDIA_NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1';
+    case 'venice':
+      return runtimeConfig.baseUrl || process.env.VENICE_BASE_URL || 'https://api.venice.ai/api/v1';
     case 'mock':
       return undefined;
   }
