@@ -69,10 +69,33 @@ export class NonRetryableAPIError extends Error {
   }
 }
 
+function normalizeNvidiaKeysValue(
+  keysValue: string | undefined,
+  singleKeyValue: string | undefined
+): { keysValue?: string; singleKeyValue?: string } {
+  const trimmedSingle = singleKeyValue?.trim();
+  if (trimmedSingle?.startsWith('NVIDIA_API_KEYS=')) {
+    return {
+      keysValue: trimmedSingle.slice('NVIDIA_API_KEYS='.length).trim(),
+      singleKeyValue: undefined,
+    };
+  }
+
+  if (!keysValue?.trim() && trimmedSingle?.includes('slot0:') && trimmedSingle.includes(',')) {
+    return { keysValue: trimmedSingle, singleKeyValue: undefined };
+  }
+
+  return { keysValue, singleKeyValue };
+}
+
 export function parseNvidiaKeyEntries(
   keysValue: string | undefined = process.env.NVIDIA_API_KEYS,
   singleKeyValue: string | undefined = process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY
 ): NimKeyEntry[] {
+  const normalized = normalizeNvidiaKeysValue(keysValue, singleKeyValue);
+  keysValue = normalized.keysValue;
+  singleKeyValue = normalized.singleKeyValue;
+
   const entries: NimKeyEntry[] = [];
 
   if (keysValue?.trim()) {

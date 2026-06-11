@@ -1003,6 +1003,17 @@ describe('NVIDIA NIM Client', () => {
     ]);
   });
 
+  it('should recover when NVIDIA_API_KEY accidentally contains NVIDIA_API_KEYS=...', () => {
+    const entries = parseNvidiaKeyEntries(
+      undefined,
+      'NVIDIA_API_KEYS=slot0:secret-one,slot1:secret-two'
+    );
+    expect(entries).toEqual([
+      { alias: 'slot0', apiKey: 'secret-one' },
+      { alias: 'slot1', apiKey: 'secret-two' },
+    ]);
+  });
+
   it('should pin shard indexes to matching aliases or modulo fallback', () => {
     const entries = parseNvidiaKeyEntries('shard0:a,acct1:b,acct2:c,acct3:d', undefined);
     expect(resolveShardNvidiaKey(entries, 0).alias).toBe('shard0');

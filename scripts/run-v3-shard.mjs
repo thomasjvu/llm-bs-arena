@@ -48,7 +48,27 @@ function hasNvidiaKeys(env) {
   );
 }
 
+function normalizeNvidiaKeysValue(keysValue, singleKeyValue) {
+  const trimmedSingle = singleKeyValue?.trim();
+  if (trimmedSingle?.startsWith('NVIDIA_API_KEYS=')) {
+    return {
+      keysValue: trimmedSingle.slice('NVIDIA_API_KEYS='.length).trim(),
+      singleKeyValue: undefined,
+    };
+  }
+
+  if (!keysValue?.trim() && trimmedSingle?.includes('slot0:') && trimmedSingle.includes(',')) {
+    return { keysValue: trimmedSingle, singleKeyValue: undefined };
+  }
+
+  return { keysValue, singleKeyValue };
+}
+
 function parseNvidiaKeyEntries(keysValue, singleKeyValue) {
+  const normalized = normalizeNvidiaKeysValue(keysValue, singleKeyValue);
+  keysValue = normalized.keysValue;
+  singleKeyValue = normalized.singleKeyValue;
+
   const entries = [];
 
   if (keysValue?.trim()) {
