@@ -12,7 +12,11 @@ import { createVeniceClient } from './venice-api.js';
 import { MODELS, VENICE_MODELS, RunMetadata } from '../types/game.js';
 import { getPromptHash, PROMPT_VERSION } from './prompt-builder.js';
 import { APIConnectionError as NimAPIConnectionError } from './nim-api.js';
-import { APIConnectionError as VeniceAPIConnectionError } from './venice-api.js';
+import {
+  APIConnectionError as VeniceAPIConnectionError,
+  resolveVeniceReasoningEffortForRun,
+} from './venice-api.js';
+
 import { resolveRunContextBudgetTokens } from './context-budget.js';
 
 export type Provider = 'nim' | 'mock' | 'venice';
@@ -222,6 +226,10 @@ export function buildRunMetadata(
   modelIds: readonly string[] = [],
   runtimeConfig: ProviderRuntimeConfig = {}
 ): RunMetadata {
+  const reasoningEffort = provider === 'venice'
+    ? resolveVeniceReasoningEffortForRun()
+    : undefined;
+
   return {
     logSchemaVersion: LOG_SCHEMA_VERSION,
     provider: usesScriptedBaseline(modelIds) ? `${provider}+baseline` : provider,
@@ -231,6 +239,7 @@ export function buildRunMetadata(
     contextBudgetTokens: resolveRunContextBudgetTokens(provider, modelIds),
     playMaxTokens: PLAY_MAX_TOKENS,
     challengeMaxTokens: CHALLENGE_MAX_TOKENS,
+    ...(reasoningEffort && Object.keys(reasoningEffort).length > 0 ? { reasoningEffort } : {}),
   };
 }
 
@@ -240,6 +249,7 @@ function hasNimConfig(runtimeConfig: ProviderRuntimeConfig = {}): boolean {
     runtimeConfig.baseUrl ||
     process.env.NVIDIA_API_KEY ||
     process.env.NVIDIA_NIM_API_KEY ||
+    process.env.NVIDIA_API_KEYS?.trim() ||
     process.env.NVIDIA_NIM_BASE_URL
   );
 }

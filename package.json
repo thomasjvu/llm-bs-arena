@@ -21,6 +21,7 @@
     "start": "node --env-file=.env dist/index.js",
     "run:logged": "node scripts/run-cli-with-log.mjs",
     "v3:shard": "node scripts/run-v3-shard.mjs",
+    "v3:launch-all": "node scripts/launch-all-v3-shards.mjs",
     "v3:finalize": "node scripts/finalize-v3-run.mjs",
     "dev": "npm run visualizer",
     "cli:dev": "tsx --env-file=.env src/index.ts",

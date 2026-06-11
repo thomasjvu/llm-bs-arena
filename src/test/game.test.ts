@@ -28,13 +28,25 @@ import { MODELS, VENICE_MODELS, BASELINE_MODELS, RANKS, Card, GameLog, PublicTur
 import { GameLogger, selectComparableGameCohort, buildCohortManifest } from '../logging/game-logger.js';
 import { CSVExporter } from '../logging/csv-exporter.js';
 import { ResilientLLMAdapter, buildRunMetadata, detectProvider, resolveDefaultRoster } from '../llm/provider.js';
-import { APIConnectionError as NimAPIConnectionError, NimClient, NonRetryableAPIError } from '../llm/nim-api.js';
+import {
+  APIConnectionError as NimAPIConnectionError,
+  NimClient,
+  NimKeyPool,
+  NonRetryableAPIError,
+  parseNvidiaKeyEntries,
+  resolveParallelNvidiaKey,
+  resolveShardNvidiaKey,
+} from '../llm/nim-api.js';
 import {
   APIConnectionError as VeniceAPIConnectionError,
   VeniceClient,
   VeniceKeyPool,
   NonRetryableAPIError as VeniceNonRetryableAPIError,
+  extractAssistantText,
   parseVeniceKeyEntries,
+  parseVeniceReasoningEffortOverrides,
+  resolveVeniceRequestOptions,
+  resolveVeniceReasoningEffortForRun,
 } from '../llm/venice-api.js';
 import { MAX_CARDS_PER_PLAY } from '../engine/play-rules.js';
 import { NimLLMAdapter, ScriptedBaselineAdapter, PLAY_MAX_TOKENS, CHALLENGE_MAX_TOKENS } from '../llm/llm-adapter.js';
@@ -978,6 +990,79 @@ describe('NVIDIA NIM Client', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+    delete process.env.NVIDIA_API_KEYS;
+    delete process.env.NVIDIA_API_KEY;
+    delete process.env.NVIDIA_NIM_API_KEY;
+  });
+
+  it('should parse alias:key entries for NVIDIA_API_KEYS', () => {
+    const entries = parseNvidiaKeyEntries('shard0:secret-one,shard1:secret-two', undefined);
+    expect(entries).toEqual([
+      { alias: 'shard0', apiKey: 'secret-one' },
+      { alias: 'shard1', apiKey: 'secret-two' },
+    ]);
+  });
+
+  it('should pin shard indexes to matching aliases or modulo fallback', () => {
+    const entries = parseNvidiaKeyEntries('shard0:a,acct1:b,acct2:c,acct3:d', undefined);
+    expect(resolveShardNvidiaKey(entries, 0).alias).toBe('shard0');
+    expect(resolveShardNvidiaKey(entries, 1).alias).toBe('acct1');
+    expect(resolveShardNvidiaKey(entries, 3).alias).toBe('acct3');
+  });
+
+  it('should pin global parallel slots across experiments', () => {
+    const entries = parseNvidiaKeyEntries(
+      Array.from({ length: 16 }, (_, slot) => `slot${slot}:key-${slot}`).join(','),
+      undefined
+    );
+    expect(resolveParallelNvidiaKey(entries, { experimentId: 0, shardIndex: 0, shardCount: 4 }).alias).toBe('slot0');
+    expect(resolveParallelNvidiaKey(entries, { experimentId: 1, shardIndex: 0, shardCount: 4 }).alias).toBe('slot4');
+    expect(resolveParallelNvidiaKey(entries, { experimentId: 3, shardIndex: 3, shardCount: 4 }).alias).toBe('slot15');
+    expect(resolveParallelNvidiaKey(entries, { experimentId: 2, shardIndex: 1, shardCount: 4 }).apiKey).toBe('key-9');
+  });
+
+  it('should rotate keys on 429 when multiple keys are configured', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      calls++;
+      const headers = init?.headers as Record<string, string>;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+          status: 429,
+          headers: { 'Retry-After': '0', 'Content-Type': 'application/json' },
+        });
+      }
+
+      expect(headers.Authorization).toBe('Bearer key-two');
+      return new Response(
+        JSON.stringify({
+          id: 'resp-ok',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new NimClient({
+      keyPool: new NimKeyPool([
+        { alias: 'acct1', apiKey: 'key-one' },
+        { alias: 'acct2', apiKey: 'key-two' },
+      ]),
+      baseUrl: 'https://example.invalid/v1',
+      maxRetries: 3,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    await client.chatCompletion('model-a', [{ role: 'user', content: 'hi' }], 32);
+    expect(calls).toBe(2);
   });
 
   it('should retry degraded-function 400 responses as recoverable outages', async () => {
@@ -1338,6 +1423,168 @@ describe('Venice AI Client', () => {
       client.chatCompletion('missing-model', [{ role: 'user', content: 'hi' }], 32)
     ).rejects.toBeInstanceOf(VeniceNonRetryableAPIError);
   });
+
+  it('should send low reasoning effort for kimi-k2-6', async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          id: 'resp-kimi',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'venice-test' }]),
+      maxRetries: 1,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    await client.chatCompletion('kimi-k2-6', [{ role: 'user', content: 'hi' }], 128);
+
+    expect(requestBody).toMatchObject({
+      model: 'kimi-k2-6',
+      reasoning: { effort: 'low' },
+    });
+    expect(resolveVeniceRequestOptions('deepseek-v4-flash')).toEqual({});
+    expect(resolveVeniceRequestOptions('minimax-m27')).toEqual({
+      reasoning: { effort: 'low' },
+    });
+  });
+
+  it('should honor VENICE_REASONING_EFFORT overrides', () => {
+    process.env.VENICE_REASONING_EFFORT = 'kimi-k2-6:medium,minimax-m27:high';
+    expect(parseVeniceReasoningEffortOverrides()).toEqual({
+      'kimi-k2-6': 'medium',
+      'minimax-m27': 'high',
+    });
+    expect(resolveVeniceRequestOptions('kimi-k2-6')).toEqual({
+      reasoning: { effort: 'medium' },
+    });
+    delete process.env.VENICE_REASONING_EFFORT;
+  });
+
+  it('should salvage decision JSON from reasoning_content when content is empty', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          id: 'resp-kimi-salvage',
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '',
+                reasoning_content: '{"reasoning":"from thinking","challenge":false}',
+              },
+              finish_reason: 'length',
+            },
+          ],
+          usage: {
+            prompt_tokens: 6000,
+            completion_tokens: 4096,
+            total_tokens: 10096,
+            completion_tokens_details: { reasoning_tokens: 3900 },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    ) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'venice-test' }]),
+      maxRetries: 1,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    const response = await client.chatCompletion('kimi-k2-6', [{ role: 'user', content: 'hi' }], 4096);
+
+    expect(response.content).toBe('{"reasoning":"from thinking","challenge":false}');
+    expect((globalThis.fetch as any).mock.calls.length).toBe(1);
+  });
+
+  it('should retry when both content and reasoning_content are empty', async () => {
+    let calls = 0;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => {
+      calls++;
+      if (calls === 1) {
+        return new Response(
+          JSON.stringify({
+            id: 'resp-empty',
+            choices: [
+              {
+                message: { role: 'assistant', content: '', reasoning_content: 'just prose, no json' },
+                finish_reason: 'length',
+              },
+            ],
+            usage: {
+              prompt_tokens: 6000,
+              completion_tokens: 4096,
+              total_tokens: 10096,
+              completion_tokens_details: { reasoning_tokens: 4096 },
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: 'resp-ok',
+          choices: [
+            {
+              message: { role: 'assistant', content: '{"reasoning":"retry ok","challenge":false}' },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }) as typeof fetch;
+
+    const client = new VeniceClient({
+      keyPool: new VeniceKeyPool([{ alias: 'acct1', apiKey: 'venice-test' }]),
+      maxRetries: 2,
+      retryDelayMs: 1,
+      rateLimitDelayMs: 0,
+      requestTimeoutMs: 1000,
+    });
+    (client as any).sleep = async () => {};
+
+    const response = await client.chatCompletion('kimi-k2-6', [{ role: 'user', content: 'hi' }], 4096);
+
+    expect(calls).toBe(2);
+    expect(response.content).toContain('"challenge":false');
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes('finish=length'))).toBe(true);
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes('reasoning=4096tok'))).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it('should extract assistant text from array content parts', () => {
+    expect(
+      extractAssistantText({
+        role: 'assistant',
+        content: [{ text: '{"reasoning":"ok","challenge":false}' }],
+      })
+    ).toEqual({
+      content: '{"reasoning":"ok","challenge":false}',
+      salvagedFromReasoning: false,
+    });
+  });
 });
 
 describe('Venice provider wiring', () => {
@@ -1361,6 +1608,11 @@ describe('Venice provider wiring', () => {
     const metadata = buildRunMetadata('venice', [...VENICE_MODELS]);
     expect(metadata.provider).toBe('venice');
     expect(metadata.providerBaseUrl).toBe('https://api.venice.ai/api/v1');
+    expect(metadata.reasoningEffort).toEqual(resolveVeniceReasoningEffortForRun());
+    expect(metadata.reasoningEffort).toMatchObject({
+      'kimi-k2-6': 'low',
+      'minimax-m27': 'low',
+    });
   });
 
   it('should reject mixing nim and venice cohorts in the output guard', () => {

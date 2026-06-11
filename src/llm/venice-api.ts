@@ -1,3 +1,4 @@
+import { extractJSON } from './response-parser.js';
 import { TokenUsage } from '../types/game.js';
 
 export interface ChatCompletionResult {
@@ -14,19 +15,41 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface VeniceAssistantMessage {
+  role?: string;
+  content?: string | null | Array<{ text?: string }>;
+  reasoning_content?: string | null;
+}
+
 export interface ChatCompletionResponse {
   id: string;
   choices: {
-    message: {
-      role: string;
-      content: string | null;
-    };
+    message: VeniceAssistantMessage;
     finish_reason: string;
   }[];
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    completion_tokens_details?: {
+      reasoning_tokens?: number;
+    };
+  };
+}
+
+type VeniceReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+const DEFAULT_REASONING_EFFORT_BY_MODEL: Record<string, VeniceReasoningEffort> = {
+  'kimi-k2-6': 'low',
+  'minimax-m27': 'low',
+};
+
+export function resolveVeniceReasoningEffortForRun(
+  overrides: Record<string, VeniceReasoningEffort> = parseVeniceReasoningEffortOverrides()
+): Record<string, VeniceReasoningEffort> {
+  return {
+    ...DEFAULT_REASONING_EFFORT_BY_MODEL,
+    ...overrides,
   };
 }
 
@@ -56,6 +79,142 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const VALID_REASONING_EFFORTS = new Set<VeniceReasoningEffort>([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
+
+export function normalizeMessageContent(
+  content: string | null | Array<{ text?: string }> | undefined
+): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .join('')
+      .trim();
+  }
+
+  return '';
+}
+
+export function looksLikeDecisionJson(jsonStr: string): boolean {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (!parsed || typeof parsed !== 'object') {
+      return false;
+    }
+    if (Array.isArray(parsed.cards_to_play)) {
+      return true;
+    }
+    if (typeof parsed.challenge === 'boolean') {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function extractAssistantText(message: VeniceAssistantMessage): {
+  content: string | null;
+  salvagedFromReasoning: boolean;
+} {
+  const visible = normalizeMessageContent(message.content);
+  if (visible.length > 0) {
+    return { content: visible, salvagedFromReasoning: false };
+  }
+
+  const reasoning = typeof message.reasoning_content === 'string'
+    ? message.reasoning_content.trim()
+    : '';
+  if (reasoning.length === 0) {
+    return { content: null, salvagedFromReasoning: false };
+  }
+
+  const salvaged = extractJSON(reasoning);
+  if (salvaged && looksLikeDecisionJson(salvaged)) {
+    return { content: salvaged, salvagedFromReasoning: true };
+  }
+
+  if (looksLikeDecisionJson(reasoning)) {
+    return { content: reasoning, salvagedFromReasoning: true };
+  }
+
+  return { content: null, salvagedFromReasoning: false };
+}
+
+export function parseVeniceReasoningEffortOverrides(
+  value: string | undefined = process.env.VENICE_REASONING_EFFORT
+): Record<string, VeniceReasoningEffort> {
+  const overrides: Record<string, VeniceReasoningEffort> = {};
+
+  if (!value?.trim()) {
+    return overrides;
+  }
+
+  for (const rawEntry of value.split(',')) {
+    const entry = rawEntry.trim();
+    if (!entry) continue;
+
+    const separatorIndex = entry.indexOf(':');
+    if (separatorIndex <= 0 || separatorIndex >= entry.length - 1) {
+      throw new Error(
+        'VENICE_REASONING_EFFORT entries must use model:effort format, e.g. kimi-k2-6:low'
+      );
+    }
+
+    const modelId = entry.slice(0, separatorIndex).trim();
+    const effort = entry.slice(separatorIndex + 1).trim() as VeniceReasoningEffort;
+    if (!modelId || !VALID_REASONING_EFFORTS.has(effort)) {
+      throw new Error(
+        'VENICE_REASONING_EFFORT entries must include a model id and supported effort level'
+      );
+    }
+
+    overrides[modelId] = effort;
+  }
+
+  return overrides;
+}
+
+export function resolveVeniceRequestOptions(
+  modelId: string,
+  overrides: Record<string, VeniceReasoningEffort> = parseVeniceReasoningEffortOverrides()
+): Record<string, unknown> {
+  const effort = overrides[modelId] ?? DEFAULT_REASONING_EFFORT_BY_MODEL[modelId];
+  if (!effort) {
+    return {};
+  }
+
+  return { reasoning: { effort } };
+}
+
+function formatEmptyContentDiagnostics(
+  finishReason: string,
+  usage?: ChatCompletionResponse['usage']
+): string {
+  const promptTokens = usage?.prompt_tokens;
+  const completionTokens = usage?.completion_tokens;
+  const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens;
+  const tokenSummary = promptTokens !== undefined && completionTokens !== undefined
+    ? `${promptTokens}+${completionTokens}tok`
+    : 'no usage';
+  const reasoningSummary = reasoningTokens !== undefined
+    ? `, reasoning=${reasoningTokens}tok`
+    : '';
+
+  return `finish=${finishReason}, ${tokenSummary}${reasoningSummary}`;
 }
 
 export class APIConnectionError extends Error {
@@ -204,6 +363,29 @@ export class VeniceClient {
     return modelId;
   }
 
+  private buildRequestBody(
+    modelId: string,
+    messages: ChatMessage[],
+    maxTokens: number,
+    stream = false
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model: modelId,
+      messages,
+      temperature: this.config.temperature,
+      seed: this.config.seed,
+      max_completion_tokens: maxTokens,
+      ...resolveVeniceRequestOptions(modelId),
+    };
+
+    if (stream) {
+      body.stream = true;
+      body.stream_options = { include_usage: true };
+    }
+
+    return body;
+  }
+
   async chatCompletion(
     modelId: string,
     messages: ChatMessage[],
@@ -232,13 +414,7 @@ export class VeniceClient {
         const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: this.buildHeaders(activeKey.apiKey),
-          body: JSON.stringify({
-            model: modelId,
-            messages,
-            temperature: this.config.temperature,
-            seed: this.config.seed,
-            max_completion_tokens: maxTokens,
-          }),
+          body: JSON.stringify(this.buildRequestBody(modelId, messages, maxTokens)),
           signal: AbortSignal.timeout(this.config.requestTimeoutMs),
         });
 
@@ -286,11 +462,6 @@ export class VeniceClient {
           throw new Error('No choices in response');
         }
 
-        const content = data.choices[0].message.content;
-        if (typeof content !== 'string' || content.trim().length === 0) {
-          console.error(`[venice] Empty content from ${this.modelLabel(modelId)} (${Date.now() - t0}ms)`);
-          throw new Error('No textual content in response');
-        }
         const finishReason = data.choices[0].finish_reason || 'stop';
         const usage: TokenUsage | undefined = data.usage
           ? {
@@ -299,11 +470,20 @@ export class VeniceClient {
               totalTokens: data.usage.total_tokens,
             }
           : undefined;
+        const { content, salvagedFromReasoning } = extractAssistantText(data.choices[0].message);
+        if (!content) {
+          console.error(
+            `[venice] Empty content from ${this.modelLabel(modelId)} (${Date.now() - t0}ms, ` +
+            `${formatEmptyContentDiagnostics(finishReason, data.usage)})`
+          );
+          throw new Error('No textual content in response');
+        }
         const tokens = data.usage ? `${data.usage.prompt_tokens}+${data.usage.completion_tokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
+        const salvagedNote = salvagedFromReasoning ? ' [salvaged from reasoning_content]' : '';
         console.log(
           `[venice] OK ${this.modelLabel(modelId)} (key=${activeKey.alias}, ${Date.now() - t0}ms, ` +
-          `${tokens}${truncated}) — ${this.previewContent(content)}…`
+          `${tokens}${truncated}${salvagedNote}) — ${this.previewContent(content)}…`
         );
 
         this.consecutiveFailures = 0;
@@ -394,15 +574,7 @@ export class VeniceClient {
         const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
           method: 'POST',
           headers: this.buildHeaders(activeKey.apiKey),
-          body: JSON.stringify({
-            model: modelId,
-            messages,
-            temperature: this.config.temperature,
-            seed: this.config.seed,
-            max_completion_tokens: maxTokens,
-            stream: true,
-            stream_options: { include_usage: true },
-          }),
+          body: JSON.stringify(this.buildRequestBody(modelId, messages, maxTokens, true)),
           signal: AbortSignal.timeout(this.config.requestTimeoutMs),
         });
 
@@ -442,9 +614,11 @@ export class VeniceClient {
         if (!body) throw new Error('No response body for stream');
 
         let fullContent = '';
+        let fullReasoningContent = '';
         let usage: TokenUsage | undefined;
         let finishReason = 'stop';
         let firstTokenTime: number | null = null;
+        let streamUsage: ChatCompletionResponse['usage'];
 
         const reader = body.getReader();
         const decoder = new TextDecoder();
@@ -474,15 +648,25 @@ export class VeniceClient {
                 onToken(delta.content);
               }
 
+              if (delta?.reasoning_content) {
+                fullReasoningContent += delta.reasoning_content;
+              }
+
               if (chunk.choices?.[0]?.finish_reason) {
                 finishReason = chunk.choices[0].finish_reason;
               }
 
               if (chunk.usage) {
+                streamUsage = {
+                  prompt_tokens: chunk.usage.prompt_tokens || 0,
+                  completion_tokens: chunk.usage.completion_tokens || 0,
+                  total_tokens: chunk.usage.total_tokens || 0,
+                  completion_tokens_details: chunk.usage.completion_tokens_details,
+                };
                 usage = {
-                  promptTokens: chunk.usage.prompt_tokens || 0,
-                  completionTokens: chunk.usage.completion_tokens || 0,
-                  totalTokens: chunk.usage.total_tokens || 0,
+                  promptTokens: streamUsage.prompt_tokens,
+                  completionTokens: streamUsage.completion_tokens,
+                  totalTokens: streamUsage.total_tokens,
                 };
               }
             } catch {
@@ -491,19 +675,32 @@ export class VeniceClient {
           }
         }
 
+        const { content: resolvedContent, salvagedFromReasoning } = extractAssistantText({
+          content: fullContent,
+          reasoning_content: fullReasoningContent,
+        });
+        if (!resolvedContent) {
+          console.error(
+            `[venice-stream] Empty content from ${this.modelLabel(modelId)} (${Date.now() - t0}ms, ` +
+            `${formatEmptyContentDiagnostics(finishReason, streamUsage)})`
+          );
+          throw new Error('No textual content in response');
+        }
+
         const elapsed = Date.now() - t0;
         const ttft = firstTokenTime ? firstTokenTime - t0 : elapsed;
         const tokens = usage ? `${usage.promptTokens}+${usage.completionTokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
+        const salvagedNote = salvagedFromReasoning ? ' [salvaged from reasoning_content]' : '';
         console.log(
           `[venice-stream] OK ${this.modelLabel(modelId)} (key=${activeKey.alias}, ${elapsed}ms, ` +
-          `ttft=${ttft}ms, ${tokens}${truncated})`
+          `ttft=${ttft}ms, ${tokens}${truncated}${salvagedNote})`
         );
 
         this.consecutiveFailures = 0;
 
         return {
-          content: fullContent,
+          content: resolvedContent,
           tokenUsage: usage,
           responseTimeMs: Date.now() - overallStart,
           finishReason,

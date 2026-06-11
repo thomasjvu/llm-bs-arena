@@ -40,6 +40,68 @@ function hasVeniceKeys(env) {
   return Boolean(env.VENICE_API_KEYS?.trim() || env.VENICE_API_KEY?.trim());
 }
 
+function hasNvidiaKeys(env) {
+  return Boolean(
+    env.NVIDIA_API_KEYS?.trim() ||
+    env.NVIDIA_API_KEY?.trim() ||
+    env.NVIDIA_NIM_API_KEY?.trim()
+  );
+}
+
+function parseNvidiaKeyEntries(keysValue, singleKeyValue) {
+  const entries = [];
+
+  if (keysValue?.trim()) {
+    for (const rawEntry of keysValue.split(',')) {
+      const entry = rawEntry.trim();
+      if (!entry) continue;
+      const separatorIndex = entry.indexOf(':');
+      if (separatorIndex <= 0 || separatorIndex >= entry.length - 1) continue;
+      const alias = entry.slice(0, separatorIndex).trim();
+      const apiKey = entry.slice(separatorIndex + 1).trim();
+      if (!alias || !apiKey) continue;
+      entries.push({ alias, apiKey });
+    }
+  }
+
+  if (entries.length === 0 && singleKeyValue?.trim()) {
+    entries.push({ alias: 'default', apiKey: singleKeyValue.trim() });
+  }
+
+  return entries;
+}
+
+function parseNvidiaKeyAliases(keysValue, singleKeyValue) {
+  return parseNvidiaKeyEntries(keysValue, singleKeyValue).map((entry) => entry.alias);
+}
+
+function resolveParallelNvidiaKey(entries, experimentId, shardIndex, shardCount) {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  const globalSlot = experimentId * shardCount + shardIndex;
+  const aliases = [
+    `slot${globalSlot}`,
+    `exp${experimentId}s${shardIndex}`,
+    `e${experimentId}s${shardIndex}`,
+  ];
+
+  if (experimentId === 0) {
+    aliases.push(`shard${shardIndex}`, `s${shardIndex}`, String(shardIndex));
+  }
+
+  for (const alias of aliases) {
+    const match = entries.find((entry) => entry.alias === alias);
+    if (match) {
+      return { ...match, globalSlot };
+    }
+  }
+
+  const entry = entries[globalSlot % entries.length];
+  return { ...entry, globalSlot };
+}
+
 function assertValidExperimentEnvFile(filepath, env, provider) {
   if (!fs.existsSync(filepath) || !path.basename(filepath).startsWith('.env.v3-exp')) return;
   const raw = fs.readFileSync(filepath, 'utf8').trim();
@@ -55,10 +117,10 @@ function assertValidExperimentEnvFile(filepath, env, provider) {
     return;
   }
 
-  if (!env.NVIDIA_API_KEY && !env.NVIDIA_NIM_API_KEY) {
+  if (!hasNvidiaKeys(env)) {
     throw new Error(
-      `${path.basename(filepath)} does not define NVIDIA_API_KEY. ` +
-      `Use: NVIDIA_API_KEY=nvapi-...`
+      `${path.basename(filepath)} does not define NVIDIA_API_KEY or NVIDIA_API_KEYS. ` +
+      `Use: NVIDIA_API_KEY=nvapi-... or NVIDIA_API_KEYS=shard0:nvapi-...,shard1:nvapi-...`
     );
   }
 }
@@ -114,11 +176,11 @@ function resolveApiKeySource(parsedEnvFiles, mergedEnv, provider) {
 
   for (let i = parsedEnvFiles.length - 1; i >= 0; i -= 1) {
     const { filepath, env } = parsedEnvFiles[i];
-    if (env.NVIDIA_API_KEY || env.NVIDIA_NIM_API_KEY) {
+    if (hasNvidiaKeys(env)) {
       return path.basename(filepath);
     }
   }
-  if (process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY) {
+  if (hasNvidiaKeys(process.env)) {
     return 'shell environment';
   }
   if (mergedEnv.NVIDIA_NIM_BASE_URL) {
@@ -382,6 +444,36 @@ async function main() {
       DEFAULT_MAX_GAME_FAILURES_PER_SLOT,
   };
 
+  let pinnedNvidiaKeyAlias;
+  let pinnedNvidiaGlobalSlot;
+  const parallelSlotCount = 4 * shardCount;
+  if (provider === 'nim') {
+    const nvidiaEntries = parseNvidiaKeyEntries(
+      childEnv.NVIDIA_API_KEYS,
+      childEnv.NVIDIA_API_KEY || childEnv.NVIDIA_NIM_API_KEY
+    );
+    if (nvidiaEntries.length > 1) {
+      const pinned = resolveParallelNvidiaKey(nvidiaEntries, experiment, shardIndex, shardCount);
+      childEnv.NVIDIA_API_KEY = pinned.apiKey;
+      childEnv.NVIDIA_NIM_API_KEY = pinned.apiKey;
+      delete childEnv.NVIDIA_API_KEYS;
+      pinnedNvidiaKeyAlias = pinned.alias;
+      pinnedNvidiaGlobalSlot = pinned.globalSlot;
+      if (nvidiaEntries.length < parallelSlotCount) {
+        console.warn(
+          `Warning: ${nvidiaEntries.length} NVIDIA API key(s) configured for ${parallelSlotCount} ` +
+          `parallel v3 slots — slot ${pinned.globalSlot} shares key alias ${pinned.alias} via modulo.`
+        );
+      }
+    } else if (nvidiaEntries.length === 1) {
+      childEnv.NVIDIA_API_KEY = nvidiaEntries[0].apiKey;
+      childEnv.NVIDIA_NIM_API_KEY = nvidiaEntries[0].apiKey;
+      delete childEnv.NVIDIA_API_KEYS;
+      pinnedNvidiaKeyAlias = nvidiaEntries[0].alias;
+      pinnedNvidiaGlobalSlot = experiment * shardCount + shardIndex;
+    }
+  }
+
   const cliArgs = [
     ...cliCommand.prefixArgs,
     'tournament',
@@ -412,8 +504,21 @@ async function main() {
     console.log(`Venice API key aliases: ${veniceAliases.join(', ') || 'none'}`);
     console.log(`Venice API key source: ${resolveApiKeySource(parsedEnvFiles, childEnv, provider)}`);
   } else {
-    console.log(`NVIDIA API key loaded: ${Boolean(childEnv.NVIDIA_API_KEY || childEnv.NVIDIA_NIM_API_KEY)}`);
-    console.log(`NVIDIA API key source: ${resolveApiKeySource(parsedEnvFiles, childEnv, provider)}`);
+    const nvidiaAliases = parseNvidiaKeyAliases(
+      mergedEnv.NVIDIA_API_KEYS,
+      mergedEnv.NVIDIA_API_KEY || mergedEnv.NVIDIA_NIM_API_KEY
+    );
+    console.log(`NVIDIA API keys loaded: ${nvidiaAliases.length > 0}`);
+    console.log(`NVIDIA API key aliases: ${nvidiaAliases.join(', ') || 'none'}`);
+    if (pinnedNvidiaKeyAlias) {
+      console.log(
+        `NVIDIA API key strategy: one key per parallel slot ` +
+        `(slot=${pinnedNvidiaGlobalSlot}, exp=${experiment} shard=${shardIndex}, alias=${pinnedNvidiaKeyAlias})`
+      );
+    } else if (nvidiaAliases.length > 1) {
+      console.log('NVIDIA API key strategy: in-process round-robin on 429');
+    }
+    console.log(`NVIDIA API key source: ${resolveApiKeySource(parsedEnvFiles, mergedEnv, provider)}`);
   }
   console.log('');
 

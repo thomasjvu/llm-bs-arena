@@ -115,6 +115,7 @@ export interface RunMetadata {
   contextBudgetTokens?: number;
   playMaxTokens?: number;
   challengeMaxTokens?: number;
+  reasoningEffort?: Record<string, string>;
 }
 
 export interface Turn {

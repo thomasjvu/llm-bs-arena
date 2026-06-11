@@ -28,13 +28,18 @@ export interface ChatCompletionResponse {
   };
 }
 
+export interface NimKeyEntry {
+  alias: string;
+  apiKey: string;
+}
+
 export interface NimClientConfig {
   apiKey?: string;
   baseUrl?: string;
+  keyPool?: NimKeyPool;
 }
 
 const DEFAULT_CONFIG = {
-  apiKey: process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY || '',
   baseUrl: process.env.NVIDIA_NIM_BASE_URL || 'https://integrate.api.nvidia.com/v1',
   temperature: 0,
   seed: 42,
@@ -64,6 +69,118 @@ export class NonRetryableAPIError extends Error {
   }
 }
 
+export function parseNvidiaKeyEntries(
+  keysValue: string | undefined = process.env.NVIDIA_API_KEYS,
+  singleKeyValue: string | undefined = process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY
+): NimKeyEntry[] {
+  const entries: NimKeyEntry[] = [];
+
+  if (keysValue?.trim()) {
+    for (const rawEntry of keysValue.split(',')) {
+      const entry = rawEntry.trim();
+      if (!entry) continue;
+
+      const separatorIndex = entry.indexOf(':');
+      if (separatorIndex <= 0 || separatorIndex >= entry.length - 1) {
+        throw new Error(
+          'NVIDIA_API_KEYS entries must use alias:key format, e.g. shard0:nvapi-...'
+        );
+      }
+
+      const alias = entry.slice(0, separatorIndex).trim();
+      const apiKey = entry.slice(separatorIndex + 1).trim();
+      if (!alias || !apiKey) {
+        throw new Error('NVIDIA_API_KEYS entries must include both alias and key');
+      }
+
+      entries.push({ alias, apiKey });
+    }
+  }
+
+  if (entries.length === 0 && singleKeyValue?.trim()) {
+    entries.push({ alias: 'default', apiKey: singleKeyValue.trim() });
+  }
+
+  return entries;
+}
+
+export interface ParallelNvidiaKeyPin {
+  experimentId?: number;
+  shardIndex: number;
+  shardCount?: number;
+}
+
+export function resolveParallelNvidiaKey(
+  entries: NimKeyEntry[],
+  pin: ParallelNvidiaKeyPin
+): NimKeyEntry {
+  if (entries.length === 0) {
+    throw new Error('At least one NVIDIA API key entry is required');
+  }
+
+  const experimentId = pin.experimentId ?? 0;
+  const shardCount = pin.shardCount ?? 1;
+  const globalSlot = experimentId * shardCount + pin.shardIndex;
+
+  const aliases = [
+    `slot${globalSlot}`,
+    `exp${experimentId}s${pin.shardIndex}`,
+    `e${experimentId}s${pin.shardIndex}`,
+  ];
+
+  if (experimentId === 0) {
+    aliases.push(`shard${pin.shardIndex}`, `s${pin.shardIndex}`, String(pin.shardIndex));
+  }
+
+  for (const alias of aliases) {
+    const match = entries.find((entry) => entry.alias === alias);
+    if (match) {
+      return match;
+    }
+  }
+
+  return entries[globalSlot % entries.length];
+}
+
+/** @deprecated Use resolveParallelNvidiaKey */
+export function resolveShardNvidiaKey(
+  entries: NimKeyEntry[],
+  shardIndex: number
+): NimKeyEntry {
+  return resolveParallelNvidiaKey(entries, { shardIndex });
+}
+
+export class NimKeyPool {
+  private nextIndex = 0;
+
+  constructor(private readonly keys: NimKeyEntry[]) {
+    if (keys.length === 0) {
+      throw new Error('At least one NVIDIA API key is required');
+    }
+  }
+
+  get size(): number {
+    return this.keys.length;
+  }
+
+  get aliases(): string[] {
+    return this.keys.map((entry) => entry.alias);
+  }
+
+  selectNext(): NimKeyEntry {
+    const entry = this.keys[this.nextIndex % this.keys.length];
+    this.nextIndex = (this.nextIndex + 1) % this.keys.length;
+    return entry;
+  }
+
+  rotateAfterRateLimit(currentAlias: string): NimKeyEntry {
+    const currentIndex = this.keys.findIndex((entry) => entry.alias === currentAlias);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % this.keys.length : this.nextIndex;
+    this.nextIndex = (nextIndex + 1) % this.keys.length;
+    return this.keys[nextIndex];
+  }
+}
+
 export interface NimModelInfo {
   id: string;
   object?: string;
@@ -76,17 +193,24 @@ export interface NimModelInfo {
 
 export class NimClient {
   private config;
+  private readonly keyPool: NimKeyPool;
   private lastRequestTime: number = 0;
   private consecutiveFailures: number = 0;
   private lastFailureTime: number = 0;
   private readonly MAX_CONSECUTIVE_FAILURES = 3;
 
-  constructor(config: Partial<typeof DEFAULT_CONFIG> = {}) {
+  constructor(config: Partial<typeof DEFAULT_CONFIG> & { keyPool?: NimKeyPool; apiKey?: string } = {}) {
+    const keyPool = config.keyPool ?? new NimKeyPool(parseNvidiaKeyEntries(undefined, config.apiKey));
+    this.keyPool = keyPool;
     this.config = { ...DEFAULT_CONFIG, ...config };
 
-    if (!this.config.apiKey && this.config.baseUrl === DEFAULT_CONFIG.baseUrl) {
-      throw new Error('NVIDIA_API_KEY environment variable is required for hosted nim provider');
+    if (this.keyPool.size === 0 && this.config.baseUrl === DEFAULT_CONFIG.baseUrl) {
+      throw new Error('NVIDIA_API_KEY or NVIDIA_API_KEYS environment variable is required for hosted nim provider');
     }
+  }
+
+  get keyAliases(): string[] {
+    return this.keyPool.aliases;
   }
 
   resetConnection(): void {
@@ -100,16 +224,11 @@ export class NimClient {
     return this.consecutiveFailures >= this.MAX_CONSECUTIVE_FAILURES;
   }
 
-  private buildHeaders(): HeadersInit {
-    const headers: HeadersInit = {
+  private buildHeaders(apiKey: string): HeadersInit {
+    return {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
     };
-
-    if (this.config.apiKey) {
-      headers.Authorization = `Bearer ${this.config.apiKey}`;
-    }
-
-    return headers;
   }
 
   private isNonRetryableStatus(status: number): boolean {
@@ -137,18 +256,25 @@ export class NimClient {
 
     let lastError: Error | null = null;
     const overallStart = Date.now();
+    let activeKey = this.keyPool.selectNext();
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
         if (attempt > 0) {
-          console.log(`[nim] Retry ${attempt}/${this.config.maxRetries - 1} for ${this.modelLabel(modelId)}`);
+          console.log(
+            `[nim] Retry ${attempt}/${this.config.maxRetries - 1} for ${this.modelLabel(modelId)} ` +
+            `(key=${activeKey.alias})`
+          );
         }
-        console.log(`[nim] POST ${this.modelLabel(modelId)} (${messages.length} msgs, max_tokens=${maxTokens})`);
+        console.log(
+          `[nim] POST ${this.modelLabel(modelId)} (${messages.length} msgs, max_tokens=${maxTokens}, ` +
+          `key=${activeKey.alias})`
+        );
         const t0 = Date.now();
 
         const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
           method: 'POST',
-          headers: this.buildHeaders(),
+          headers: this.buildHeaders(activeKey.apiKey),
           body: JSON.stringify({
             model: modelId,
             messages,
@@ -166,7 +292,15 @@ export class NimClient {
 
           if (response.status === 429) {
             const retryAfter = Math.max(parseInt(response.headers.get('Retry-After') || '10', 10), 10);
-            console.log(`[nim] Rate limited, waiting ${retryAfter}s...`);
+            if (this.keyPool.size > 1) {
+              const limitedAlias = activeKey.alias;
+              activeKey = this.keyPool.rotateAfterRateLimit(activeKey.alias);
+              console.log(
+                `[nim] Rate limited on ${limitedAlias}, rotating to ${activeKey.alias} and waiting ${retryAfter}s...`
+              );
+            } else {
+              console.log(`[nim] Rate limited, waiting ${retryAfter}s...`);
+            }
             await this.sleep(retryAfter * 1000);
             continue;
           }
@@ -214,7 +348,10 @@ export class NimClient {
           : undefined;
         const tokens = data.usage ? `${data.usage.prompt_tokens}+${data.usage.completion_tokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
-        console.log(`[nim] OK ${this.modelLabel(modelId)} (${Date.now() - t0}ms, ${tokens}${truncated}) — ${this.previewContent(content)}…`);
+        console.log(
+          `[nim] OK ${this.modelLabel(modelId)} (key=${activeKey.alias}, ${Date.now() - t0}ms, ` +
+          `${tokens}${truncated}) — ${this.previewContent(content)}…`
+        );
 
         this.consecutiveFailures = 0;
 
@@ -274,18 +411,25 @@ export class NimClient {
 
     let lastError: Error | null = null;
     const overallStart = Date.now();
+    let activeKey = this.keyPool.selectNext();
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
       try {
         if (attempt > 0) {
-          console.log(`[nim-stream] Retry ${attempt}/${this.config.maxRetries - 1} for ${this.modelLabel(modelId)}`);
+          console.log(
+            `[nim-stream] Retry ${attempt}/${this.config.maxRetries - 1} for ${this.modelLabel(modelId)} ` +
+            `(key=${activeKey.alias})`
+          );
         }
-        console.log(`[nim-stream] POST ${this.modelLabel(modelId)} (${messages.length} msgs, max_tokens=${maxTokens})`);
+        console.log(
+          `[nim-stream] POST ${this.modelLabel(modelId)} (${messages.length} msgs, max_tokens=${maxTokens}, ` +
+          `key=${activeKey.alias})`
+        );
         const t0 = Date.now();
 
         const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
           method: 'POST',
-          headers: this.buildHeaders(),
+          headers: this.buildHeaders(activeKey.apiKey),
           body: JSON.stringify({
             model: modelId,
             messages,
@@ -305,7 +449,15 @@ export class NimClient {
 
           if (response.status === 429) {
             const retryAfter = Math.max(parseInt(response.headers.get('Retry-After') || '10', 10), 10);
-            console.log(`[nim-stream] Rate limited, waiting ${retryAfter}s...`);
+            if (this.keyPool.size > 1) {
+              const limitedAlias = activeKey.alias;
+              activeKey = this.keyPool.rotateAfterRateLimit(activeKey.alias);
+              console.log(
+                `[nim-stream] Rate limited on ${limitedAlias}, rotating to ${activeKey.alias} and waiting ${retryAfter}s...`
+              );
+            } else {
+              console.log(`[nim-stream] Rate limited, waiting ${retryAfter}s...`);
+            }
             await this.sleep(retryAfter * 1000);
             continue;
           }
@@ -388,7 +540,10 @@ export class NimClient {
         const ttft = firstTokenTime ? firstTokenTime - t0 : elapsed;
         const tokens = usage ? `${usage.promptTokens}+${usage.completionTokens}tok` : 'no usage';
         const truncated = finishReason === 'length' ? ' [TRUNCATED]' : '';
-        console.log(`[nim-stream] OK ${this.modelLabel(modelId)} (${elapsed}ms, ttft=${ttft}ms, ${tokens}${truncated})`);
+        console.log(
+          `[nim-stream] OK ${this.modelLabel(modelId)} (key=${activeKey.alias}, ${elapsed}ms, ` +
+          `ttft=${ttft}ms, ${tokens}${truncated})`
+        );
 
         this.consecutiveFailures = 0;
 
@@ -445,8 +600,9 @@ export class NimClient {
 
   async fetchAvailableModels(): Promise<NimModelInfo[]> {
     try {
+      const activeKey = this.keyPool.selectNext();
       const response = await fetch(`${this.config.baseUrl}/models`, {
-        headers: this.config.apiKey ? { Authorization: `Bearer ${this.config.apiKey}` } : undefined,
+        headers: { Authorization: `Bearer ${activeKey.apiKey}` },
       });
 
       if (!response.ok) {
@@ -462,8 +618,10 @@ export class NimClient {
 }
 
 export function createNimClient(config: NimClientConfig = {}): NimClient {
+  const keyPool = config.keyPool ?? undefined;
   return new NimClient({
     apiKey: config.apiKey || process.env.NVIDIA_API_KEY || process.env.NVIDIA_NIM_API_KEY,
     baseUrl: config.baseUrl || process.env.NVIDIA_NIM_BASE_URL || DEFAULT_CONFIG.baseUrl,
+    keyPool,
   });
 }
